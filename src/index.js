@@ -56,7 +56,7 @@ client.on(Events.MessageCreate, async (message) => {
         .trim();
 
     // Check if the member has a gentle / she/her role
-    const isGentle = isGentleMember(message.member, settings.gentleRoleNames);
+    const isGentle = isGentleMember(message.member, settings.gentleRoleNames, message.guild?.id);
     const tone = isGentle ? 'gentle' : 'savage';
 
     // If a user just mentions @ZiGBoT without any text

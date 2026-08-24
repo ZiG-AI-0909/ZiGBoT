@@ -7,7 +7,7 @@ function normalizeRoleName(name) {
         .replace(/[^a-z0-9]/g, '');      // strip all symbols/spaces
 }
 
-function isGentleMember(member, configuredGentleRoles = []) {
+function isGentleMember(member, configuredGentleRoles = [], guildId = '') {
     if (!member || !member.roles || !member.roles.cache) {
         return false;
     }
@@ -16,6 +16,16 @@ function isGentleMember(member, configuredGentleRoles = []) {
     const normalizedGentleSet = new Set(
         configuredGentleRoles.map(normalizeRoleName).filter(Boolean)
     );
+
+    const primaryGuild = member.user?.primaryGuild;
+    const serverTag = primaryGuild?.tag;
+    const isCurrentGuildTag = !guildId || primaryGuild.identityGuildId === guildId;
+    if (primaryGuild?.identityEnabled && serverTag && isCurrentGuildTag) {
+        const normalizedTag = normalizeRoleName(serverTag);
+        if (configuredGentleRoles.some((roleName) => normalizeRoleName(roleName).includes(normalizedTag))) {
+            return true;
+        }
+    }
 
     // Standard fallback normalized keywords (both female and male gentle roles)
     const gentleKeywords = [
