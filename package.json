@@ -1,0 +1,28 @@
+{
+  "name": "zigbot",
+  "version": "1.0.0",
+  "description": "Funny stress-relieving Discord chat companion and auto-reply bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "check": "node --check index.js && node --check src/index.js && node --check src/ai/client.js && node --check src/ai/memory.js && node --check src/ai/triggerDetector.js && node --check src/ai/roleDetector.js && node --check src/config/settings.js && node --check src/tools/router.js && node --check src/voice/voiceManager.js && node --check src/voice/localSpeech.js && node --check src/voice/voiceConversation.js && node --check src/music/player.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "chat",
+    "stress-relief",
+    "ai"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@discordjs/voice": "^0.19.2",
+    "discord.js": "^14.27.0",
+    "dotenv": "^17.4.2",
+    "ffmpeg-static": "^5.3.0",
+    "openai": "^7.5.0"
+  }
+}
