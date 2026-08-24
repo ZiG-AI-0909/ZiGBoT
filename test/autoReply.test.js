@@ -124,24 +124,28 @@ test('isGentleMember detects Unicode and standard she/her / girl roles', () => {
     });
 
     // Unicode aesthetic she/her role
-    assert.equal(isGentleMember(createMemberWithRoles(['ｓｈｅ ﹒ ｈｅｒ'])), true);
-    assert.equal(isGentleMember(createMemberWithRoles(['she/her'])), true);
-    assert.equal(isGentleMember(createMemberWithRoles(['🏷️ Heer Tag']), ['🏷️ Heer Tag']), true);
+    const gentleRoles = ['ｓｈｅ ﹒ ｈｅｒ', 'she/her', 'Girl', 'Queen', 'Gentle Mode', '🏷️ Heer Tag'];
+
+    assert.equal(isGentleMember(createMemberWithRoles(['ｓｈｅ ﹒ ｈｅｒ']), gentleRoles), true);
+    assert.equal(isGentleMember(createMemberWithRoles(['she/her']), gentleRoles), true);
+    assert.equal(isGentleMember(createMemberWithRoles(['🏷️ Heer Tag']), gentleRoles), true);
     assert.equal(isGentleMember({
         user: { primaryGuild: { identityEnabled: true, identityGuildId: 'guild-123', tag: 'Heer' } },
         roles: { cache: new Map() }
-    }, ['🏷️ Heer Tag'], 'guild-123'), true);
+    }, gentleRoles, 'guild-123'), true);
     assert.equal(isGentleMember({
         user: { primaryGuild: { identityEnabled: true, identityGuildId: 'other-guild', tag: 'Heer' } },
         roles: { cache: new Map() }
-    }, ['🏷️ Heer Tag'], 'guild-123'), false);
-    assert.equal(isGentleMember(createMemberWithRoles(['Girl', 'VIP'])), true);
-    assert.equal(isGentleMember(createMemberWithRoles(['Queen'])), true);
-    assert.equal(isGentleMember(createMemberWithRoles(['Gentle Mode'])), true);
+    }, gentleRoles, 'guild-123'), false);
+    assert.equal(isGentleMember(createMemberWithRoles(['Girl', 'VIP']), gentleRoles), true);
+    assert.equal(isGentleMember(createMemberWithRoles(['Queen']), gentleRoles), true);
+    assert.equal(isGentleMember(createMemberWithRoles(['Gentle Mode']), gentleRoles), true);
 
     // Regular member without gentle roles
-    assert.equal(isGentleMember(createMemberWithRoles(['Member', 'Gamer', 'Dude'])), false);
-    assert.equal(isGentleMember(createMemberWithRoles(['VIP']), ['🏷️ Heer Tag']), false);
+    assert.equal(isGentleMember(createMemberWithRoles(['Member', 'Gamer', 'Dude']), gentleRoles), false);
+    assert.equal(isGentleMember(createMemberWithRoles(['VIP']), gentleRoles), false);
+    assert.equal(isGentleMember(createMemberWithRoles(['Non Gentle']), ['Non Gentle']), true);
+    assert.equal(isGentleMember(createMemberWithRoles(['Non Gentle']), gentleRoles), false);
     assert.equal(isGentleMember(null), false);
 });
 

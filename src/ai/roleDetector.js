@@ -27,22 +27,6 @@ function isGentleMember(member, configuredGentleRoles = [], guildId = '') {
         }
     }
 
-    // Standard fallback normalized keywords (both female and male gentle roles)
-    const gentleKeywords = [
-        // Female gentle roles
-        'sheher', 'shehers', 'girl', 'girls', 'female', 'females',
-        'queen', 'queens', 'princess',
-        // Male gentle roles
-        'gentleman', 'gentlemen', 'king', 'kings', 'softboy', 'softboys',
-        'chillguy', 'chillbro', 'chillboy', 'goodguy', 'wholesomeboy', 'homie',
-        // General gentle roles
-        'gentle', 'gentlemode', 'wholesome', 'softie', 'soft', 'peaceful'
-    ];
-
-    for (const kw of gentleKeywords) {
-        normalizedGentleSet.add(kw);
-    }
-
     // Check member's roles
     for (const role of member.roles.cache.values()) {
         const rawLower = role.name.toLowerCase().trim();
@@ -58,22 +42,6 @@ function isGentleMember(member, configuredGentleRoles = [], guildId = '') {
             return true;
         }
 
-        // Substring checks for compound roles like "she/her | gamer", "Chill Guy | VIP", "Gentleman | Staff"
-        if (
-            normalized.includes('sheher') ||
-            normalized.includes('female') ||
-            normalized.includes('girl') ||
-            normalized.includes('queen') ||
-            normalized.includes('princess') ||
-            normalized.includes('gentleman') ||
-            normalized.includes('softboy') ||
-            normalized.includes('chillguy') ||
-            normalized.includes('chillbro') ||
-            normalized.includes('wholesome') ||
-            normalized.includes('gentle')
-        ) {
-            return true;
-        }
     }
 
     return false;
