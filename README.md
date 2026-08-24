@@ -35,6 +35,7 @@ ZiGBoT is a witty, stress-relieving Discord chat companion and auto-reply bot de
    - `AUTO_REPLY_KEYWORDS`: `true` to enable smart stress and banter triggers.
    - `COOLDOWN_SECONDS`: Anti-spam cooldown in seconds (default: `15`).
    - `SERVER_OWNER_ID`: Discord user ID of the server owner for administrative commands. For ZiG's server, use `1296202178263912448`.
+   - `SERVER_OWNER_ROLE_NAME`: Display name of the server owner's role (`꧁༺ ZiG ༻꧂`). This is informational; administrative access still requires the configured owner ID and actual Discord guild ownership.
 3. Start the bot:
    ```bash
    npm start
