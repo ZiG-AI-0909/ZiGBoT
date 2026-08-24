@@ -4,6 +4,18 @@ const { detectTrigger, TriggerTracker } = require('../src/ai/triggerDetector');
 const { ConversationMemory } = require('../src/ai/memory');
 const { isGentleMember, normalizeRoleName } = require('../src/ai/roleDetector');
 const { loadSettings } = require('../src/config/settings');
+const { isCreatorQuestion, creatorResponse } = require('../src/ai/client');
+
+test('creator questions identify ZiG and provide the portfolio details', () => {
+    assert.equal(isCreatorQuestion('Who created you?'), true);
+    assert.equal(isCreatorQuestion('who made this bot'), true);
+    assert.equal(isCreatorQuestion('Who made it?'), true);
+    assert.equal(isCreatorQuestion('Tell me a joke'), false);
+    assert.match(creatorResponse, /ZiG/);
+    assert.match(creatorResponse, /1296202178263912448/);
+    assert.match(creatorResponse, /portfolio-eight-neon-70\.vercel\.app/);
+    assert.match(creatorResponse, /Bhavesh Kumar Tiwari/);
+});
 
 test('detectTrigger identifies stress keywords correctly in English and Hinglish', () => {
     const stressCases = [

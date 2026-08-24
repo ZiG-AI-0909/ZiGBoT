@@ -1,5 +1,12 @@
 const OpenAI = require('openai');
 
+const CREATOR_ID = '1296202178263912448';
+const creatorResponse = `I was created by ZiG (Discord user ID: ${CREATOR_ID}). Learn more about ZiG at https://portfolio-eight-neon-70.vercel.app/ - the portfolio identifies ZiG as Bhavesh Kumar Tiwari, a frontend and product developer focused on React products, AI automation, e-commerce, and conversion-first product design.`;
+
+function isCreatorQuestion(message) {
+    return /\b(who|which person)\b.{0,40}\b(created|made|built|developed|coded|programmed)\b|\b(created|made|built|developed|coded|programmed)\b.{0,40}\b(you|it|this|this bot|zigbot|bot)\b/i.test(message);
+}
+
 const savageInstructions = `You are ZiGBoT, a savage, dark-humored Discord bot with heavy Gen-Z slang and a Samay Raina-style roast personality.
 Your mission is to make server members laugh off their misery through pitch-dark comedy, brutal roasts, and top-tier internet brainrot.
 
@@ -52,6 +59,8 @@ function createAiClient(settings) {
 
     return {
         async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage' }) {
+            if (isCreatorQuestion(userMessage)) return creatorResponse;
+
             const systemPrompt = tone === 'gentle' ? gentleInstructions : savageInstructions;
 
             const formattedUserContent = authorName
@@ -87,5 +96,7 @@ module.exports = {
     createAiClient,
     savageInstructions,
     gentleInstructions,
-    cleanOutput
+    cleanOutput,
+    isCreatorQuestion,
+    creatorResponse
 };
