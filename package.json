@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "check": "node --check index.js && node --check src/index.js && node --check src/ai/client.js && node --check src/ai/memory.js && node --check src/ai/triggerDetector.js && node --check src/ai/roleDetector.js && node --check src/config/settings.js && node --check src/tools/router.js && node --check src/voice/voiceManager.js && node --check src/voice/localSpeech.js && node --check src/voice/voiceConversation.js && node --check src/music/player.js",
+    "check": "node --check index.js && node --check src/index.js && node --check src/ai/client.js && node --check src/ai/memory.js && node --check src/ai/triggerDetector.js && node --check src/ai/roleDetector.js && node --check src/config/settings.js && node --check src/security/authorization.js && node --check src/security/ownerCommands.js && node --check src/tools/router.js && node --check src/voice/voiceManager.js && node --check src/voice/localSpeech.js && node --check src/voice/voiceConversation.js && node --check src/music/player.js",
     "test": "node --test"
   },
   "keywords": [

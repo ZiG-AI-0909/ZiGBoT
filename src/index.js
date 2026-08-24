@@ -6,6 +6,7 @@ const { createAiClient } = require('./ai/client');
 const { defaultMemory } = require('./ai/memory');
 const { isGentleMember } = require('./ai/roleDetector');
 const { isServerOwner } = require('./security/authorization');
+const { getOwnerRoastTarget } = require('./security/ownerCommands');
 
 const settings = loadSettings();
 const ai = createAiClient(settings);
@@ -73,6 +74,31 @@ client.on(Events.MessageCreate, async (message) => {
                 ? "Hey bestie! ✨ Kya chal raha hai? Kuch share karna hai ya koi help chahiye? 🌸"
                 : "Haan bhai, tag kiya hai toh bol bhi de. Kya dukh dard baantna hai?";
             await message.reply(greeting);
+        }
+        return;
+    }
+
+    const ownerRoastTarget = getOwnerRoastTarget(message, client.user.id, settings);
+    if (ownerRoastTarget) {
+        const targetMember = message.guild.members.cache.get(ownerRoastTarget.id);
+        const targetName = targetMember?.displayName || ownerRoastTarget.globalName || ownerRoastTarget.username;
+
+        try {
+            await message.channel.sendTyping();
+            const history = defaultMemory.getHistory(message.channel.id);
+            const replyText = await ai.reply({
+                userMessage: `Roast the mentioned target named ${targetName}. Keep the roast directed only at that target, not the server owner or ZiGBoT.`,
+                authorName: targetName,
+                contextMessages: history,
+                tone: 'savage'
+            });
+
+            await message.reply(replyText);
+            defaultMemory.addMessage(message.channel.id, 'user', userMessage, message.author.username);
+            defaultMemory.addMessage(message.channel.id, 'assistant', replyText);
+        } catch (error) {
+            console.error(`[ZiGBoT ERROR] ${error.message}`);
+            await message.reply("😅 Dimaag crash ho gaya ek second ke liye! Ek baar wapas bol na.").catch(() => {});
         }
         return;
     }

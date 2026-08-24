@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { isOwner, isServerOwner, ownerAuthorization } = require('../src/security/authorization');
+const { getOwnerRoastTarget } = require('../src/security/ownerCommands');
 
 const settings = { serverOwnerId: 'owner-123' };
 const zigServerOwnerId = '1296202178263912448';
@@ -36,4 +37,19 @@ test('only the actual configured server owner receives owner status', () => {
     assert.equal(isServerOwner(message(zigServerOwnerId, zigServerOwnerId), zigSettings), true);
     assert.equal(isServerOwner(message('different-user', zigServerOwnerId), zigSettings), false);
     assert.equal(isServerOwner(message(zigServerOwnerId, 'different-owner'), zigSettings), false);
+});
+
+test('only the server owner can command ZiGBoT to roast a mentioned user', () => {
+    const zigSettings = { serverOwnerId: zigServerOwnerId };
+    const target = { id: 'target-456', username: 'Target', bot: false };
+    const command = {
+        author: { id: zigServerOwnerId },
+        guild: { ownerId: zigServerOwnerId },
+        content: '<@bot> <@target> roast him',
+        mentions: { users: new Map([['target-456', target]]) }
+    };
+
+    assert.equal(getOwnerRoastTarget(command, 'bot', zigSettings), target);
+    assert.equal(getOwnerRoastTarget({ ...command, author: { id: 'not-owner' } }, 'bot', zigSettings), null);
+    assert.equal(getOwnerRoastTarget({ ...command, content: '<@bot> <@target> hello' }, 'bot', zigSettings), null);
 });
