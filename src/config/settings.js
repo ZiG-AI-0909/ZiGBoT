@@ -31,6 +31,7 @@ const defaultGentleRoles = [
     'softie',
     'peaceful'
 ];
+const defaultNonGentleRoles = ['Users.heer'];
 
 function loadSettings() {
     const missing = required.filter((name) => !process.env[name]);
@@ -66,6 +67,9 @@ function loadSettings() {
         gentleRoleNames: process.env.GENTLE_ROLE_NAMES
             ? parseList(process.env.GENTLE_ROLE_NAMES)
             : defaultGentleRoles,
+        nonGentleRoleNames: process.env.NON_GENTLE_ROLE_NAMES
+            ? parseList(process.env.NON_GENTLE_ROLE_NAMES)
+            : defaultNonGentleRoles,
         voiceMode: process.env.VOICE_MODE || 'push-to-talk',
         storeTranscripts: process.env.STORE_TRANSCRIPTS === 'true',
         sttCommand: process.env.STT_COMMAND || '',

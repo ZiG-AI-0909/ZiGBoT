@@ -58,7 +58,12 @@ client.on(Events.MessageCreate, async (message) => {
 
     // The verified server owner always receives assistant mode.
     const isGentle = isServerOwner(message, settings) ||
-        isGentleMember(message.member, settings.gentleRoleNames, message.guild?.id);
+        isGentleMember(
+            message.member,
+            settings.gentleRoleNames,
+            message.guild?.id,
+            settings.nonGentleRoleNames
+        );
     const tone = isGentle ? 'gentle' : 'savage';
 
     // If a user just mentions @ZiGBoT without any text

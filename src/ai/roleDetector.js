@@ -7,7 +7,7 @@ function normalizeRoleName(name) {
         .replace(/[^a-z0-9]/g, '');      // strip all symbols/spaces
 }
 
-function isGentleMember(member, configuredGentleRoles = [], guildId = '') {
+function isGentleMember(member, configuredGentleRoles = [], guildId = '', configuredNonGentleRoles = []) {
     if (!member || !member.roles || !member.roles.cache) {
         return false;
     }
@@ -16,6 +16,15 @@ function isGentleMember(member, configuredGentleRoles = [], guildId = '') {
     const normalizedGentleSet = new Set(
         configuredGentleRoles.map(normalizeRoleName).filter(Boolean)
     );
+    const normalizedNonGentleSet = new Set(
+        configuredNonGentleRoles.map(normalizeRoleName).filter(Boolean)
+    );
+
+    for (const role of member.roles.cache.values()) {
+        if (normalizedNonGentleSet.has(normalizeRoleName(role.name))) {
+            return false;
+        }
+    }
 
     const primaryGuild = member.user?.primaryGuild;
     const serverTag = primaryGuild?.tag;

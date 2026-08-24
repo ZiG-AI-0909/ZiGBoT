@@ -146,6 +146,7 @@ test('isGentleMember detects Unicode and standard she/her / girl roles', () => {
     assert.equal(isGentleMember(createMemberWithRoles(['VIP']), gentleRoles), false);
     assert.equal(isGentleMember(createMemberWithRoles(['Non Gentle']), ['Non Gentle']), true);
     assert.equal(isGentleMember(createMemberWithRoles(['Non Gentle']), gentleRoles), false);
+    assert.equal(isGentleMember(createMemberWithRoles(['Users.heer']), gentleRoles, '', ['Users.heer']), false);
     assert.equal(isGentleMember(null), false);
 });
 
