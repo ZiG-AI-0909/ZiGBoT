@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { isOwner, ownerAuthorization } = require('../src/security/authorization');
+const { isOwner, isServerOwner, ownerAuthorization } = require('../src/security/authorization');
 
 const settings = { serverOwnerId: 'owner-123' };
 const zigServerOwnerId = '1296202178263912448';
@@ -29,4 +29,11 @@ test('ZiG server owner ID is recognized as the configured owner', () => {
     assert.equal(isOwner(zigServerOwnerId, zigSettings), true);
     assert.equal(isOwner('different-user', zigSettings), false);
     assert.equal(ownerAuthorization(message(zigServerOwnerId, zigServerOwnerId), zigSettings).allowed, true);
+});
+
+test('only the actual configured server owner receives owner status', () => {
+    const zigSettings = { serverOwnerId: zigServerOwnerId };
+    assert.equal(isServerOwner(message(zigServerOwnerId, zigServerOwnerId), zigSettings), true);
+    assert.equal(isServerOwner(message('different-user', zigServerOwnerId), zigSettings), false);
+    assert.equal(isServerOwner(message(zigServerOwnerId, 'different-owner'), zigSettings), false);
 });

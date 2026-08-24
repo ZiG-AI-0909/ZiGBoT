@@ -2,6 +2,15 @@ function isOwner(requesterId, settings) {
     return Boolean(settings.serverOwnerId) && requesterId === settings.serverOwnerId;
 }
 
+function isServerOwner(message, settings) {
+    return Boolean(
+        message?.guild &&
+        settings?.serverOwnerId &&
+        message.author?.id === settings.serverOwnerId &&
+        message.guild.ownerId === settings.serverOwnerId
+    );
+}
+
 function ownerAuthorization(message, settings) {
     if (!settings.serverOwnerId) {
         return { allowed: false, reason: 'SERVER_OWNER_ID is not configured.' };
@@ -26,4 +35,4 @@ function botPermission(guild, permission) {
     return { allowed: true };
 }
 
-module.exports = { isOwner, ownerAuthorization, botPermission };
+module.exports = { isOwner, isServerOwner, ownerAuthorization, botPermission };

@@ -5,6 +5,7 @@ const { loadSettings } = require('./config/settings');
 const { createAiClient } = require('./ai/client');
 const { defaultMemory } = require('./ai/memory');
 const { isGentleMember } = require('./ai/roleDetector');
+const { isServerOwner } = require('./security/authorization');
 
 const settings = loadSettings();
 const ai = createAiClient(settings);
@@ -55,8 +56,9 @@ client.on(Events.MessageCreate, async (message) => {
         .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '')
         .trim();
 
-    // Check if the member has a gentle / she/her role
-    const isGentle = isGentleMember(message.member, settings.gentleRoleNames, message.guild?.id);
+    // The verified server owner always receives assistant mode.
+    const isGentle = isServerOwner(message, settings) ||
+        isGentleMember(message.member, settings.gentleRoleNames, message.guild?.id);
     const tone = isGentle ? 'gentle' : 'savage';
 
     // If a user just mentions @ZiGBoT without any text
