@@ -4,7 +4,7 @@ const { detectTrigger, TriggerTracker } = require('../src/ai/triggerDetector');
 const { ConversationMemory } = require('../src/ai/memory');
 const { isGentleMember, normalizeRoleName } = require('../src/ai/roleDetector');
 const { loadSettings } = require('../src/config/settings');
-const { isCreatorQuestion, creatorResponse } = require('../src/ai/client');
+const { isCreatorQuestion, creatorResponse, savageInstructions } = require('../src/ai/client');
 
 test('creator questions identify ZiG and provide the portfolio details', () => {
     assert.equal(isCreatorQuestion('Who created you?'), true);
@@ -15,6 +15,8 @@ test('creator questions identify ZiG and provide the portfolio details', () => {
     assert.match(creatorResponse, /1296202178263912448/);
     assert.match(creatorResponse, /portfolio-eight-neon-70\.vercel\.app/);
     assert.match(creatorResponse, /Bhavesh Kumar Tiwari/);
+    assert.match(savageInstructions, /maximum-intensity comedic insults/i);
+    assert.match(savageInstructions, /No threats, doxxing, sexual harassment/i);
 });
 
 test('detectTrigger identifies stress keywords correctly in English and Hinglish', () => {
