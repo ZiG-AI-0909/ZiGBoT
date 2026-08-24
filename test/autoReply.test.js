@@ -126,12 +126,14 @@ test('isGentleMember detects Unicode and standard she/her / girl roles', () => {
     // Unicode aesthetic she/her role
     assert.equal(isGentleMember(createMemberWithRoles(['ｓｈｅ ﹒ ｈｅｒ'])), true);
     assert.equal(isGentleMember(createMemberWithRoles(['she/her'])), true);
+    assert.equal(isGentleMember(createMemberWithRoles(['🏷️ Heer Tag']), ['🏷️ Heer Tag']), true);
     assert.equal(isGentleMember(createMemberWithRoles(['Girl', 'VIP'])), true);
     assert.equal(isGentleMember(createMemberWithRoles(['Queen'])), true);
     assert.equal(isGentleMember(createMemberWithRoles(['Gentle Mode'])), true);
 
     // Regular member without gentle roles
     assert.equal(isGentleMember(createMemberWithRoles(['Member', 'Gamer', 'Dude'])), false);
+    assert.equal(isGentleMember(createMemberWithRoles(['VIP']), ['🏷️ Heer Tag']), false);
     assert.equal(isGentleMember(null), false);
 });
 
