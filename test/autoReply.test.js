@@ -10,13 +10,21 @@ test('creator questions identify ZiG and provide the portfolio details', () => {
     assert.equal(isCreatorQuestion('Who created you?'), true);
     assert.equal(isCreatorQuestion('who made this bot'), true);
     assert.equal(isCreatorQuestion('Who made it?'), true);
+    assert.equal(isCreatorQuestion('Who is ZiG?'), true);
+    assert.equal(isCreatorQuestion("What's ZiG's role here?"), false);
+    assert.equal(isCreatorQuestion('Is ZiG your creator?'), true);
+    assert.equal(isCreatorQuestion('Is ZiG the owner of this server?'), true);
     assert.equal(isCreatorQuestion('Tell me a joke'), false);
     assert.match(creatorResponse, /ZiG/);
+    assert.match(creatorResponse, /creator/i);
+    assert.match(creatorResponse, /main owner/i);
     assert.match(creatorResponse, /1296202178263912448/);
     assert.match(creatorResponse, /portfolio-eight-neon-70\.vercel\.app/);
     assert.match(creatorResponse, /Bhavesh Kumar Tiwari/);
     assert.match(savageInstructions, /maximum-intensity comedic insults/i);
     assert.match(savageInstructions, /No threats, doxxing, sexual harassment/i);
+    assert.match(savageInstructions, /ZiG created you and is the main owner/i);
+    assert.match(gentleInstructions, /ZiG created you and is the main owner/i);
 });
 
 test('gentle mode does not infer gender from roles or names', () => {

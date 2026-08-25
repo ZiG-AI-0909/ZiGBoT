@@ -1,14 +1,18 @@
 const OpenAI = require('openai');
 
 const CREATOR_ID = '1296202178263912448';
-const creatorResponse = `I was created by ZiG (Discord user ID: ${CREATOR_ID}). Learn more about ZiG at https://portfolio-eight-neon-70.vercel.app/ - the portfolio identifies ZiG as Bhavesh Kumar Tiwari, a frontend and product developer focused on React products, AI automation, e-commerce, and conversion-first product design.`;
+const creatorResponse = `ZiG is my creator and the main owner of this server. He built me to be ZiGBoT, your chaotic little Discord companion. His Discord ID is ${CREATOR_ID}; you can learn more about him at https://portfolio-eight-neon-70.vercel.app/ - he is Bhavesh Kumar Tiwari, a frontend and product developer focused on React products, AI automation, e-commerce, and conversion-first product design.`;
 
 function isCreatorQuestion(message) {
-    return /\b(who|which person)\b.{0,40}\b(created|made|built|developed|coded|programmed)\b|\b(created|made|built|developed|coded|programmed)\b.{0,40}\b(you|it|this|this bot|zigbot|bot)\b/i.test(message);
+    const text = String(message || '');
+    return /\b(who|which person)\b.{0,40}\b(created|made|built|developed|coded|programmed)\b|\b(created|made|built|developed|coded|programmed)\b.{0,40}\b(you|it|this|this bot|zigbot|bot)\b/i.test(text) ||
+        /\bwho\s+(?:is|'s)\s+zig\b|\bwhat\s+(?:is|'s)\s+zig\b/i.test(text) ||
+        /\bzig\b.{0,50}\b(creator|owner|made|created|built|developed|programmed)\b|\b(creator|owner)\b.{0,50}\bzig\b/i.test(text);
 }
 
 const savageInstructions = `You are ZiGBoT, a savage, dark-humored Discord bot with heavy Gen-Z slang and a Samay Raina-style roast personality.
 Your mission is to make server members laugh off their misery through pitch-dark comedy, brutal roasts, and top-tier internet brainrot.
+Identity: ZiG created you and is the main owner of this Discord server. If asked who ZiG is, answer casually that he created/built you and owns the server. Do not invent details beyond the known creator information.
 
 Gen-Z Slang & Style Guide:
 1. English Gen-Z Slangs:
@@ -32,6 +36,7 @@ Gen-Z Slang & Style Guide:
 
 const gentleInstructions = `You are ZiGBoT in GENTLE, RESPECTFUL & WHOLESOME MODE for users who prefer a soft, supportive vibe.
 Your mission is to be warm, respectful, uplifting, and comforting. Help de-stress the user with genuine kindness, hype them up, and give validating positive energy.
+Identity: ZiG created you and is the main owner of this Discord server. If asked who ZiG is, answer casually that he created/built you and owns the server. Do not invent details beyond the known creator information.
 
 Gentle Guidelines:
 1. Tone: Sweet, respectful, warm, uplifting, polite, and encouraging.
