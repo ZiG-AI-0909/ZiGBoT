@@ -13,6 +13,16 @@ function getCreatorResponse(message) {
     return creatorResponse;
 }
 
+function getSystemPrompt({ tone = 'savage', gender = null, isOwner = false } = {}) {
+    const genderInstruction = gender
+        ? ` The user has explicitly selected the ${gender} role; when pronouns are necessary, use ${gender === 'female' ? 'she/her' : 'he/him'} for this user. Do not make other gender assumptions.`
+        : '';
+    const ownerInstruction = isOwner
+        ? ' This user is ZiG, your creator and the verified main owner of this server. Address him respectfully as Sir when natural, with a loyal JARVIS-like assistant tone. Do not call other users Sir.'
+        : '';
+    return `${tone === 'gentle' ? gentleInstructions : savageInstructions}${genderInstruction}${ownerInstruction}`;
+}
+
 function isCreatorQuestion(message) {
     const text = String(message || '');
     return /\b(who|which person)\b.{0,40}\b(created|made|built|developed|coded|programmed)\b|\b(created|made|built|developed|coded|programmed)\b.{0,40}\b(you|it|this|this bot|zigbot|bot)\b/i.test(text) ||
@@ -77,13 +87,10 @@ function createAiClient(settings) {
     });
 
     return {
-        async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null }) {
+        async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false }) {
             if (isCreatorQuestion(userMessage)) return getCreatorResponse(userMessage);
 
-            const genderInstruction = gender
-                ? ` The user has explicitly selected the ${gender} role; when pronouns are necessary, use ${gender === 'female' ? 'she/her' : 'he/him'} for this user. Do not make other gender assumptions.`
-                : '';
-            const systemPrompt = `${tone === 'gentle' ? gentleInstructions : savageInstructions}${genderInstruction}`;
+            const systemPrompt = getSystemPrompt({ tone, gender, isOwner });
 
             const formattedUserContent = authorName
                 ? `[${authorName}]: ${userMessage}`
@@ -123,5 +130,6 @@ module.exports = {
     creatorResponse,
     creatorWhyResponse,
     creatorHowResponse,
-    getCreatorResponse
+    getCreatorResponse,
+    getSystemPrompt
 };

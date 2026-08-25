@@ -4,7 +4,7 @@ const { detectTrigger, TriggerTracker } = require('../src/ai/triggerDetector');
 const { ConversationMemory } = require('../src/ai/memory');
 const { isGentleMember, normalizeRoleName, getMemberGender } = require('../src/ai/roleDetector');
 const { loadSettings } = require('../src/config/settings');
-const { isCreatorQuestion, creatorResponse, creatorWhyResponse, creatorHowResponse, getCreatorResponse, savageInstructions, gentleInstructions } = require('../src/ai/client');
+const { isCreatorQuestion, creatorResponse, creatorWhyResponse, creatorHowResponse, getCreatorResponse, getSystemPrompt, savageInstructions, gentleInstructions } = require('../src/ai/client');
 
 test('creator questions identify ZiG and provide the portfolio details', () => {
     assert.equal(isCreatorQuestion('Who created you?'), true);
@@ -35,6 +35,15 @@ test('creator questions identify ZiG and provide the portfolio details', () => {
     assert.match(savageInstructions, /No threats, doxxing, sexual harassment/i);
     assert.match(savageInstructions, /ZiG created you and is the main owner/i);
     assert.match(gentleInstructions, /ZiG created you and is the main owner/i);
+});
+
+test('assistant prompts define respectful owner recognition', () => {
+    const ownerPrompt = getSystemPrompt({ tone: 'gentle', isOwner: true });
+    const memberPrompt = getSystemPrompt({ tone: 'gentle', isOwner: false });
+    assert.match(ownerPrompt, /verified main owner/i);
+    assert.match(ownerPrompt, /JARVIS-like assistant tone/i);
+    assert.match(ownerPrompt, /Do not call other users Sir/i);
+    assert.doesNotMatch(memberPrompt, /JARVIS-like assistant tone/i);
 });
 
 test('gentle mode does not infer gender from roles or names', () => {

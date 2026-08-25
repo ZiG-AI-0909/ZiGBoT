@@ -65,6 +65,7 @@ client.on(Events.MessageCreate, async (message) => {
             message.guild?.id,
             settings.nonGentleRoleNames
         );
+    const isOwner = isServerOwner(message, settings);
     const tone = isGentle ? 'gentle' : 'savage';
     const gender = getMemberGender(
         message.member,
@@ -76,7 +77,9 @@ client.on(Events.MessageCreate, async (message) => {
     if (!userMessage) {
         if (isMentioned || isReplyToBot) {
             const greeting = isGentle
-                ? "Hey! ✨ Kya chal raha hai? Kuch share karna hai ya koi help chahiye? 🌸"
+                ? (isOwner
+                    ? "Hello, Sir. ZiGBoT online and ready. How may I assist you?"
+                    : "Hey! ✨ Kya chal raha hai? Kuch share karna hai ya koi help chahiye? 🌸")
                 : "Haan, tag kiya hai toh bol bhi de. Kya dukh dard baantna hai?";
             await message.reply(greeting);
         }
@@ -124,7 +127,8 @@ client.on(Events.MessageCreate, async (message) => {
             authorName,
             contextMessages: history,
             tone,
-            gender
+            gender,
+            isOwner
         });
 
         await message.reply(replyText);
