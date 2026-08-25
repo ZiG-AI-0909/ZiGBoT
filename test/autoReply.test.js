@@ -35,6 +35,9 @@ test('creator questions identify ZiG and provide the portfolio details', () => {
     assert.match(savageInstructions, /No threats, doxxing, sexual harassment/i);
     assert.match(savageInstructions, /ZiG created you and is the main owner/i);
     assert.match(gentleInstructions, /ZiG created you and is the main owner/i);
+    assert.match(savageInstructions, /natural English-Hinglish mix/i);
+    assert.match(gentleInstructions, /natural English-Hinglish mix/i);
+    assert.match(gentleInstructions, /cute, cheerful Gen-Z slang/i);
 });
 
 test('assistant prompts define respectful owner recognition', () => {
