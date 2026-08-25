@@ -38,6 +38,11 @@ test('creator questions identify ZiG and provide the portfolio details', () => {
     assert.match(savageInstructions, /natural English-Hinglish mix/i);
     assert.match(gentleInstructions, /natural English-Hinglish mix/i);
     assert.match(gentleInstructions, /cute, cheerful Gen-Z slang/i);
+    assert.match(savageInstructions, /make the joke land before adding slang/i);
+    assert.match(savageInstructions, /specific detail, opinion, contradiction, or situation/i);
+    assert.match(savageInstructions, /clear setup and punchline/i);
+    assert.match(savageInstructions, /Write for the whole channel/i);
+    assert.match(savageInstructions, /one strong joke over several weak insults/i);
 });
 
 test('assistant prompts define respectful owner recognition', () => {
