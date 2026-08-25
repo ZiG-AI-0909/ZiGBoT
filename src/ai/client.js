@@ -1,7 +1,17 @@
 const OpenAI = require('openai');
 
 const CREATOR_ID = '1296202178263912448';
-const creatorResponse = `ZiG is my creator and the main owner of this server. He made me to bring some fun, stress relief, and chaotic companionship to the server. Basically, he built ZiGBoT as a Discord.js bot, connected me to an AI model, and gave me my roast-and-support personality. His Discord ID is ${CREATOR_ID}; you can learn more about him at https://portfolio-eight-neon-70.vercel.app/ - he is Bhavesh Kumar Tiwari, a frontend and product developer focused on React products, AI automation, e-commerce, and conversion-first product design.`;
+const creatorResponse = `ZiG is my creator and the main owner of this server. He made me to bring some fun, stress relief, and chaotic companionship to the server. Basically, he built ZiGBoT as a Discord.js bot, connected me to an AI model, and gave me my roast-and-support personality. His Discord ID is ${CREATOR_ID}; you can learn more about him at <https://portfolio-eight-neon-70.vercel.app/> - he is Bhavesh Kumar Tiwari, a frontend and product developer focused on React products, AI automation, e-commerce, and conversion-first product design.`;
+
+const creatorWhyResponse = 'ZiG made me so the server could have a little fun, stress relief, and a bot that can actually hang out with everyone. Basically: less dry server, more chaos and good vibes.';
+const creatorHowResponse = 'Short version: ZiG built me as a Discord.js bot, connected me to an AI model, and gave me the roast-and-support personality you see here. He is the main owner of this server too.';
+
+function getCreatorResponse(message) {
+    const text = String(message || '');
+    if (/\bwhy\b/i.test(text)) return creatorWhyResponse;
+    if (/\bhow\b/i.test(text)) return creatorHowResponse;
+    return creatorResponse;
+}
 
 function isCreatorQuestion(message) {
     const text = String(message || '');
@@ -68,7 +78,7 @@ function createAiClient(settings) {
 
     return {
         async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null }) {
-            if (isCreatorQuestion(userMessage)) return creatorResponse;
+            if (isCreatorQuestion(userMessage)) return getCreatorResponse(userMessage);
 
             const genderInstruction = gender
                 ? ` The user has explicitly selected the ${gender} role; when pronouns are necessary, use ${gender === 'female' ? 'she/her' : 'he/him'} for this user. Do not make other gender assumptions.`
@@ -110,5 +120,8 @@ module.exports = {
     gentleInstructions,
     cleanOutput,
     isCreatorQuestion,
-    creatorResponse
+    creatorResponse,
+    creatorWhyResponse,
+    creatorHowResponse,
+    getCreatorResponse
 };

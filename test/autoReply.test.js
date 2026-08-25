@@ -4,7 +4,7 @@ const { detectTrigger, TriggerTracker } = require('../src/ai/triggerDetector');
 const { ConversationMemory } = require('../src/ai/memory');
 const { isGentleMember, normalizeRoleName, getMemberGender } = require('../src/ai/roleDetector');
 const { loadSettings } = require('../src/config/settings');
-const { isCreatorQuestion, creatorResponse, savageInstructions, gentleInstructions } = require('../src/ai/client');
+const { isCreatorQuestion, creatorResponse, creatorWhyResponse, creatorHowResponse, getCreatorResponse, savageInstructions, gentleInstructions } = require('../src/ai/client');
 
 test('creator questions identify ZiG and provide the portfolio details', () => {
     assert.equal(isCreatorQuestion('Who created you?'), true);
@@ -26,6 +26,11 @@ test('creator questions identify ZiG and provide the portfolio details', () => {
     assert.match(creatorResponse, /1296202178263912448/);
     assert.match(creatorResponse, /portfolio-eight-neon-70\.vercel\.app/);
     assert.match(creatorResponse, /Bhavesh Kumar Tiwari/);
+    assert.equal(getCreatorResponse('Why did ZiG create you?'), creatorWhyResponse);
+    assert.equal(getCreatorResponse('How did ZiG build this bot?'), creatorHowResponse);
+    assert.notEqual(creatorWhyResponse, creatorHowResponse);
+    assert.match(creatorWhyResponse, /fun, stress relief/i);
+    assert.match(creatorHowResponse, /Discord\.js bot/i);
     assert.match(savageInstructions, /maximum-intensity comedic insults/i);
     assert.match(savageInstructions, /No threats, doxxing, sexual harassment/i);
     assert.match(savageInstructions, /ZiG created you and is the main owner/i);
