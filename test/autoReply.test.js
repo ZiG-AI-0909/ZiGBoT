@@ -14,10 +14,15 @@ test('creator questions identify ZiG and provide the portfolio details', () => {
     assert.equal(isCreatorQuestion("What's ZiG's role here?"), false);
     assert.equal(isCreatorQuestion('Is ZiG your creator?'), true);
     assert.equal(isCreatorQuestion('Is ZiG the owner of this server?'), true);
+    assert.equal(isCreatorQuestion('Why did ZiG create you?'), true);
+    assert.equal(isCreatorQuestion('How did ZiG build this bot?'), true);
+    assert.equal(isCreatorQuestion('How does this bot play music?'), false);
     assert.equal(isCreatorQuestion('Tell me a joke'), false);
     assert.match(creatorResponse, /ZiG/);
     assert.match(creatorResponse, /creator/i);
     assert.match(creatorResponse, /main owner/i);
+    assert.match(creatorResponse, /fun, stress relief/i);
+    assert.match(creatorResponse, /Discord\.js bot/i);
     assert.match(creatorResponse, /1296202178263912448/);
     assert.match(creatorResponse, /portfolio-eight-neon-70\.vercel\.app/);
     assert.match(creatorResponse, /Bhavesh Kumar Tiwari/);
