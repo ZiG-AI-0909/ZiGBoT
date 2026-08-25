@@ -4,7 +4,7 @@ const { Client, GatewayIntentBits, Events } = require('discord.js');
 const { loadSettings } = require('./config/settings');
 const { createAiClient } = require('./ai/client');
 const { defaultMemory } = require('./ai/memory');
-const { isGentleMember, getMemberGender } = require('./ai/roleDetector');
+const { isGentleMember, getMemberGender, isNonGentleMember } = require('./ai/roleDetector');
 const { isServerOwner } = require('./security/authorization');
 const { getOwnerRoastTarget } = require('./security/ownerCommands');
 
@@ -57,15 +57,15 @@ client.on(Events.MessageCreate, async (message) => {
         .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '')
         .trim();
 
-    // The verified server owner always receives assistant mode.
-    const isGentle = isServerOwner(message, settings) ||
+    const isOwner = isServerOwner(message, settings);
+    const isNonGentle = isNonGentleMember(message.member, settings.nonGentleRoleNames);
+    const isGentle = !isNonGentle && (isOwner ||
         isGentleMember(
             message.member,
             settings.gentleRoleNames,
             message.guild?.id,
             settings.nonGentleRoleNames
-        );
-    const isOwner = isServerOwner(message, settings);
+        ));
     const tone = isGentle ? 'gentle' : 'savage';
     const gender = getMemberGender(
         message.member,
@@ -78,7 +78,7 @@ client.on(Events.MessageCreate, async (message) => {
         if (isMentioned || isReplyToBot) {
             const greeting = isGentle
                 ? (isOwner
-                    ? "Hello, Sir. ZiGBoT online and ready. How may I assist you?"
+                    ? "Hello, Sir. ZiGBoT online. Your Users.heer roast mode is active. Who are we cooking today?"
                     : "Hey! ✨ Kya chal raha hai? Kuch share karna hai ya koi help chahiye? 🌸")
                 : "Haan, tag kiya hai toh bol bhi de. Kya dukh dard baantna hai?";
             await message.reply(greeting);
@@ -128,7 +128,8 @@ client.on(Events.MessageCreate, async (message) => {
             contextMessages: history,
             tone,
             gender,
-            isOwner
+            isOwner,
+            isNonGentle
         });
 
         await message.reply(replyText);

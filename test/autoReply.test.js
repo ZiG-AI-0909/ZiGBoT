@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { detectTrigger, TriggerTracker } = require('../src/ai/triggerDetector');
 const { ConversationMemory } = require('../src/ai/memory');
-const { isGentleMember, normalizeRoleName, getMemberGender } = require('../src/ai/roleDetector');
+const { isGentleMember, normalizeRoleName, getMemberGender, isNonGentleMember } = require('../src/ai/roleDetector');
 const { loadSettings } = require('../src/config/settings');
 const { isCreatorQuestion, creatorResponse, creatorWhyResponse, creatorHowResponse, getCreatorResponse, getSystemPrompt, savageInstructions, gentleInstructions } = require('../src/ai/client');
 
@@ -44,6 +44,18 @@ test('assistant prompts define respectful owner recognition', () => {
     assert.match(ownerPrompt, /JARVIS-like assistant tone/i);
     assert.match(ownerPrompt, /Do not call other users Sir/i);
     assert.doesNotMatch(memberPrompt, /JARVIS-like assistant tone/i);
+});
+
+test('Users.heer overrides gentle mode for the owner', () => {
+    const member = {
+        roles: {
+            cache: new Map([['role', { name: 'Users.heer' }]])
+        }
+    };
+
+    assert.equal(isNonGentleMember(member, ['Users.heer']), true);
+    assert.match(getSystemPrompt({ tone: 'savage', isOwner: true, isNonGentle: true }), /explicitly selected roast mode/i);
+    assert.match(getSystemPrompt({ tone: 'savage', isOwner: true, isNonGentle: true }), /Roast him directly/i);
 });
 
 test('gentle mode does not infer gender from roles or names', () => {

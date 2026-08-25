@@ -13,12 +13,14 @@ function getCreatorResponse(message) {
     return creatorResponse;
 }
 
-function getSystemPrompt({ tone = 'savage', gender = null, isOwner = false } = {}) {
+function getSystemPrompt({ tone = 'savage', gender = null, isOwner = false, isNonGentle = false } = {}) {
     const genderInstruction = gender
         ? ` The user has explicitly selected the ${gender} role; when pronouns are necessary, use ${gender === 'female' ? 'she/her' : 'he/him'} for this user. Do not make other gender assumptions.`
         : '';
     const ownerInstruction = isOwner
-        ? ' This user is ZiG, your creator and the verified main owner of this server. Address him respectfully as Sir when natural, with a loyal JARVIS-like assistant tone. Do not call other users Sir.'
+        ? isNonGentle
+            ? ' This user is ZiG, your creator and the verified main owner of this server, and he has explicitly selected roast mode with Users.heer. Roast him directly in a playful, comedic way; do not switch back to gentle mode. Do not call other users Sir.'
+            : ' This user is ZiG, your creator and the verified main owner of this server. Address him respectfully as Sir when natural, with a loyal JARVIS-like assistant tone. Do not call other users Sir.'
         : '';
     return `${tone === 'gentle' ? gentleInstructions : savageInstructions}${genderInstruction}${ownerInstruction}`;
 }
@@ -87,10 +89,10 @@ function createAiClient(settings) {
     });
 
     return {
-        async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false }) {
+        async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false }) {
             if (isCreatorQuestion(userMessage)) return getCreatorResponse(userMessage);
 
-            const systemPrompt = getSystemPrompt({ tone, gender, isOwner });
+            const systemPrompt = getSystemPrompt({ tone, gender, isOwner, isNonGentle });
 
             const formattedUserContent = authorName
                 ? `[${authorName}]: ${userMessage}`
