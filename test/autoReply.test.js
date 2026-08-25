@@ -2,9 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { detectTrigger, TriggerTracker } = require('../src/ai/triggerDetector');
 const { ConversationMemory } = require('../src/ai/memory');
-const { isGentleMember, normalizeRoleName } = require('../src/ai/roleDetector');
+const { isGentleMember, normalizeRoleName, getMemberGender } = require('../src/ai/roleDetector');
 const { loadSettings } = require('../src/config/settings');
-const { isCreatorQuestion, creatorResponse, savageInstructions } = require('../src/ai/client');
+const { isCreatorQuestion, creatorResponse, savageInstructions, gentleInstructions } = require('../src/ai/client');
 
 test('creator questions identify ZiG and provide the portfolio details', () => {
     assert.equal(isCreatorQuestion('Who created you?'), true);
@@ -17,6 +17,14 @@ test('creator questions identify ZiG and provide the portfolio details', () => {
     assert.match(creatorResponse, /Bhavesh Kumar Tiwari/);
     assert.match(savageInstructions, /maximum-intensity comedic insults/i);
     assert.match(savageInstructions, /No threats, doxxing, sexual harassment/i);
+});
+
+test('gentle mode does not infer gender from roles or names', () => {
+    assert.match(gentleInstructions, /Do not infer or assign gender/i);
+    assert.match(gentleInstructions, /gender-neutral language by default/i);
+    assert.match(gentleInstructions, /Only use a user's stated name or pronouns/i);
+    assert.doesNotMatch(gentleInstructions, /If user is female.*Treat her/i);
+    assert.doesNotMatch(gentleInstructions, /If user is male.*Treat him/i);
 });
 
 test('detectTrigger identifies stress keywords correctly in English and Hinglish', () => {
@@ -152,6 +160,21 @@ test('isGentleMember detects Unicode and standard she/her / girl roles', () => {
     assert.equal(isGentleMember(null), false);
 });
 
+test('getMemberGender detects only the explicit female and male roles', () => {
+    const createMemberWithRoles = (roleNames) => ({
+        roles: {
+            cache: new Map(roleNames.map((name, i) => [`${i}`, { name }]))
+        }
+    });
+    const femaleRoles = ['ｓｈｅ ﹒ ｈｅｒ'];
+    const maleRoles = ['ｈｅ ﹒ ｈｉｍ'];
+
+    assert.equal(getMemberGender(createMemberWithRoles(femaleRoles), femaleRoles, maleRoles), 'female');
+    assert.equal(getMemberGender(createMemberWithRoles(maleRoles), femaleRoles, maleRoles), 'male');
+    assert.equal(getMemberGender(createMemberWithRoles(['Users.heer']), femaleRoles, maleRoles), null);
+    assert.equal(getMemberGender(createMemberWithRoles(['Queen']), femaleRoles, maleRoles), null);
+});
+
 test('loadSettings parses auto-reply configuration options', () => {
     process.env.DISCORD_TOKEN = 'mock-token';
     process.env.NVIDIA_API_KEY = 'mock-key';
@@ -165,4 +188,6 @@ test('loadSettings parses auto-reply configuration options', () => {
     assert.equal(settings.autoReplyKeywords, true);
     assert.equal(settings.humorStyle, 'witty_stress_relief');
     assert.ok(settings.gentleRoleNames.includes('ｓｈｅ ﹒ ｈｅｒ'));
+    assert.deepEqual(settings.femaleRoleNames, ['ｓｈｅ ﹒ ｈｅｒ', 'she/her']);
+    assert.deepEqual(settings.maleRoleNames, ['ｈｅ ﹒ ｈｉｍ', 'he/him']);
 });

@@ -31,6 +31,8 @@ const defaultGentleRoles = [
     'softie',
     'peaceful'
 ];
+const defaultFemaleRoles = ['ｓｈｅ ﹒ ｈｅｒ', 'she/her'];
+const defaultMaleRoles = ['ｈｅ ﹒ ｈｉｍ', 'he/him'];
 const defaultNonGentleRoles = ['Users.heer'];
 
 function loadSettings() {
@@ -68,6 +70,12 @@ function loadSettings() {
         gentleRoleNames: process.env.GENTLE_ROLE_NAMES
             ? parseList(process.env.GENTLE_ROLE_NAMES)
             : defaultGentleRoles,
+        femaleRoleNames: process.env.FEMALE_ROLE_NAMES
+            ? parseList(process.env.FEMALE_ROLE_NAMES)
+            : defaultFemaleRoles,
+        maleRoleNames: process.env.MALE_ROLE_NAMES
+            ? parseList(process.env.MALE_ROLE_NAMES)
+            : defaultMaleRoles,
         nonGentleRoleNames: process.env.NON_GENTLE_ROLE_NAMES
             ? parseList(process.env.NON_GENTLE_ROLE_NAMES)
             : defaultNonGentleRoles,
@@ -82,4 +90,4 @@ function loadSettings() {
     };
 }
 
-module.exports = { loadSettings, defaultGentleRoles };
+module.exports = { loadSettings, defaultGentleRoles, defaultFemaleRoles, defaultMaleRoles };

@@ -7,6 +7,22 @@ function normalizeRoleName(name) {
         .replace(/[^a-z0-9]/g, '');      // strip all symbols/spaces
 }
 
+function getMemberGender(member, configuredFemaleRoles = [], configuredMaleRoles = []) {
+    if (!member?.roles?.cache) return null;
+
+    const femaleRoles = new Set(configuredFemaleRoles.map(normalizeRoleName).filter(Boolean));
+    const maleRoles = new Set(configuredMaleRoles.map(normalizeRoleName).filter(Boolean));
+    let gender = null;
+
+    for (const role of member.roles.cache.values()) {
+        const normalizedRole = normalizeRoleName(role.name);
+        if (femaleRoles.has(normalizedRole)) gender = 'female';
+        if (maleRoles.has(normalizedRole)) gender = 'male';
+    }
+
+    return gender;
+}
+
 function isGentleMember(member, configuredGentleRoles = [], guildId = '', configuredNonGentleRoles = []) {
     if (!member || !member.roles || !member.roles.cache) {
         return false;
@@ -58,5 +74,6 @@ function isGentleMember(member, configuredGentleRoles = [], guildId = '', config
 
 module.exports = {
     normalizeRoleName,
-    isGentleMember
+    isGentleMember,
+    getMemberGender
 };

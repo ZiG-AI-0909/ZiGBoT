@@ -4,7 +4,7 @@ const { Client, GatewayIntentBits, Events } = require('discord.js');
 const { loadSettings } = require('./config/settings');
 const { createAiClient } = require('./ai/client');
 const { defaultMemory } = require('./ai/memory');
-const { isGentleMember } = require('./ai/roleDetector');
+const { isGentleMember, getMemberGender } = require('./ai/roleDetector');
 const { isServerOwner } = require('./security/authorization');
 const { getOwnerRoastTarget } = require('./security/ownerCommands');
 
@@ -66,13 +66,18 @@ client.on(Events.MessageCreate, async (message) => {
             settings.nonGentleRoleNames
         );
     const tone = isGentle ? 'gentle' : 'savage';
+    const gender = getMemberGender(
+        message.member,
+        settings.femaleRoleNames,
+        settings.maleRoleNames
+    );
 
     // If a user just mentions @ZiGBoT without any text
     if (!userMessage) {
         if (isMentioned || isReplyToBot) {
             const greeting = isGentle
-                ? "Hey bestie! ✨ Kya chal raha hai? Kuch share karna hai ya koi help chahiye? 🌸"
-                : "Haan bhai, tag kiya hai toh bol bhi de. Kya dukh dard baantna hai?";
+                ? "Hey! ✨ Kya chal raha hai? Kuch share karna hai ya koi help chahiye? 🌸"
+                : "Haan, tag kiya hai toh bol bhi de. Kya dukh dard baantna hai?";
             await message.reply(greeting);
         }
         return;
@@ -90,7 +95,12 @@ client.on(Events.MessageCreate, async (message) => {
                 userMessage: `Roast the mentioned target named ${targetName}. Keep the roast directed only at that target, not the server owner or ZiGBoT.`,
                 authorName: targetName,
                 contextMessages: history,
-                tone: 'savage'
+                tone: 'savage',
+                gender: getMemberGender(
+                    targetMember,
+                    settings.femaleRoleNames,
+                    settings.maleRoleNames
+                )
             });
 
             await message.reply(replyText);
@@ -113,7 +123,8 @@ client.on(Events.MessageCreate, async (message) => {
             userMessage,
             authorName,
             contextMessages: history,
-            tone
+            tone,
+            gender
         });
 
         await message.reply(replyText);
