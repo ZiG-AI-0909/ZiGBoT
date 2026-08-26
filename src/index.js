@@ -59,13 +59,12 @@ client.on(Events.MessageCreate, async (message) => {
 
     const isOwner = isServerOwner(message, settings);
     const isNonGentle = isNonGentleMember(message.member, settings.nonGentleRoleNames);
-    const isGentle = !isNonGentle && (isOwner ||
-        isGentleMember(
-            message.member,
-            settings.gentleRoleNames,
-            message.guild?.id,
-            settings.nonGentleRoleNames
-        ));
+    const isGentle = !isOwner && !isNonGentle && isGentleMember(
+        message.member,
+        settings.gentleRoleNames,
+        message.guild?.id,
+        settings.nonGentleRoleNames
+    );
     const tone = isGentle ? 'gentle' : 'savage';
     const gender = getMemberGender(
         message.member,
