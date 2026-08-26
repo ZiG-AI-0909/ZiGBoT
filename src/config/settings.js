@@ -60,7 +60,7 @@ function loadSettings() {
         nvidiaApiKey: process.env.NVIDIA_API_KEY,
         serverOwnerId: process.env.SERVER_OWNER_ID || '',
         serverOwnerRoleName: process.env.SERVER_OWNER_ROLE_NAME || '꧁༺ ZiG ༻꧂',
-        aiModel: process.env.AI_MODEL || 'meta/llama-3.1-8b-instruct',
+        aiModel: process.env.AI_MODEL || 'openai/gpt-oss-20b',
         logChannelId: process.env.LOG_CHANNEL_ID || '',
         respondToAllMessages: process.env.RESPOND_TO_ALL_MESSAGES === 'true',
         chatChannelIds: parseList(process.env.CHAT_CHANNEL_IDS),
