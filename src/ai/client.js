@@ -111,8 +111,10 @@ function createAiClient(settings) {
             const response = await client.chat.completions.create({
                 model: settings.aiModel,
                 messages,
-                temperature: tone === 'gentle' ? 0.75 : 0.95,
-                max_tokens: 180
+                temperature: 1,
+                top_p: 1,
+                max_tokens: 4096,
+                stream: false
             });
 
             const content = response.choices?.[0]?.message?.content;
