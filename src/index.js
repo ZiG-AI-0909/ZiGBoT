@@ -4,6 +4,7 @@ const { Client, GatewayIntentBits, Events } = require('discord.js');
 const { loadSettings } = require('./config/settings');
 const { createAiClient } = require('./ai/client');
 const { defaultMemory } = require('./ai/memory');
+const { detectTrigger, defaultTracker } = require('./ai/triggerDetector');
 const { isGentleMember, getMemberGender, isNonGentleMember } = require('./ai/roleDetector');
 const { isServerOwner } = require('./security/authorization');
 const { getOwnerRoastTarget } = require('./security/ownerCommands');
@@ -59,10 +60,18 @@ client.on(Events.MessageCreate, async (message) => {
     }
 
     const inChatChannel = settings.chatChannelIds.includes(message.channel.id);
+    const trigger = settings.autoReplyKeywords
+        ? detectTrigger(message.content)
+        : { matched: false };
 
-    // ONLY reply if explicitly mentioned, replied to, or in a dedicated chat channel
-    const shouldReply = isMentioned || isReplyToBot || inChatChannel || settings.respondToAllMessages;
+    // Reply to explicit interactions, configured chat channels, or enabled keywords.
+    const shouldReply = isMentioned || isReplyToBot || inChatChannel || settings.respondToAllMessages || trigger.matched;
     if (!shouldReply) return;
+
+    if (trigger.matched) {
+        if (!defaultTracker.canTrigger(message.channel.id, message.author.id, settings.cooldownSeconds)) return;
+        defaultTracker.recordTrigger(message.channel.id, message.author.id);
+    }
 
     // Clean user message by removing the @bot mention tag
     const userMessage = message.content
