@@ -8,6 +8,18 @@ const { isGentleMember, getMemberGender, isNonGentleMember } = require('./ai/rol
 const { isServerOwner } = require('./security/authorization');
 const { getOwnerRoastTarget } = require('./security/ownerCommands');
 
+function logAiError(error) {
+    const providerError = error?.error;
+    const details = [
+        error?.status && `status=${error.status}`,
+        error?.code && `code=${error.code}`,
+        providerError?.type && `type=${providerError.type}`,
+        providerError?.code && `providerCode=${providerError.code}`,
+        providerError?.message || error?.message || 'Unknown AI error'
+    ].filter(Boolean).join(' | ');
+    console.error(`[ZiGBoT AI ERROR] ${details}`);
+}
+
 const settings = loadSettings();
 const ai = createAiClient(settings);
 const client = new Client({
@@ -109,7 +121,7 @@ client.on(Events.MessageCreate, async (message) => {
             defaultMemory.addMessage(message.channel.id, 'user', userMessage, message.author.username);
             defaultMemory.addMessage(message.channel.id, 'assistant', replyText);
         } catch (error) {
-            console.error(`[ZiGBoT ERROR] ${error.message}`);
+            logAiError(error);
             await message.reply("😅 Dimaag crash ho gaya ek second ke liye! Ek baar wapas bol na.").catch(() => {});
         }
         return;
@@ -137,7 +149,7 @@ client.on(Events.MessageCreate, async (message) => {
         defaultMemory.addMessage(message.channel.id, 'user', userMessage, authorName);
         defaultMemory.addMessage(message.channel.id, 'assistant', replyText);
     } catch (error) {
-        console.error(`[ZiGBoT ERROR] ${error.message}`);
+        logAiError(error);
         await message.reply("😅 Dimaag crash ho gaya ek second ke liye! Ek baar wapas bol na.").catch(() => {});
     }
 });
