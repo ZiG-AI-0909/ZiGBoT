@@ -21,6 +21,8 @@ function logAiError(error) {
     console.error(`[ZiGBoT AI ERROR] ${details}`);
 }
 
+const aiFailureReply = 'I am dead';
+
 const settings = loadSettings();
 const ai = createAiClient(settings);
 const client = new Client({
@@ -131,7 +133,7 @@ client.on(Events.MessageCreate, async (message) => {
             defaultMemory.addMessage(message.channel.id, 'assistant', replyText);
         } catch (error) {
             logAiError(error);
-            await message.reply("😅 Dimaag crash ho gaya ek second ke liye! Ek baar wapas bol na.").catch(() => {});
+            await message.reply(aiFailureReply).catch(() => {});
         }
         return;
     }
@@ -159,7 +161,7 @@ client.on(Events.MessageCreate, async (message) => {
         defaultMemory.addMessage(message.channel.id, 'assistant', replyText);
     } catch (error) {
         logAiError(error);
-        await message.reply("😅 Dimaag crash ho gaya ek second ke liye! Ek baar wapas bol na.").catch(() => {});
+        await message.reply(aiFailureReply).catch(() => {});
     }
 });
 
