@@ -6,7 +6,7 @@ const { destructiveActions, normalizeAction } = require('../tools/router');
 const ALLOWED_VOICE_ACTIONS = new Set([
     'join_voice', 'leave_voice', 'voice_status', 'play', 'pause_music',
     'resume_music', 'skip_music', 'stop_music', 'queue_music', 'now_playing',
-    'volume_music', 'loop_music', 'bot_help', 'chat'
+    'volume_music', 'loop_music', 'bot_help', 'chat', 'say'
 ]);
 
 function isAllowedVoiceAction(action) {
@@ -38,6 +38,17 @@ function buildVoiceTranscriptRoute(routeContext, transcript, settings, botUserId
     const intent = { action: 'chat', target: text };
 
     if (!text) return intent;
+
+    // Explicit "say <words>" (also Hinglish "bolo/bol <words>"): the speaker
+    // wants those words SPOKEN, not an AI riff on them. Anchored to the start
+    // of the transcript so "did you say something" is not a say-command, and
+    // checked first so "say stop" speaks the word instead of stopping music.
+    const sayMatch = text.match(/^(?:hey |ok |yo |zigbot |zi g bot |bot )*(?:please |plz )*(?:say|bolo|bol)[\s,:]+(.+)/i);
+    if (sayMatch) {
+        intent.action = 'say';
+        intent.message = sayMatch[1].trim().slice(0, 500);
+        return intent;
+    }
 
     // play needs a direct HTTPS audio URL in the transcript
     const urlMatch = text.match(/https:\/\/\S+/);

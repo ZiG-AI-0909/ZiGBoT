@@ -70,6 +70,33 @@ test('normalizeAction canonicalizes aliases and rejects unknown actions', () => 
     assert.equal(normalizeAction(undefined), null);
 });
 
+test('voice "say" command routes the words verbatim', () => {
+    const { buildVoiceTranscriptRoute } = require('../src/routing/voiceRoute');
+    const routeContext = { author: { id: 'user-1' }, guild: { ownerId: 'owner-123' } };
+
+    for (const phrase of ['say hello everyone', 'zigbot say testing one two', 'bolo kya haal hai', "please say: it's a nice day"]) {
+        const intent = buildVoiceTranscriptRoute(routeContext, phrase, settings, 'bot-id');
+        assert.equal(intent.action, 'say', `expected say for "${phrase}"`);
+        assert.ok(intent.message.length > 0, `expected words for "${phrase}"`);
+    }
+    assert.equal(buildVoiceTranscriptRoute(routeContext, 'say stop', settings, 'bot-id').message, 'stop');
+    // anchored: mid-sentence "say" is not a command
+    assert.equal(buildVoiceTranscriptRoute(routeContext, 'did you say something', settings, 'bot-id').action, 'chat');
+});
+
+test('say command is allowed from voice and blocked words are refused', async () => {
+    const { buildVoiceTranscriptRoute } = require('../src/routing/voiceRoute');
+    const routeContext = { author: { id: 'user-1' }, guild: { ownerId: 'owner-123' } };
+    const intent = buildVoiceTranscriptRoute(routeContext, 'say hello there friends', settings, 'bot-id');
+    assert.equal(intent.action, 'say');
+
+    const { executeTool } = require('../src/tools/router');
+    const message = fakeMessage({ author: { id: 'user-1' }, guild: { ownerId: 'owner-123', memberCount: 3, channels: { cache: { size: 2 } }, members: { me: { permissions: { has: () => true }, roles: { highest: { position: 100 } } } } } });
+    // Not connected to voice: clean refusal, no speak call.
+    const result = await executeTool(message, settings, intent, { warnStore: null });
+    assert.match(result, /need to be in a voice channel/);
+});
+
 test('bot cannot manage a role at or above its highest role', async () => {
     const message = fakeMessage({
         author: { id: 'owner-123' },

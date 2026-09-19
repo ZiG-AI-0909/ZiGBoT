@@ -221,6 +221,27 @@ async function executeTool(message, settings, intent, context = {}) {
                     ? '✅ Left the voice channel.'
                     : 'ℹ️ I am not currently in a voice channel.';
                 break;
+            case 'say': {
+                // Lazy require: ai/client.js requires tools/router.js, so a
+                // top-level import here would be circular.
+                const { moderateReplyText } = require('../ai/client');
+                const { speak } = require('../voice/voiceConversation');
+                const words = text(intent.message, 'Words', 500);
+                const guard = moderateReplyText(words);
+                if (!guard.allowed) {
+                    auditLog(message, settings, 'say', 'Blocked inappropriate words via voice guardrail.');
+                    result = '❌ I am not saying that.';
+                    break;
+                }
+                if (!isInGuildVoice(guild)) {
+                    result = '❌ I need to be in a voice channel to speak.';
+                    break;
+                }
+                await speak(guild.id, settings, guard.text);
+                result = `🗣️ Said: "${guard.text}"`;
+                target = guard.text;
+                break;
+            }
             case 'voice_status': {
                 if (!isInGuildVoice(guild)) {
                     result = '🔇 I am not connected to a voice channel.';
