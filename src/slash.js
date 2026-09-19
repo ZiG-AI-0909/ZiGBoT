@@ -46,7 +46,6 @@ function buildDefinitions() {
         new SlashCommandBuilder()
             .setName('help')
             .setDescription('List everything ZiGBoT can do')
-            .toJSON()
     ].map((command) => command.toJSON());
 }
 

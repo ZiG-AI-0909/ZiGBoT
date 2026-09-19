@@ -60,7 +60,13 @@ const client = new Client({
 
 client.once(Events.ClientReady, async (c) => {
     console.log(`✅ ${c.user.tag} is online and ready! (Mention-driven mode with role-based personas active)`);
-    await registerSlashCommands(client, settings);
+    // Slash commands are a secondary interface: a registration failure must
+    // never take down the whole bot — keep running in mention-driven mode.
+    try {
+        await registerSlashCommands(client, settings);
+    } catch (error) {
+        console.error(`[ZiGBoT SLASH] Registration failed, continuing without slash commands: ${error.message}`);
+    }
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {

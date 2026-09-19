@@ -5,7 +5,7 @@ const { RateLimiter } = require('../src/ai/rateLimiter');
 const brain = require('../src/db/brain');
 const { isAuthorizedActor, executeTool, destructiveActions } = require('../src/tools/router');
 const { buildVoiceTranscriptRoute } = require('../src/routing/voiceRoute');
-const { interactionToIntent, slashActionByCommand } = require('../src/slash');
+const { buildDefinitions, interactionToIntent, slashActionByCommand } = require('../src/slash');
 
 // ---------- Rate limiter ----------
 
@@ -258,6 +258,22 @@ test('slash commands map to canonical router actions', () => {
     assert.equal(slashActionByCommand.get('kick'), 'kick_member');
     assert.equal(slashActionByCommand.get('ban'), 'ban_member');
     assert.equal(slashActionByCommand.get('help'), 'bot_help');
+});
+
+test('buildDefinitions returns plain JSON payloads ready for the Discord API', () => {
+    // Regression guard: a stray inline .toJSON() once left a plain object in
+    // the array, and the map then crashed the whole bot on startup.
+    const definitions = buildDefinitions();
+    assert.equal(definitions.length, 4);
+    for (const definition of definitions) {
+        assert.equal(typeof definition.toJSON, 'undefined');
+        assert.equal(typeof definition.name, 'string');
+        assert.equal(typeof definition.description, 'string');
+    }
+    assert.deepEqual(
+        definitions.map(({ name }) => name),
+        ['play', 'kick', 'ban', 'help']
+    );
 });
 
 test('interactionToIntent converts options into validated intent fields', async () => {
