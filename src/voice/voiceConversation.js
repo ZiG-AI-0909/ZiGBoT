@@ -83,7 +83,11 @@ function startListening(guild, settings, onTranscript) {
     watchForEmptyChannel(guild, session);
 
     const onSpeakingStart = (userId) => {
-        if (!session.enabled || session.activeUsers.has(userId)) return;
+        if (!session.enabled || session.activeUsers.has(userId)) {
+            console.log(`[ZiGBoT VC] speaking event ignored (enabled=${session.enabled}, busy=${session.activeUsers.has(userId)}) user=${userId}`);
+            return;
+        }
+        console.log(`[ZiGBoT VC] capturing audio from user=${userId}`);
         session.activeUsers.add(userId);
         const opusStream = receiver.subscribe(userId, {
             end: { behavior: EndBehaviorType.AfterSilence, duration: 1000 }
@@ -103,10 +107,20 @@ function startListening(guild, settings, onTranscript) {
         });
         decoder.once('end', async () => {
             session.activeUsers.delete(userId);
-            if (!session.enabled || chunks.length === 0) return;
+            if (!session.enabled || chunks.length === 0) {
+                console.log(`[ZiGBoT VC] utterance discarded (enabled=${session.enabled}, chunks=${chunks.length}) user=${userId}`);
+                return;
+            }
+            const seconds = (totalBytes / (48_000 * 2 * 2)).toFixed(1);
+            console.log(`[ZiGBoT VC] utterance captured (${seconds}s, ${totalBytes} bytes) user=${userId}; transcribing...`);
             try {
                 const transcript = await transcribeUtterance(settings, chunks);
-                if (transcript) await onTranscript({ guild, userId, transcript });
+                if (!transcript) {
+                    console.log('[ZiGBoT VC] ASR returned an empty transcript; ignoring.');
+                    return;
+                }
+                console.log(`[ZiGBoT VC] transcript: "${transcript}"`);
+                await onTranscript({ guild, userId, transcript });
             } catch (error) {
                 console.error(`[ZiGBoT VOICE] ${error.message}`);
             }
@@ -147,15 +161,25 @@ async function speak(guildId, settings, text) {
         directory = result.directory;
     }
 
+    console.log(`[ZiGBoT VC] speaking reply (${text.length} chars)`);
     const player = createAudioPlayer();
+    // Without this listener, a player error is an unhandled 'error' event
+    // and crashes the whole process.
+    player.on('error', (error) => console.error(`[ZiGBoT VC] playback error: ${error.message}`));
     const resource = pcm
         ? createAudioResource(Readable.from([pcm]), { inputType: StreamType.Raw })
         : createAudioResource(outputPath, { inputType: StreamType.Arbitrary });
     connection.subscribe(player);
     player.play(resource);
     player.once(AudioPlayerStatus.Idle, () => {
+        console.log('[ZiGBoT VC] playback finished.');
         if (directory) nvidiaSpeech.removeTemporaryDirectory(directory).catch(() => {});
     });
 }
 
-module.exports = { startListening, stopListening, speak, transcribeUtterance };
+// True when the guild's voice session is actively capturing audio.
+function isListening(guildId) {
+    return sessions.get(guildId)?.enabled === true;
+}
+
+module.exports = { startListening, stopListening, speak, transcribeUtterance, isListening };

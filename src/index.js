@@ -12,7 +12,7 @@ const { getOwnerRoastTarget } = require('./security/ownerCommands');
 const { requestConfirmation } = require('./security/confirmation');
 const { executeTool, destructiveActions } = require('./tools/router');
 const { buildVoiceTranscriptRoute } = require('./routing/voiceRoute');
-const { speak } = require('./voice/voiceConversation');
+const { speak, isListening } = require('./voice/voiceConversation');
 const {
     shouldSkipReply,
     pickReactionEmoji,
@@ -285,6 +285,7 @@ client.on(Events.MessageCreate, async (message) => {
     try {
         const toolResult = await runIntent(message, settings, intent, {
             onVoiceTranscript: handleVoiceTranscript,
+            isVoiceListening: isListening,
             warnStore
         });
         if (toolResult) {

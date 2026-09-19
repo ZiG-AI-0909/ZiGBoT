@@ -221,10 +221,21 @@ async function executeTool(message, settings, intent, context = {}) {
                     ? '✅ Left the voice channel.'
                     : 'ℹ️ I am not currently in a voice channel.';
                 break;
-            case 'voice_status':
-                result = isInGuildVoice(guild)
-                    ? '🔊 I am connected to a voice channel. Say "stop listening" to pause capture.'
-                    : '🔇 I am not connected to a voice channel.';
+            case 'voice_status': {
+                if (!isInGuildVoice(guild)) {
+                    result = '🔇 I am not connected to a voice channel.';
+                    break;
+                }
+                const listening = typeof context.isVoiceListening === 'function'
+                    ? context.isVoiceListening(guild.id)
+                    : null;
+                result = listening === null
+                    ? '🔊 Connected to voice. (Diagnostic state unavailable.)'
+                    : listening
+                        ? '🔊 Connected and LISTENING. If replies are silent, watch the host logs for [ZiGBoT VC] lines.'
+                        : '⚠️ Connected but NOT listening — voice capture failed to start. Check host logs for [ZiGBoT VOICE] errors.';
+                break;
+            }
                 break;
             case 'start_voice_listening':
                 if (settings.voiceMode !== 'push-to-talk') return '❌ Voice listening is disabled by configuration.';
