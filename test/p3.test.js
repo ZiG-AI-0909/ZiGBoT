@@ -1,11 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
 
 const { RateLimiter } = require('../src/ai/rateLimiter');
-const { openDatabase, WarnStore } = require('../src/db');
+const brain = require('../src/db/brain');
 const { isAuthorizedActor, executeTool, destructiveActions } = require('../src/tools/router');
 const { buildVoiceTranscriptRoute } = require('../src/routing/voiceRoute');
 const { interactionToIntent, slashActionByCommand } = require('../src/slash');
@@ -32,41 +29,141 @@ test('rate limiter tracks users independently', () => {
     assert.equal(limiter.attempt('b', 2), true);
 });
 
-// ---------- SQLite warn store ----------
+// ---------- Mongo warn store (brain.js, fake client — no live DB) ----------
 
-function temporaryDatabase() {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zigbot-test-'));
-    const dbPath = path.join(directory, 'test.db');
-    return { dbPath, cleanup: () => fs.rmSync(directory, { recursive: true, force: true }) };
+// Minimal in-memory stand-in for the mongodb driver surface brain.js uses.
+function fakeMongoClient() {
+    const collections = new Map();
+    const createdIndexes = [];
+
+    function collection(name) {
+        if (!collections.has(name)) {
+            const docs = [];
+            let seq = 0;
+            const store = {
+                docs,
+                async createIndex(spec) {
+                    createdIndexes.push({ name, spec });
+                    return `${name}_idx_${createdIndexes.length}`;
+                },
+                async insertOne(doc) {
+                    docs.push({ ...doc });
+                    return { insertedId: doc._id ?? null };
+                },
+                async findOne(filter) {
+                    const doc = docs.find((d) => Object.entries(filter).every(([k, v]) => d[k] === v));
+                    return doc ? { ...doc } : null;
+                },
+                async updateOne(filter, update) {
+                    let doc = docs.find((d) => Object.entries(filter).every(([k, v]) => d[k] === v));
+                    let upsertedId = null;
+                    if (!doc) {
+                        doc = { ...filter };
+                        docs.push(doc);
+                        upsertedId = doc._id ?? null;
+                    }
+                    if (update.$set) {
+                        for (const [k, v] of Object.entries(update.$set)) doc[k] = v;
+                    }
+                    return { matchedCount: 1, upsertedId };
+                },
+                async countDocuments(filter) {
+                    return docs.filter((d) => Object.entries(filter).every(([k, v]) => d[k] === v)).length;
+                },
+                find(filter) {
+                    const matches = () => docs.filter((d) => Object.entries(filter).every(([k, v]) => d[k] === v));
+                    let sortKeys = {};
+                    return {
+                        sort(spec) {
+                            sortKeys = spec;
+                            return this;
+                        },
+                        async toArray() {
+                            const rows = matches().map((d) => ({ ...d }));
+                            const entries = Object.entries(sortKeys);
+                            if (entries.length > 0) {
+                                rows.sort((a, b) => {
+                                    for (const [key, dir] of entries) {
+                                        if (a[key] !== b[key]) return (a[key] - b[key]) * dir;
+                                    }
+                                    return 0;
+                                });
+                            }
+                            return rows;
+                        }
+                    };
+                },
+                async findOneAndUpdate(filter, update) {
+                    let doc = docs.find((d) => Object.entries(filter).every(([k, v]) => d[k] === v));
+                    if (!doc) {
+                        doc = { ...filter };
+                        docs.push(doc);
+                    }
+                    if (update.$inc) {
+                        for (const [k, v] of Object.entries(update.$inc)) doc[k] = (doc[k] || 0) + v;
+                    }
+                    seq = doc.seq;
+                    return { value: { ...doc } };
+                }
+            };
+            collections.set(name, store);
+        }
+        return collections.get(name);
+    }
+
+    return {
+        createdIndexes,
+        db() {
+            return { collection };
+        },
+        async connect() {}
+    };
 }
 
-test('warn store persists warnings and counts per guild+user', () => {
-    const { dbPath, cleanup } = temporaryDatabase();
-    try {
-        const db = openDatabase(dbPath);
-        const warns = new WarnStore(db);
+test('brain warns store adds, counts, and lists per guild+user with increasing ids', async () => {
+    const fake = fakeMongoClient();
+    await brain.connectBrain('mongodb://fake', { client: fake });
 
-        const first = warns.addWarning('guild-1', 'user-1', 'spamming', 'mod-1');
-        const second = warns.addWarning('guild-1', 'user-1', 'ban evasion', 'mod-2');
-        warns.addWarning('guild-2', 'user-1', 'other guild', 'mod-1');
+    const first = await brain.addWarning('guild-1', 'user-1', 'spamming', 'mod-1');
+    const second = await brain.addWarning('guild-1', 'user-1', 'ban evasion', 'mod-2');
+    await brain.addWarning('guild-2', 'user-1', 'other guild', 'mod-1');
 
-        assert.equal(first.id > 0, true);
-        assert.notEqual(first.id, second.id);
-        assert.equal(warns.countWarnings('guild-1', 'user-1'), 2);
-        assert.equal(warns.countWarnings('guild-2', 'user-1'), 1);
+    assert.equal(first.id > 0, true);
+    assert.notEqual(first.id, second.id);
+    assert.equal(await brain.countWarnings('guild-1', 'user-1'), 2);
+    assert.equal(await brain.countWarnings('guild-2', 'user-1'), 1);
 
-        const list = warns.listWarnings('guild-1', 'user-1');
-        assert.equal(list.length, 2);
-        assert.equal(list[0].reason, 'spamming'); // ordered oldest first
-        assert.equal(list[1].reason, 'ban evasion');
+    const list = await brain.listWarnings('guild-1', 'user-1');
+    assert.equal(list.length, 2);
+    assert.equal(list[0].reason, 'spamming'); // ordered oldest first
+    assert.equal(list[1].reason, 'ban evasion');
 
-        // Migrations are idempotent: reopening the same file must not fail.
-        const reopened = openDatabase(dbPath);
-        const reloaded = new WarnStore(reopened);
-        assert.equal(reloaded.countWarnings('guild-1', 'user-1'), 2);
-    } finally {
-        cleanup();
-    }
+    // Index contract preserved from the SQLite idx_warnings_guild_user index.
+    assert.deepEqual(fake.createdIndexes.find(({ name }) => name === 'users').spec, { userId: 1 });
+    assert.deepEqual(
+        fake.createdIndexes.find(({ name }) => name === 'warnings').spec,
+        { guildId: 1, userId: 1, created_at: 1 }
+    );
+});
+
+test('brain user profile defaults match the documented shape', async () => {
+    await brain.connectBrain('mongodb://fake', { client: fakeMongoClient() });
+
+    const fresh = await brain.getUser('user-9');
+    assert.deepEqual(fresh, { userId: 'user-9', warnings: [], xp: 0, notes: {} });
+
+    await brain.updateUser('user-9', { xp: 10 });
+    const patched = await brain.getUser('user-9');
+    assert.equal(patched.xp, 10);
+});
+
+test('brain functions fail loudly when not connected', async () => {
+    // Fresh module instance so leftover state from the connected tests above
+    // does not mask the unconnected guard.
+    delete require.cache[require.resolve('../src/db/brain')];
+    const fresh = require('../src/db/brain');
+    await assert.rejects(() => fresh.getUser('user-1'), /not connected/);
+    await assert.rejects(() => fresh.addWarning('g', 'u', 'r', 'm'), /not connected/);
 });
 
 // ---------- Per-guild owners / admin roles ----------

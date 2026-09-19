@@ -15,7 +15,7 @@
 | Discord | `discord.js` v14.27, `@discordjs/voice` v0.19, `@discordjs/opus` (codec), `prism-media`, `ffmpeg-static` |
 | AI | `openai` SDK v7.5 pointed at `https://integrate.api.nvidia.com/v1`, default model `openai/gpt-oss-20b` |
 | Config | `dotenv` (`.env`), validated in `src/config/settings.js` |
-| Persistence | `better-sqlite3` (WAL mode) — warns survive restarts; schema + migrations in `src/db/index.js` |
+| Persistence | `mongodb` (official Node.js driver) via MongoDB Atlas — warns survive restarts; all collections in `src/db/brain.js` |
 | Tests | Node's built-in `node:test` runner (`npm test`), syntax checks via `npm run check` |
 
 ---
@@ -49,8 +49,8 @@ src/
   tools/router.js             # ~30 admin/info/voice/music/warn intents with auth gates,
                               #   action catalog (permissions + descriptions), destructive set
   db/
-    index.js                  # better-sqlite3 connection, versioned migrations, WarnStore
-                              #   (all SQL lives here)
+    brain.js                  # MongoDB Atlas connection (native driver), users/warnings
+                              #   collections, async warn store (all queries live here)
   voice/
     voiceManager.js           # Join/leave voice, permission checks, reconnect retry logic
     localSpeech.js            # External STT/TTS executables ({input}/{output}/{text} templates)
@@ -228,10 +228,10 @@ Transient disconnects (channel moves, regional blips) no longer kill playback si
 
 ## 12. Warn System & Persistence (`src/db/`)
 
-- **SQLite via `better-sqlite3`** (WAL mode), opened at `DATABASE_PATH` (default `data/zigbot.db`, directory auto-created).
-- **All SQL lives in `src/db/index.js`** — versioned, idempotent migrations tracked in a `schema_migrations` table; the router never writes raw SQL.
+- **MongoDB Atlas via the official `mongodb` Node.js driver** (no ODM), connected at startup from `MONGODB_URI`; database `zigbot` with `users`, `warnings`, and `counters` collections.
+- **All queries live in `src/db/brain.js`** — unique index on `users.userId`, compound index on `warnings (guildId, userId, created_at)`; warning ids come from an atomic counter, mirroring the old SQLite AUTOINCREMENT.
 - **`warn_member`** (destructive → confirmation flow) records who warned, the reason, and when; **`list_warnings`** shows a member's warnings with timestamps.
-- Warns survive restarts; if the native module is unavailable, the bot logs the reason and degrades gracefully — warns return "storage not configured" while everything else runs unaffected.
+- Warns survive restarts. The DB is required at startup: if `connectBrain()` fails, the bot logs a clear error and exits instead of running in a broken state.
 - Everything else (conversation memory, music queues) intentionally stays in-process.
 
 ---
@@ -243,6 +243,7 @@ Transient disconnects (channel moves, regional blips) no longer kill playback si
 |---|---|
 | `DISCORD_TOKEN` | Discord bot token from the Developer Portal |
 | `NVIDIA_API_KEY` | NVIDIA NIM API key (or OpenAI-compatible endpoint key) |
+| `MONGODB_URI` | MongoDB Atlas connection string (free M0 tier at cloud.mongodb.com) — the process exits at startup without it |
 
 ### Behavior
 | Variable | Default | Description |
@@ -259,7 +260,7 @@ Transient disconnects (channel moves, regional blips) no longer kill playback si
 | `AI_RATE_LIMIT_MAX` | `8` | Max AI calls per user per window (classification + replies) |
 | `AI_RATE_LIMIT_WINDOW_SECONDS` | `60` | Sliding window for the AI rate limit |
 | `SLASH_COMMAND_GUILD_IDS` | — | Comma-separated guild IDs for instant guild-only slash registration; empty = global |
-| `DATABASE_PATH` | `data/zigbot.db` | SQLite file for the warn system |
+| `MONGODB_URI` | — | MongoDB Atlas connection string for the warn system (free M0 tier at cloud.mongodb.com) |
 | `HUMOR_STYLE` | `witty_stress_relief` | Personality preset |
 
 ### Roles
@@ -289,7 +290,7 @@ Transient disconnects (channel moves, regional blips) no longer kill playback si
 | `test/authorization.test.js` | Owner checks, guild-owner match requirement, roast-target gating |
 | `test/autoReply.test.js` | Creator-question regexes, prompt contents, `Users.heer` override, gender-neutrality rules, stress/fun/neutral triggers, cooldowns, memory window **+ sweep**, Unicode role detection, settings parsing, **crisis-gate cases (incl. hyperbole false-positive guards)**, **moderation blocks & banter pass-through** |
 | `test/router.test.js` | **Non-owner admin denial, destructive-set completeness, catalog/permission consistency, info/music/help without owner auth, alias canonicalization, role-hierarchy block, voice blocks destructive actions, voice allows playback/info** |
-| `test/p3.test.js` | **Rate-limiter window & per-user independence, SQLite persistence + migration idempotency, strict-fallback unchanged, per-guild owner scoping, admin-role matching/scoping, warn routing, slash intent conversion** |
+| `test/p3.test.js` | **Rate-limiter window & per-user independence, Mongo warn store (add/count/list, indexes, default profile shape, unconnected guard) via fake client, strict-fallback unchanged, per-guild owner scoping, admin-role matching/scoping, warn routing, slash intent conversion** |
 
 Run everything:
 ```bash
@@ -323,7 +324,7 @@ Quick sanity checks after inviting the bot:
 ## 16. Design Notes & Limitations
 
 - **Multi-server:** per-guild owners/admins via `GUILD_CONFIG`; conversation memory, music queues, and voice sessions are per-guild.
-- **Persistence scope:** only warns are persisted (SQLite). Conversation memory and music queues intentionally stay in-process and reset on restart.
+- **Persistence scope:** only warns are persisted (MongoDB Atlas, required at startup). Conversation memory and music queues intentionally stay in-process and reset on restart.
 - **Voice listening** depends on locally installed STT/TTS executables; unconfigured by default (safe no-op), and transcripts never leave the machine beyond those local executables.
 - **Slash-command global registration** (when `SLASH_COMMAND_GUILD_IDS` is empty) can take up to an hour to propagate on Discord's side; guild-scoped registration is instant.
 - **Compliance stance:** playback is restricted to direct HTTPS sources — no YouTube/Spotify scraping, search, or DRM bypass, by explicit design.

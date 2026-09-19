@@ -13,7 +13,7 @@ const { requestConfirmation } = require('./security/confirmation');
 const { executeTool, destructiveActions } = require('./tools/router');
 const { buildVoiceTranscriptRoute } = require('./routing/voiceRoute');
 const { registerSlashCommands, interactionToIntent } = require('./slash');
-const { openDatabase, WarnStore } = require('./db');
+const brain = require('./db/brain');
 const { startHealthServer } = require('./health');
 
 function logAiError(error) {
@@ -44,14 +44,9 @@ const ai = createAiClient({
     })
 });
 
-// Optional persistence: warns survive restarts when better-sqlite3 is usable.
+// Core persistence: MongoDB Atlas (native driver). Warn features depend on
+// it, so warnStore is only set after a successful connectBrain() below.
 let warnStore = null;
-try {
-    const db = openDatabase(settings.databasePath);
-    warnStore = new WarnStore(db);
-} catch (error) {
-    console.error(`[ZiGBoT DB] Persistence disabled: ${error.message}`);
-}
 
 const client = new Client({
     intents: [
@@ -343,4 +338,16 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
 
 startHealthServer();
 
-client.login(settings.discordToken);
+// Connect the brain before login: warn storage is core to moderation, and
+// starting without it would be a silent broken state. Fail fast instead.
+(async () => {
+    try {
+        await brain.connectBrain(process.env.MONGODB_URI);
+        warnStore = brain;
+        client.login(settings.discordToken);
+    } catch (error) {
+        console.error(`[ZiGBoT DB] MongoDB connection failed: ${error.message}`);
+        console.error('[ZiGBoT DB] MONGODB_URI is required. Create a free cluster at cloud.mongodb.com (M0 tier), put the connection string in .env, and restart.');
+        process.exit(1);
+    }
+})();

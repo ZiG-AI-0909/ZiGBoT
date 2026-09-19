@@ -86,7 +86,6 @@ function loadSettings() {
         aiRateLimitMax: Number(process.env.AI_RATE_LIMIT_MAX || 8),
         aiRateLimitWindowSeconds: Number(process.env.AI_RATE_LIMIT_WINDOW_SECONDS || 60),
         slashCommandGuildIds: parseList(process.env.SLASH_COMMAND_GUILD_IDS),
-        databasePath: process.env.DATABASE_PATH || 'data/zigbot.db',
         serverOwnerRoleName: process.env.SERVER_OWNER_ROLE_NAME || '꧁༺ ZiG ༻꧂',
         aiModel: process.env.AI_MODEL || 'openai/gpt-oss-20b',
         logChannelId: process.env.LOG_CHANNEL_ID || '',

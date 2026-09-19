@@ -328,8 +328,9 @@ async function executeTool(message, settings, intent, context = {}) {
                 const member = findMember(guild, text(intent.target, 'Member'));
                 if (!member) return '❌ I could not find that member.';
                 const reason = text(intent.reason || intent.message || 'No reason provided', 'Reason', 500);
-                const warning = warnStore.addWarning(guild.id, member.id, reason, message.author.id);
-                result = `⚠️ Warned ${member.displayName} (warning #${warning.id}): ${reason}. They now have ${warnStore.countWarnings(guild.id, member.id)} warning(s).`;
+                const warning = await warnStore.addWarning(guild.id, member.id, reason, message.author.id);
+                const warningCount = await warnStore.countWarnings(guild.id, member.id);
+                result = `⚠️ Warned ${member.displayName} (warning #${warning.id}): ${reason}. They now have ${warningCount} warning(s).`;
                 target = member.displayName;
                 break;
             }
@@ -337,7 +338,7 @@ async function executeTool(message, settings, intent, context = {}) {
                 if (!warnStore) return '❌ Warning storage is not configured.';
                 const member = findMember(guild, text(intent.target, 'Member'));
                 if (!member) return '❌ I could not find that member.';
-                const warnings = warnStore.listWarnings(guild.id, member.id);
+                const warnings = await warnStore.listWarnings(guild.id, member.id);
                 if (warnings.length === 0) {
                     result = `ℹ️ ${member.displayName} has no warnings.`;
                 } else {
