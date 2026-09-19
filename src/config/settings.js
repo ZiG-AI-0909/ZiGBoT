@@ -113,7 +113,16 @@ function loadSettings() {
         ttsCommand: process.env.TTS_COMMAND || '',
         ttsArgs: parseArgs(process.env.TTS_ARGS),
         sttTimeoutMs: Number(process.env.STT_TIMEOUT_MS || 60_000),
-        ttsTimeoutMs: Number(process.env.TTS_TIMEOUT_MS || 60_000)
+        ttsTimeoutMs: Number(process.env.TTS_TIMEOUT_MS || 60_000),
+        // Hosted NVIDIA speech (build.nvidia.com endpoints, same API key as
+        // chat). Default ON: the local Whisper/Piper binaries do not exist on
+        // Render's free tier, so the hosted path is what actually works there.
+        // Set NVIDIA_SPEECH=false to force the legacy local STT/TTS commands.
+        useNvidiaSpeech: process.env.NVIDIA_SPEECH !== 'false',
+        asrFunctionId: process.env.NVIDIA_ASR_FUNCTION_ID || '',
+        ttsEndpoint: process.env.NVIDIA_TTS_ENDPOINT || '',
+        ttsLanguage: process.env.NVIDIA_TTS_LANGUAGE || 'en-US',
+        ttsVoice: process.env.NVIDIA_TTS_VOICE || 'Magpie-Multilingual.EN-US.Aria'
     };
 }
 

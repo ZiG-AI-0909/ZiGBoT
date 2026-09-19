@@ -276,9 +276,14 @@ Transient disconnects (channel moves, regional blips) no longer kill playback si
 |---|---|---|
 | `VOICE_MODE` | `push-to-talk` | Voice mode |
 | `STORE_TRANSCRIPTS` | `false` | Persist voice transcripts (temp files deleted by default) |
-| `STT_COMMAND` / `STT_ARGS` | — | External STT executable + JSON arg template (`{input}`, `{output}`) |
-| `TTS_COMMAND` / `TTS_ARGS` | — | External TTS executable + JSON arg template (`{text}`, `{output}`) |
-| `STT_TIMEOUT_MS` / `TTS_TIMEOUT_MS` | `60000` | Executable timeouts |
+| `NVIDIA_SPEECH` | `true` | Use NVIDIA hosted ASR/TTS (no local binaries — Render-friendly). `false` restores legacy local STT/TTS commands |
+| `NVIDIA_ASR_FUNCTION_ID` | multilingual Parakeet | Override the hosted Riva ASR model function-id |
+| `NVIDIA_TTS_ENDPOINT` | Magpie multilingual | Override the hosted Magpie TTS base URL |
+| `NVIDIA_TTS_LANGUAGE` | `en-US` | TTS language (use `hi-IN` for Hindi) |
+| `NVIDIA_TTS_VOICE` | `Magpie-Multilingual.EN-US.Aria` | TTS voice name (list via the endpoint's `list_voices`) |
+| `STT_COMMAND` / `STT_ARGS` | — | Legacy local STT executable + JSON arg template (`{input}`, `{output}`) — only used when `NVIDIA_SPEECH=false` or as fallback |
+| `TTS_COMMAND` / `TTS_ARGS` | — | Legacy local TTS executable + JSON arg template (`{text}`, `{output}`) — only used when `NVIDIA_SPEECH=false` or as fallback |
+| `STT_TIMEOUT_MS` / `TTS_TIMEOUT_MS` | `60000` | Executable timeouts (legacy local path) |
 
 ---
 
@@ -325,7 +330,7 @@ Quick sanity checks after inviting the bot:
 
 - **Multi-server:** per-guild owners/admins via `GUILD_CONFIG`; conversation memory, music queues, and voice sessions are per-guild.
 - **Persistence scope:** only warns are persisted (MongoDB Atlas, required at startup). Conversation memory and music queues intentionally stay in-process and reset on restart.
-- **Voice listening** depends on locally installed STT/TTS executables; unconfigured by default (safe no-op), and transcripts never leave the machine beyond those local executables.
+- **Voice listening** uses NVIDIA hosted speech by default (`NVIDIA_SPEECH=true`): Discord audio is downsampled in pure JS (no ffmpeg) and sent to the hosted Riva ASR endpoint, and replies are synthesized with hosted Magpie TTS and played back as raw PCM — no local binaries, so it works on Render's free tier. Plain conversation in voice chat gets spoken replies; set `NVIDIA_SPEECH=false` to restore the legacy local-executable pipeline.
 - **Slash-command global registration** (when `SLASH_COMMAND_GUILD_IDS` is empty) can take up to an hour to propagate on Discord's side; guild-scoped registration is instant.
 - **Compliance stance:** playback is restricted to direct HTTPS sources — no YouTube/Spotify scraping, search, or DRM bypass, by explicit design.
 - **Safety in depth:** crisis gate → intent classification → authorization → confirmation → execution → audit → post-generation moderation. Prompts are never the only safety boundary.

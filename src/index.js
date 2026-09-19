@@ -12,6 +12,7 @@ const { getOwnerRoastTarget } = require('./security/ownerCommands');
 const { requestConfirmation } = require('./security/confirmation');
 const { executeTool, destructiveActions } = require('./tools/router');
 const { buildVoiceTranscriptRoute } = require('./routing/voiceRoute');
+const { speak } = require('./voice/voiceConversation');
 const {
     shouldSkipReply,
     pickReactionEmoji,
@@ -375,6 +376,8 @@ client.on(Events.MessageCreate, async (message) => {
 });
 
 // Voice transcripts enter the same router, with destructive actions blocked.
+// Plain conversation gets a persona reply SPOKEN back into the voice channel
+// (NVIDIA hosted TTS), sharing one conversation memory per guild voice chat.
 async function handleVoiceTranscript({ guild, userId, transcript }) {
     const channel = guild.systemChannel || guild.channels.cache.find((c) => c.isTextBased());
     if (!channel) return;
@@ -395,7 +398,43 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
         const toolResult = await runIntent({ author: { id: userId }, channel, guild, member: routeContext.member }, settings, intent, { viaVoice: true, warnStore });
         if (toolResult) {
             await channel.send(toolResult).catch(() => {});
+            return;
         }
+    } catch (error) {
+        console.error(`[ZiGBoT VOICE ROUTE] ${error.message}`);
+        return;
+    }
+
+    // Only plain conversation reaches here; confirmation flows own the text
+    // channel and say nothing back through voice.
+    if (intent.action !== 'chat') return;
+
+    try {
+        const member = guild.members.cache.get(userId);
+        const authorName = member?.displayName || member?.user?.username || 'Someone';
+        const isNonGentle = isNonGentleMember(member, settings.nonGentleRoleNames);
+        const isGentle = !isNonGentle && isGentleMember(
+            member,
+            settings.gentleRoleNames,
+            guild.id,
+            settings.nonGentleRoleNames
+        );
+        const memoryKey = `voice:${guild.id}`;
+        const history = defaultMemory.getHistory(memoryKey);
+        const replyText = await ai.reply({
+            userMessage: transcript,
+            authorName,
+            contextMessages: history,
+            tone: isGentle ? 'gentle' : 'savage',
+            gender: getMemberGender(member, settings.femaleRoleNames, settings.maleRoleNames),
+            isNonGentle,
+            userId
+        });
+
+        defaultMemory.addMessage(memoryKey, 'user', transcript, authorName);
+        defaultMemory.addMessage(memoryKey, 'assistant', replyText);
+
+        await speak(guild.id, settings, replyText);
     } catch (error) {
         console.error(`[ZiGBoT VOICE ROUTE] ${error.message}`);
     }

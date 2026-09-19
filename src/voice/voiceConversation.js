@@ -1,7 +1,4 @@
-const fs = require('node:fs');
-const fsp = require('node:fs/promises');
-const os = require('node:os');
-const path = require('node:path');
+const { Readable } = require('node:stream');
 const prism = require('prism-media');
 const {
     AudioPlayerStatus,
@@ -11,34 +8,36 @@ const {
     getVoiceConnection,
     StreamType
 } = require('@discordjs/voice');
-const { transcribeWav, synthesizeSpeech, removeTemporaryDirectory } = require('./localSpeech');
+const localSpeech = require('./localSpeech');
+const nvidiaSpeech = require('./nvidiaSpeech');
 
 const sessions = new Map();
 
-function wavHeader(dataLength) {
-    const header = Buffer.alloc(44);
-    header.write('RIFF', 0);
-    header.writeUInt32LE(36 + dataLength, 4);
-    header.write('WAVE', 8);
-    header.write('fmt ', 12);
-    header.writeUInt32LE(16, 16);
-    header.writeUInt16LE(1, 20);
-    header.writeUInt16LE(2, 22);
-    header.writeUInt32LE(48000, 24);
-    header.writeUInt32LE(192000, 28);
-    header.writeUInt16LE(4, 32);
-    header.writeUInt16LE(16, 34);
-    header.write('data', 36);
-    header.writeUInt32LE(dataLength, 40);
-    return header;
-}
+// Leave the voice channel after it has been empty of humans for this long.
+const EMPTY_VC_CHECK_MS = 15_000;
+const EMPTY_VC_LEAVE_AFTER_MS = 60_000;
 
-async function writeTemporaryWav(chunks) {
-    const pcm = Buffer.concat(chunks);
-    const directory = await fsp.mkdtemp(path.join(os.tmpdir(), 'zigbot-stt-'));
-    const wavPath = path.join(directory, 'speech.wav');
-    await fsp.writeFile(wavPath, Buffer.concat([wavHeader(pcm.length), pcm]));
-    return { directory, wavPath };
+/**
+ * Transcribes one utterance: NVIDIA hosted ASR first (Render-safe, no local
+ * binaries), local STT command as a configured fallback. Returns '' when
+ * nothing intelligible was captured.
+ */
+async function transcribeUtterance(settings, chunks) {
+    if (settings.useNvidiaSpeech !== false) {
+        try {
+            const transcript = await nvidiaSpeech.transcribePcmChunks(settings, chunks);
+            if (transcript) return transcript;
+        } catch (error) {
+            console.error(`[ZiGBoT VOICE] NVIDIA ASR failed, trying local STT: ${error.message}`);
+        }
+    }
+    if (!settings.sttCommand) return '';
+    const { directory, wavPath } = await nvidiaSpeech.writeTemporaryWav(chunks);
+    try {
+        return (await localSpeech.transcribeWav(settings, wavPath)) || '';
+    } finally {
+        await nvidiaSpeech.removeTemporaryDirectory(directory).catch(() => {});
+    }
 }
 
 function stopListening(guildId) {
@@ -46,8 +45,31 @@ function stopListening(guildId) {
     if (!session) return false;
     session.enabled = false;
     session.receiver.speaking.off('start', session.onSpeakingStart);
+    if (session.emptyCheckInterval) clearInterval(session.emptyCheckInterval);
     sessions.delete(guildId);
     return true;
+}
+
+// Auto-leave: when every human has left the bot's voice channel, stop
+// listening and disconnect so the bot never sits alone in an empty VC.
+function watchForEmptyChannel(guild, session) {
+    session.emptyCheckInterval = setInterval(() => {
+        const botChannelId = guild.members?.me?.voice?.channelId;
+        if (!botChannelId) {
+            stopListening(guild.id);
+            return;
+        }
+        const humansPresent = guild.voiceStates.cache.some(
+            (state) => state.channelId === botChannelId && !state.member?.user?.bot
+        );
+        if (!humansPresent) {
+            console.log(`[ZiGBoT VOICE] Channel empty in ${guild.name}; disconnecting.`);
+            stopListening(guild.id);
+            const connection = getVoiceConnection(guild.id);
+            if (connection) connection.destroy();
+        }
+    }, EMPTY_VC_CHECK_MS);
+    session.emptyCheckInterval.unref?.();
 }
 
 function startListening(guild, settings, onTranscript) {
@@ -58,6 +80,7 @@ function startListening(guild, settings, onTranscript) {
     const receiver = connection.receiver;
     const session = { enabled: true, activeUsers: new Set(), receiver };
     sessions.set(guild.id, session);
+    watchForEmptyChannel(guild, session);
 
     const onSpeakingStart = (userId) => {
         if (!session.enabled || session.activeUsers.has(userId)) return;
@@ -81,15 +104,11 @@ function startListening(guild, settings, onTranscript) {
         decoder.once('end', async () => {
             session.activeUsers.delete(userId);
             if (!session.enabled || chunks.length === 0) return;
-            let temporary;
             try {
-                temporary = await writeTemporaryWav(chunks);
-                const transcript = await transcribeWav(settings, temporary.wavPath);
+                const transcript = await transcribeUtterance(settings, chunks);
                 if (transcript) await onTranscript({ guild, userId, transcript });
             } catch (error) {
                 console.error(`[ZiGBoT VOICE] ${error.message}`);
-            } finally {
-                if (temporary) await removeTemporaryDirectory(temporary.directory);
             }
         });
     };
@@ -98,15 +117,45 @@ function startListening(guild, settings, onTranscript) {
     return true;
 }
 
+/**
+ * Speaks text through the bot's voice connection using hosted Magpie TTS.
+ * The returned PCM is already 48kHz stereo s16le, so it is fed to Discord as
+ * StreamType.Raw — no ffmpeg involved in the voice path at all.
+ * Falls back to a locally configured TTS command when NVIDIA speech is off.
+ */
 async function speak(guildId, settings, text) {
     const connection = getVoiceConnection(guildId);
     if (!connection) throw new Error('ZiGBoT is not connected to voice.');
-    const { outputPath, directory } = await synthesizeSpeech(settings, text);
+
+    let outputPath = null;
+    let directory = null;
+    let pcm = null;
+
+    if (settings.useNvidiaSpeech !== false) {
+        try {
+            const result = await nvidiaSpeech.synthesizeSpeech(settings, text);
+            outputPath = result.outputPath;
+            directory = result.directory;
+            pcm = result.pcm;
+        } catch (error) {
+            console.error(`[ZiGBoT VOICE] NVIDIA TTS failed, trying local TTS: ${error.message}`);
+        }
+    }
+    if (!outputPath) {
+        const result = await localSpeech.synthesizeSpeech(settings, text);
+        outputPath = result.outputPath;
+        directory = result.directory;
+    }
+
     const player = createAudioPlayer();
-    const resource = createAudioResource(fs.createReadStream(outputPath), { inputType: StreamType.Arbitrary });
+    const resource = pcm
+        ? createAudioResource(Readable.from([pcm]), { inputType: StreamType.Raw })
+        : createAudioResource(outputPath, { inputType: StreamType.Arbitrary });
     connection.subscribe(player);
     player.play(resource);
-    player.once(AudioPlayerStatus.Idle, () => removeTemporaryDirectory(directory).catch(() => {}));
+    player.once(AudioPlayerStatus.Idle, () => {
+        if (directory) nvidiaSpeech.removeTemporaryDirectory(directory).catch(() => {});
+    });
 }
 
-module.exports = { startListening, stopListening, speak };
+module.exports = { startListening, stopListening, speak, transcribeUtterance };
