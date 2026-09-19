@@ -12,6 +12,11 @@ const { getOwnerRoastTarget } = require('./security/ownerCommands');
 const { requestConfirmation } = require('./security/confirmation');
 const { executeTool, destructiveActions } = require('./tools/router');
 const { buildVoiceTranscriptRoute } = require('./routing/voiceRoute');
+const {
+    shouldSkipReply,
+    pickReactionEmoji,
+    deliverAiReply
+} = require('./reply/delivery');
 const { registerSlashCommands, interactionToIntent } = require('./slash');
 const brain = require('./db/brain');
 const { startHealthServer } = require('./health');
@@ -34,6 +39,8 @@ function logAiError(error) {
 
 const aiFailureReply = 'I am dead';
 const rateLimitReply = 'Easy there — you have hit my AI quota for this minute. Try again shortly. ⏳';
+
+const logReplyPacing = (message) => console.log(`[ZiGBoT REPLY] ${message}`);
 
 const settings = loadSettings();
 const ai = createAiClient({
@@ -173,6 +180,11 @@ client.on(Events.MessageCreate, async (message) => {
     const shouldReply = isMentioned || isReplyToBot || inChatChannel || settings.respondToAllMessages || trigger.matched;
     if (!shouldReply) return;
 
+    // The keyword detector is the ONLY reason we are replying — no mention,
+    // no direct reply, not an always-on chat channel. This is the sole gate
+    // for the occasional-skip / emoji-reaction behaviors further down.
+    const keywordOnlyTrigger = trigger.matched && !isMentioned && !isReplyToBot && !inChatChannel && !settings.respondToAllMessages;
+
     if (trigger.matched) {
         if (!defaultTracker.canTrigger(message.channel.id, message.author.id, settings.cooldownSeconds)) return;
         defaultTracker.recordTrigger(message.channel.id, message.author.id);
@@ -232,7 +244,7 @@ client.on(Events.MessageCreate, async (message) => {
                 )
             });
 
-            await message.reply(replyText);
+            await deliverAiReply(message, replyText, { log: logReplyPacing });
             defaultMemory.addMessage(message.channel.id, 'user', userMessage, message.author.username);
             defaultMemory.addMessage(message.channel.id, 'assistant', replyText);
         } catch (error) {
@@ -287,11 +299,33 @@ client.on(Events.MessageCreate, async (message) => {
         return;
     }
 
+    // Occasional hesitation on keyword-triggered chit-chat only. Never
+    // applies to mentions, replies, chat channels, tool/admin intents, or
+    // anything the router has already answered above. Stress triggers always
+    // get a real supportive reply (shouldSkipReply/pickReactionEmoji only
+    // fire on the 'fun' trigger type).
+    if (keywordOnlyTrigger) {
+        if (shouldSkipReply({ isKeywordTriggered: true, triggerType: trigger.type })) {
+            logReplyPacing(`intentionally skipping fun-keyword reply in #${message.channel.id} (skip chance hit)`);
+            return;
+        }
+        const reactionEmoji = pickReactionEmoji({ isKeywordTriggered: true, triggerType: trigger.type });
+        if (reactionEmoji) {
+            logReplyPacing(`reacting with ${reactionEmoji} instead of replying in #${message.channel.id}`);
+            try {
+                await message.react(reactionEmoji);
+                return;
+            } catch (error) {
+                // Missing reaction permissions must not end the reply: fall
+                // through and send a normal text reply instead.
+                logReplyPacing(`reaction failed (${error.message}), falling back to text reply`);
+            }
+        }
+    }
+
     const authorName = message.member?.displayName || message.author.username;
 
     try {
-        await message.channel.sendTyping();
-
         const history = defaultMemory.getHistory(message.channel.id);
         const replyText = await ai.reply({
             userMessage,
@@ -304,9 +338,9 @@ client.on(Events.MessageCreate, async (message) => {
             userId: message.author.id
         });
 
-        await message.reply(replyText);
+        await deliverAiReply(message, replyText, { log: logReplyPacing });
 
-        // Record message in conversation memory
+        // Record message in conversation memory (full unsplit text)
         defaultMemory.addMessage(message.channel.id, 'user', userMessage, authorName);
         defaultMemory.addMessage(message.channel.id, 'assistant', replyText);
     } catch (error) {
