@@ -280,22 +280,23 @@ async function synthesizeSpeech(settings, text) {
 
     const baseUrl = settings.ttsEndpoint
         || 'https://877104f7-e885-42b9-8de8-f6e4c6303969.invocation.api.nvcf.nvidia.com';
-    const form = new URLSearchParams({
-        text: clean,
-        language: settings.ttsLanguage || 'en-US',
-        voice: settings.ttsVoice || 'Magpie-Multilingual.EN-US.Aria',
-        encoding: 'LINEAR_PCM',
-        sample_rate_hz: String(TTS_SAMPLE_RATE)
-    });
+    // NVIDIA's documented example uses curl -F (multipart/form-data); the
+    // endpoint rejects urlencoded bodies. FormData with fetch sends multipart
+    // with the correct boundary (do NOT set Content-Type manually).
+    const form = new FormData();
+    form.append('text', clean);
+    form.append('language', settings.ttsLanguage || 'en-US');
+    form.append('voice', settings.ttsVoice || 'Magpie-Multilingual.EN-US.Aria');
+    form.append('encoding', 'LINEAR_PCM');
+    form.append('sample_rate_hz', String(TTS_SAMPLE_RATE));
 
     const response = await fetch(`${baseUrl}/v1/audio/synthesize`, {
         method: 'POST',
         headers: {
             Authorization: `Bearer ${settings.nvidiaApiKey}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
             accept: 'audio/wav'
         },
-        body: form.toString()
+        body: form
     });
     if (!response.ok) {
         const detail = await response.text().catch(() => '');

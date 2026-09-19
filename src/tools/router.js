@@ -202,8 +202,18 @@ async function executeTool(message, settings, intent, context = {}) {
             }
             case 'join_voice': {
                 const voiceChannel = await joinMemberVoiceChannel(message);
-                result = `✅ Joined **${voiceChannel.name}**. Voice capture is not enabled; I will not record or process audio yet.`;
                 target = voiceChannel.name;
+                // Voice chat is the point of joining: start capturing and
+                // transcribing immediately when the pipeline is configured.
+                const canListen = settings.voiceMode === 'push-to-talk' && typeof context.onVoiceTranscript === 'function';
+                if (canListen) {
+                    const started = startListening(guild, settings, context.onVoiceTranscript);
+                    result = started
+                        ? `✅ Joined **${voiceChannel.name}** and I am listening — talk to me!`
+                        : `✅ Joined **${voiceChannel.name}**. Already listening.`;
+                } else {
+                    result = `✅ Joined **${voiceChannel.name}**. Voice capture is not enabled; I will not record or process audio yet.`;
+                }
                 break;
             }
             case 'leave_voice':
@@ -213,7 +223,7 @@ async function executeTool(message, settings, intent, context = {}) {
                 break;
             case 'voice_status':
                 result = isInGuildVoice(guild)
-                    ? '🔊 I am connected to a voice channel. Voice capture is disabled.'
+                    ? '🔊 I am connected to a voice channel. Say "stop listening" to pause capture.'
                     : '🔇 I am not connected to a voice channel.';
                 break;
             case 'start_voice_listening':
