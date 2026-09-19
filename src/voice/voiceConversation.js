@@ -68,6 +68,9 @@ function startListening(guild, settings, onTranscript) {
         const decoder = new prism.opus.Decoder({ frameSize: 960, channels: 2, rate: 48000 });
         const chunks = [];
         let totalBytes = 0;
+        // Unhandled 'error' on a raw stream would crash the whole process.
+        opusStream.on('error', (error) => console.error(`[ZiGBoT VOICE] opus stream: ${error.message}`));
+        decoder.on('error', (error) => console.error(`[ZiGBoT VOICE] decoder: ${error.message}`));
         opusStream.pipe(decoder);
         decoder.on('data', (chunk) => {
             if (totalBytes < 48_000 * 2 * 2 * 15) {

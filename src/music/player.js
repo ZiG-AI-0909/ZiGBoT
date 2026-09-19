@@ -46,7 +46,13 @@ async function createTrackResource(track, volume) {
         '-hide_banner', '-loglevel', 'error', '-i', 'pipe:0',
         '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1'
     ], { stdio: ['pipe', 'pipe', 'pipe'] });
-    Readable.fromWeb(response.body).pipe(ffmpeg.stdin);
+    // A raw stream or ffmpeg pipe erroring without a listener crashes the process.
+    const webStream = Readable.fromWeb(response.body);
+    webStream.on('error', (error) => console.error(`[ZiGBoT MUSIC] audio stream: ${error.message}`));
+    ffmpeg.stdin.on('error', (error) => console.error(`[ZiGBoT MUSIC] ffmpeg stdin: ${error.message}`));
+    ffmpeg.stdout.on('error', (error) => console.error(`[ZiGBoT MUSIC] ffmpeg stdout: ${error.message}`));
+    ffmpeg.on('error', (error) => console.error(`[ZiGBoT MUSIC] ffmpeg process: ${error.message}`));
+    webStream.pipe(ffmpeg.stdin);
     ffmpeg.stderr.on('data', (data) => console.error(`[ZiGBoT MUSIC] ${data.toString().trim()}`));
 
     return createAudioResource(ffmpeg.stdout, {

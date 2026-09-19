@@ -55,10 +55,38 @@ function loadSettings() {
         return value.split(',').map((id) => id.trim()).filter(Boolean);
     };
 
+    // Per-guild JSON config: {"<guildId>": {"ownerId": "...", "adminRoleNames": ["..."]}}
+    const parseGuildConfig = (value) => {
+        if (!value) return { owners: new Map(), adminRoles: new Map() };
+        let parsed;
+        try {
+            parsed = JSON.parse(value);
+        } catch {
+            throw new Error('GUILD_CONFIG must be valid JSON.');
+        }
+        const owners = new Map();
+        const adminRoles = new Map();
+        for (const [guildId, config] of Object.entries(parsed || {})) {
+            if (config?.ownerId) owners.set(String(guildId), String(config.ownerId));
+            if (Array.isArray(config?.adminRoleNames)) {
+                adminRoles.set(String(guildId), config.adminRoleNames.map(String));
+            }
+        }
+        return { owners, adminRoles };
+    };
+
+    const guildConfig = parseGuildConfig(process.env.GUILD_CONFIG);
+
     return {
         discordToken: process.env.DISCORD_TOKEN,
         nvidiaApiKey: process.env.NVIDIA_API_KEY,
         serverOwnerId: process.env.SERVER_OWNER_ID || '',
+        guildOwnerIds: guildConfig.owners,
+        guildAdminRoleNames: guildConfig.adminRoles,
+        aiRateLimitMax: Number(process.env.AI_RATE_LIMIT_MAX || 8),
+        aiRateLimitWindowSeconds: Number(process.env.AI_RATE_LIMIT_WINDOW_SECONDS || 60),
+        slashCommandGuildIds: parseList(process.env.SLASH_COMMAND_GUILD_IDS),
+        databasePath: process.env.DATABASE_PATH || 'data/zigbot.db',
         serverOwnerRoleName: process.env.SERVER_OWNER_ROLE_NAME || '꧁༺ ZiG ༻꧂',
         aiModel: process.env.AI_MODEL || 'openai/gpt-oss-20b',
         logChannelId: process.env.LOG_CHANNEL_ID || '',

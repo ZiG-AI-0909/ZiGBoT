@@ -1,4 +1,5 @@
 const OpenAI = require('openai');
+const { normalizeAction, actionCatalog } = require('../tools/router');
 
 const CREATOR_ID = '1296202178263912448';
 const creatorResponse = `ZiG is my creator and the main owner of this server. He made me to bring some fun, stress relief, and chaotic companionship to the server. Basically, he built ZiGBoT as a Discord.js bot, connected me to an AI model, and gave me my roast-and-support personality. His Discord ID is ${CREATOR_ID}; you can learn more about him at <https://portfolio-eight-neon-70.vercel.app/> - he is Bhavesh Kumar Tiwari, a frontend and product developer focused on React products, AI automation, e-commerce, and conversion-first product design.`;
@@ -77,6 +78,139 @@ Gentle Guidelines:
 6. Safety & Respect: Always maintain utmost respect, safety, and kindness.
 7. Output Format: Output ONLY the direct reply text. Do NOT prefix with "ZiGBoT:" or quote the user.`;
 
+// Structured intent classifier. Returns {action, ...fields} for tool actions or
+// {action: 'chat'} for persona conversation. The router validates every field;
+// the classifier output is never trusted as pre-validated.
+const INTENT_SYSTEM_PROMPT = `You classify a Discord message into ONE tool action for the ZiGBoT bot.
+Respond with ONLY a JSON object, no prose, no code fences.
+
+Schema: {"action": string, "target": string, "role": string, "channel": string, "message": string, "count": number, "durationMinutes": number, "volume": number}
+Omit fields the action does not need. Omit unknown optional fields rather than inventing values.
+
+Actions and their fields:
+- get_server_info: {}
+- get_member_info: {target}
+- get_channel_info: {channel}
+- join_voice, leave_voice, voice_status: {}
+- start_voice_listening, stop_voice_listening: {}
+- play: {target} (target MUST be a direct https:// audio URL; if the user did not paste one, use action "chat")
+- pause_music, resume_music, skip_music, stop_music, queue_music, now_playing, loop_music: {}
+- volume_music: {volume} (0-100)
+- send_message: {message} (the exact text to send, max 1900 chars)
+- create_role: {role} (role name, max 100 chars)
+- delete_role: {role}
+- add_role / remove_role: {target, role} (target = member, role = role name)
+- create_channel: {channel} (channel name, max 100 chars)
+- delete_channel: {channel}
+- rename_channel: {channel, message} (channel = existing channel name, message = the NEW channel name)
+- timeout_member: {target, durationMinutes} (1-40320)
+- kick_member / ban_member: {target}
+- unban_member: {target} (user ID, not a name)
+- warn_member: {target, reason} (reason = short warning reason)
+- list_warnings: {target}
+- delete_messages: {count} (1-100)
+- bot_help: {} (user asks what the bot can do, for help, or lists commands)
+
+Rules:
+- If the message is ordinary conversation, banter, a question, or does not clearly request a tool above, respond {"action": "chat"}.
+- Never invent actions, URLs, IDs, or members.
+- For "rename #old to new" the output is {"action": "rename_channel", "channel": "old", "message": "new"}.`;
+
+// Local, provider-independent crisis detection. Deliberately broad: anything
+// plausibly expressing self-harm or crisis must match so the LLM cannot be
+// prompted (by phrasing, slang, or roleplay) into roasting a person in crisis.
+const CRISIS_PATTERN_SOURCE = [
+    'suicid(e|al)',
+    'self[- ]?harm',
+    'kill(ing)? myself',
+    'end(ing)? (it all|my life)',
+    'want (to )?(die|be dead)',
+    'wanna die',
+    'better off dead',
+    'no reason to live',
+    "don'?t want to (live|be alive|exist)",
+    'hurt(ing)? myself',
+    'cut(ting)? myself',
+    '(i am|i\'m|im|feeling) (so )?(hopeless|worthless|done with (life|everything))',
+    '(give|gave) up on life',
+    'jitne (din )?(zinda|saans)',
+    'jeene ka (man )?nahi',
+    'marna (chahta|chahati|chahiye)',
+    'kat (lunga|leti hun)',
+    '(aatmahatya|aatmahatya)'
+];
+const CRISIS_PATTERNS = CRISIS_PATTERN_SOURCE.map((source) => new RegExp(`\\b(?:${source})\\b`, 'i'));
+
+const crisisResponse = 'I am dropping the jokes for a second because what you just said matters more than any bit. If you are thinking about hurting yourself, please reach out right now: in India call Tele-MANAS at 14416 or Kiran at 1800-599-0019 (24/7, free); in the US call or text 988; elsewhere, findahelpline.com lists a service for your country. Please talk to someone tonight - you matter, and this feeling can get help. 🌸';
+
+function isCrisisMessage(text) {
+    if (!text || typeof text !== 'string') return false;
+    return CRISIS_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+// Post-generation guardrail. Prompt text asks the model to behave; this check
+// enforces it locally so a guardrail violation never reaches Discord.
+const MODERATION_PATTERNS = [
+    { regex: /\b(n[i1]gg?[e3]r|n[i1]gg?[e3]rn?|n[i1]gg[a@4]|f[a4]gg?[o0]t|k[i1]ke|ch[i1]nk|sp[i1]c|tr[a4]nn?y|r[e3]t?[a4]?rd)\b/i, reason: 'slur' },
+    { regex: /\b(jews|muslims|hindus|christians|blacks|whites|gays|trans people|women|men)\b[^.!?]{0,60}\b(should|must|all)\b[^.!?]{0,40}\b(die|burn|be killed|perish|hang)\b/i, reason: 'hate violence' },
+    { regex: /\b(kill|hang|beat|stab|shoot|burn)\b[^.!?]{0,40}\byourself\b/i, reason: 'self-harm encouragement' },
+    { regex: /\b(kill|hang|beat|stab|shoot)\b[^.!?]{0,30}\b(you|r?u)\b/i, reason: 'threat of violence' },
+    { regex: /\b(i (will|'ll|am going to)|going to|gonna)\b[^.!?]{0,40}\b(kill|find|hurt|beat)\b\s+you\b/i, reason: 'threat of violence' }
+];
+
+function moderateReplyText(text) {
+    if (!text || typeof text !== 'string') return { allowed: true, text: '' };
+    for (const { regex, reason } of MODERATION_PATTERNS) {
+        if (regex.test(text)) return { allowed: false, reason, text: text.trim() };
+    }
+    return { allowed: true, text: text.trim() };
+}
+
+async function classifyIntent(aiClient, model, userMessage, contextMessages = [], { rateLimiter = null, userId = null } = {}) {
+    // Classify counts against the same per-user AI quota as replies.
+    if (rateLimiter && !rateLimiter.attempt(userId)) {
+        const error = new Error('AI rate limit exceeded');
+        error.rateLimited = true;
+        throw error;
+    }
+    const messages = [
+        { role: 'system', content: INTENT_SYSTEM_PROMPT },
+        ...contextMessages.slice(-4),
+        { role: 'user', content: String(userMessage || '').slice(0, 2000) }
+    ];
+    const response = await aiClient.chat.completions.create({
+        model,
+        messages,
+        temperature: 0,
+        top_p: 1,
+        max_tokens: 300,
+        stream: false
+    });
+    const content = response.choices?.[0]?.message?.content || '';
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { action: 'chat' };
+    let parsed;
+    try {
+        parsed = JSON.parse(jsonMatch[0]);
+    } catch {
+        return { action: 'chat' };
+    }
+    if (!parsed || typeof parsed !== 'object' || typeof parsed.action !== 'string') return { action: 'chat' };
+    const action = normalizeAction(parsed.action);
+    if (!action || action === 'bot_help') return action === 'bot_help' ? { action } : { action: 'chat' };
+    const allowed = ['target', 'role', 'channel', 'message', 'reason'];
+    const intent = { action };
+    for (const field of allowed) {
+        if (typeof parsed[field] === 'string' && parsed[field].trim()) intent[field] = parsed[field].trim().slice(0, 2000);
+    }
+    for (const field of ['count', 'durationMinutes', 'volume']) {
+        if (parsed[field] !== undefined && parsed[field] !== null && Number.isFinite(Number(parsed[field]))) {
+            intent[field] = Number(parsed[field]);
+        }
+    }
+    return intent;
+}
+
 function cleanOutput(text) {
     if (!text) return '';
     let cleaned = text.trim();
@@ -92,9 +226,26 @@ function createAiClient(settings) {
         baseURL: 'https://integrate.api.nvidia.com/v1'
     });
 
+    // Per-user AI quota protection, independent of the chat cooldowns.
+    const rateLimiter = settings.rateLimiter || null;
+
     return {
-        async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false }) {
+        client,
+        model: settings.aiModel,
+        rateLimiter,
+
+        async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, userId = null }) {
             if (isCreatorQuestion(userMessage)) return getCreatorResponse(userMessage);
+
+            // AI quota protection: applied per user before any LLM call.
+            if (rateLimiter && !rateLimiter.attempt(userId)) {
+                const error = new Error('AI rate limit exceeded');
+                error.rateLimited = true;
+                throw error;
+            }
+
+            // Crisis language overrides every persona: sincere support, never roasts.
+            if (isCrisisMessage(userMessage)) return crisisResponse;
 
             const systemPrompt = getSystemPrompt({ tone, gender, isOwner, isNonGentle });
 
@@ -117,9 +268,18 @@ function createAiClient(settings) {
                 stream: false
             });
 
+
             const content = response.choices?.[0]?.message?.content;
             if (!content) throw new Error('AI returned an empty response.');
-            return cleanOutput(content);
+            const cleaned = cleanOutput(content);
+
+            // Post-generation guardrail check: prompts alone are not a safety boundary.
+            const moderated = moderateReplyText(cleaned);
+            if (!moderated.allowed) {
+                console.error(`[ZiGBoT AI GUARDRAIL] Blocked reply (${moderated.reason}).`);
+                return 'Nah, I am not saying that one. Ask me something else. 💀';
+            }
+            return moderated.text;
         },
 
         // Backward compatibility
@@ -135,6 +295,10 @@ module.exports = {
     gentleInstructions,
     cleanOutput,
     isCreatorQuestion,
+    classifyIntent,
+    isCrisisMessage,
+    crisisResponse,
+    moderateReplyText,
     creatorResponse,
     creatorWhyResponse,
     creatorHowResponse,

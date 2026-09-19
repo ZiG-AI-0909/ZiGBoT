@@ -12,8 +12,87 @@ const adminActions = new Set([
     'send_message', 'create_role', 'delete_role', 'add_role', 'remove_role',
     'create_channel', 'delete_channel', 'rename_channel', 'timeout_member',
     'kick_member', 'ban_member', 'unban_member', 'delete_messages',
-    'start_voice_listening', 'stop_voice_listening'
+    'start_voice_listening', 'stop_voice_listening', 'warn_member'
 ]);
+
+// Destructive actions require interactive Confirm/Cancel before execution.
+// timeout_member is punitive, so it belongs here alongside kick/ban/delete.
+const destructiveActions = new Set([
+    'delete_role', 'remove_role', 'delete_channel', 'timeout_member',
+    'kick_member', 'ban_member', 'unban_member', 'delete_messages',
+    'warn_member'
+]);
+
+// Aliases accept common phrasings and canonicalize to the action above.
+const actionAliases = new Map([
+    ['kick', 'kick_member'],
+    ['ban', 'ban_member'],
+    ['unban', 'unban_member'],
+    ['timeout', 'timeout_member'],
+    ['warn', 'timeout_member'],
+    ['play_music', 'play'],
+    ['play_track', 'play'],
+    ['pause', 'pause_music'],
+    ['resume', 'resume_music'],
+    ['skip', 'skip_music'],
+    ['stop', 'stop_music'],
+    ['queue', 'queue_music'],
+    ['nowplaying', 'now_playing'],
+    ['volume', 'volume_music'],
+    ['loop', 'loop_music'],
+    ['help', 'bot_help'],
+    ['serverinfo', 'get_server_info'],
+    ['memberinfo', 'get_member_info'],
+    ['channelinfo', 'get_channel_info'],
+    ['join', 'join_voice'],
+    ['leave', 'leave_voice']
+]);
+
+// Every supported action plus the permission each requires inside a guild.
+// The catalog is the source of truth for gating and /help output.
+const actionCatalog = new Map([
+    ['send_message', { permission: PermissionFlagsBits.SendMessages, description: 'Send a message to this channel.' }],
+    ['create_role', { permission: PermissionFlagsBits.ManageRoles, description: 'Create a role.' }],
+    ['delete_role', { permission: PermissionFlagsBits.ManageRoles, description: 'Delete a role.' }],
+    ['add_role', { permission: PermissionFlagsBits.ManageRoles, description: 'Give a role to a member.' }],
+    ['remove_role', { permission: PermissionFlagsBits.ManageRoles, description: 'Take a role from a member.' }],
+    ['create_channel', { permission: PermissionFlagsBits.ManageChannels, description: 'Create a text channel.' }],
+    ['delete_channel', { permission: PermissionFlagsBits.ManageChannels, description: 'Delete a text channel.' }],
+    ['rename_channel', { permission: PermissionFlagsBits.ManageChannels, description: 'Rename a text channel (channel = existing name, message = new name).' }],
+    ['timeout_member', { permission: PermissionFlagsBits.ModerateMembers, description: 'Timeout a member for a number of minutes.' }],
+    ['kick_member', { permission: PermissionFlagsBits.KickMembers, description: 'Kick a member.' }],
+    ['ban_member', { permission: PermissionFlagsBits.BanMembers, description: 'Ban a member.' }],
+    ['unban_member', { permission: PermissionFlagsBits.BanMembers, description: 'Unban a user by ID.' }],
+    ['delete_messages', { permission: PermissionFlagsBits.ManageMessages, description: 'Bulk delete 1-100 recent messages in this channel.' }],
+    ['start_voice_listening', { permission: PermissionFlagsBits.Connect, description: 'Start temporary push-to-talk voice listening.' }],
+    ['stop_voice_listening', { permission: PermissionFlagsBits.Connect, description: 'Stop voice listening.' }],
+    ['get_server_info', { permission: null, description: 'Show server info.' }],
+    ['get_member_info', { permission: null, description: 'Show info about a member.' }],
+    ['get_channel_info', { permission: null, description: 'Show info about a channel.' }],
+    ['join_voice', { permission: null, description: 'Join your current voice channel.' }],
+    ['leave_voice', { permission: null, description: 'Leave the voice channel.' }],
+    ['voice_status', { permission: null, description: 'Show voice connection status.' }],
+    ['play', { permission: null, description: 'Queue a direct HTTPS audio URL.' }],
+    ['pause_music', { permission: null, description: 'Pause playback.' }],
+    ['resume_music', { permission: null, description: 'Resume playback.' }],
+    ['skip_music', { permission: null, description: 'Skip the current track.' }],
+    ['stop_music', { permission: null, description: 'Stop playback and clear the queue.' }],
+    ['queue_music', { permission: null, description: 'Show the music queue.' }],
+    ['now_playing', { permission: null, description: 'Show the currently playing track.' }],
+    ['volume_music', { permission: null, description: 'Set playback volume (0-100).' }],
+    ['loop_music', { permission: null, description: 'Toggle looping the current track.' }],
+    ['warn_member', { permission: PermissionFlagsBits.ModerateMembers, description: 'Warn a member (destructive: needs confirmation).' }],
+    ['list_warnings', { permission: null, description: 'List warnings for a member.' }],
+    ['bot_help', { permission: null, description: 'List everything ZiGBoT can do.' }]
+]);
+
+function normalizeAction(rawAction) {
+    if (typeof rawAction !== 'string') return null;
+    const key = rawAction.trim().toLowerCase().replace(/[\s-]+/g, '_');
+    if (actionCatalog.has(key)) return key;
+    const aliased = actionAliases.get(key);
+    return aliased || null;
+}
 
 function text(value, field, max = 100) {
     if (typeof value !== 'string' || !value.trim() || value.length > max) {
@@ -46,8 +125,36 @@ async function denied(message, settings, intent, reason) {
     return `❌ ${reason}`;
 }
 
+// Owner/admin gate. Two-layer check:
+//   1. serverOwner() — the strict original guarantee (config ID = author ID =
+//      actual guild owner), kept intact as a fallback, extended per guild by
+//      GUILD_OWNER_IDS and ADMIN_ROLE_NAMES.
+//   2. botPermission() — the bot's own Discord permissions (unchanged).
+function isAuthorizedActor(message, settings) {
+    const strictOwner = ownerAuthorization(message, settings);
+    if (strictOwner.allowed) return { allowed: true };
+
+    const authorId = message.author?.id;
+    if (!authorId || !message.guild) return { allowed: false, reason: strictOwner.reason };
+
+    // Per-guild configured owner IDs (multi-server support).
+    if (settings.guildOwnerIds instanceof Map && settings.guildOwnerIds.get(message.guild.id) === authorId) {
+        return { allowed: true };
+    }
+
+    // Per-guild admin roles: member has one of the configured role names.
+    const adminRoleNames = settings.guildAdminRoleNames?.get?.(message.guild.id);
+    if (Array.isArray(adminRoleNames) && adminRoleNames.length > 0 && message.member?.roles?.cache) {
+        const normalized = new Set(adminRoleNames.map((name) => String(name).trim().toLowerCase()).filter(Boolean));
+        const hasAdminRole = message.member.roles.cache.some((role) => normalized.has(role.name.trim().toLowerCase()));
+        if (hasAdminRole) return { allowed: true };
+    }
+
+    return { allowed: false, reason: strictOwner.reason };
+}
+
 async function authorize(message, settings, intent, permission) {
-    const owner = ownerAuthorization(message, settings);
+    const owner = isAuthorizedActor(message, settings);
     if (!owner.allowed) return denied(message, settings, intent, owner.reason);
     const permissionResult = botPermission(message.guild, permission);
     if (!permissionResult.allowed) return denied(message, settings, intent, permissionResult.reason);
@@ -59,32 +166,25 @@ async function executeTool(message, settings, intent, context = {}) {
     let target = intent.target || intent.channel || intent.role || 'server';
 
     if (adminActions.has(intent.action)) {
-        const permissions = {
-            send_message: PermissionFlagsBits.SendMessages,
-            create_role: PermissionFlagsBits.ManageRoles,
-            delete_role: PermissionFlagsBits.ManageRoles,
-            add_role: PermissionFlagsBits.ManageRoles,
-            remove_role: PermissionFlagsBits.ManageRoles,
-            create_channel: PermissionFlagsBits.ManageChannels,
-            delete_channel: PermissionFlagsBits.ManageChannels,
-            rename_channel: PermissionFlagsBits.ManageChannels,
-            timeout_member: PermissionFlagsBits.ModerateMembers,
-            kick_member: PermissionFlagsBits.KickMembers,
-            ban_member: PermissionFlagsBits.BanMembers,
-            unban_member: PermissionFlagsBits.BanMembers,
-            delete_messages: PermissionFlagsBits.ManageMessages
-            , start_voice_listening: PermissionFlagsBits.Connect
-            , stop_voice_listening: PermissionFlagsBits.Connect
-        };
-        const failure = await authorize(message, settings, intent, permissions[intent.action]);
+        const failure = await authorize(message, settings, intent, actionCatalog.get(intent.action).permission);
         if (failure) return failure;
     }
+
+    // Warn storage is optional: warns are no-ops until the database is wired.
+    const warnStore = context.warnStore || null;
 
     try {
         const { guild } = message;
         let result;
 
         switch (intent.action) {
+            case 'bot_help': {
+                result = '**ZiGBoT actions:**\n' + [...actionCatalog.values()]
+                    .map(({ description }) => `• ${description}`)
+                    .join('\n');
+                break;
+            }
+            case 'get_server_info':
             case 'get_server_info':
                 result = `**${guild.name}**\nMembers: ${guild.memberCount}\nChannels: ${guild.channels.cache.size}\nCreated: <t:${Math.floor(guild.createdTimestamp / 1000)}:D>`;
                 break;
@@ -165,10 +265,11 @@ async function executeTool(message, settings, intent, context = {}) {
                 break;
             case 'loop_music':
                 result = music.toggleLoop(guild.id) ? '🔁 Loop enabled.' : '➡️ Loop disabled.';
-                break;
-            case 'send_message': {
+                break;            case 'send_message': {
                 const content = text(intent.message, 'Message', 1900);
-                await message.channel.send(content);
+                // Lock pings down: an AI-authored message may only ever notify
+                // real users already named via <@id>, never @everyone/@here/roles.
+                await message.channel.send(content, { allowedMentions: { parse: ['users'] } });
                 result = '✅ Message sent.';
                 break;
             }
@@ -214,11 +315,37 @@ async function executeTool(message, settings, intent, context = {}) {
                 break;
             }
             case 'rename_channel': {
+                // Schema contract: channel = existing channel, message = new name.
                 const channel = findChannel(guild, text(intent.channel || intent.target, 'Channel'));
-                const name = text(intent.message || intent.role, 'New channel name', 100).replace(/^#/, '').replace(/\s+/g, '-').toLowerCase();
+                const name = text(intent.message, 'New channel name', 100).replace(/^#/, '').replace(/\s+/g, '-').toLowerCase();
                 if (!channel) return '❌ I could not find that channel.';
                 await channel.setName(name, intent.reason || 'Requested by server owner through ZiGBoT');
                 result = `✅ Renamed the channel to #${name}.`;
+                break;
+            }
+            case 'warn_member': {
+                if (!warnStore) return '❌ Warning storage is not configured.';
+                const member = findMember(guild, text(intent.target, 'Member'));
+                if (!member) return '❌ I could not find that member.';
+                const reason = text(intent.reason || intent.message || 'No reason provided', 'Reason', 500);
+                const warning = warnStore.addWarning(guild.id, member.id, reason, message.author.id);
+                result = `⚠️ Warned ${member.displayName} (warning #${warning.id}): ${reason}. They now have ${warnStore.countWarnings(guild.id, member.id)} warning(s).`;
+                target = member.displayName;
+                break;
+            }
+            case 'list_warnings': {
+                if (!warnStore) return '❌ Warning storage is not configured.';
+                const member = findMember(guild, text(intent.target, 'Member'));
+                if (!member) return '❌ I could not find that member.';
+                const warnings = warnStore.listWarnings(guild.id, member.id);
+                if (warnings.length === 0) {
+                    result = `ℹ️ ${member.displayName} has no warnings.`;
+                } else {
+                    result = `⚠️ Warnings for ${member.displayName}:\n` + warnings
+                        .map((warning) => `• #${warning.id} — ${warning.reason} (by <@${warning.issued_by}>, <t:${Math.floor(warning.created_at / 1000)}:R>)`)
+                        .join('\n');
+                }
+                target = member.displayName;
                 break;
             }
             case 'timeout_member': {
@@ -272,4 +399,4 @@ async function executeTool(message, settings, intent, context = {}) {
     }
 }
 
-module.exports = { executeTool, adminActions };
+module.exports = { executeTool, adminActions, destructiveActions, actionCatalog, actionAliases, normalizeAction, isAuthorizedActor };

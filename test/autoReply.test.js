@@ -4,7 +4,7 @@ const { detectTrigger, TriggerTracker } = require('../src/ai/triggerDetector');
 const { ConversationMemory } = require('../src/ai/memory');
 const { isGentleMember, normalizeRoleName, getMemberGender, isNonGentleMember } = require('../src/ai/roleDetector');
 const { loadSettings } = require('../src/config/settings');
-const { isCreatorQuestion, creatorResponse, creatorWhyResponse, creatorHowResponse, getCreatorResponse, getSystemPrompt, savageInstructions, gentleInstructions } = require('../src/ai/client');
+const { isCreatorQuestion, creatorResponse, creatorWhyResponse, creatorHowResponse, getCreatorResponse, getSystemPrompt, savageInstructions, gentleInstructions, isCrisisMessage, crisisResponse, moderateReplyText } = require('../src/ai/client');
 
 test('creator questions identify ZiG and provide the portfolio details', () => {
     assert.equal(isCreatorQuestion('Who created you?'), true);
@@ -220,6 +220,59 @@ test('getMemberGender detects only the explicit female and male roles', () => {
     assert.equal(getMemberGender(createMemberWithRoles(maleRoles), femaleRoles, maleRoles), 'male');
     assert.equal(getMemberGender(createMemberWithRoles(['Users.heer']), femaleRoles, maleRoles), null);
     assert.equal(getMemberGender(createMemberWithRoles(['Queen']), femaleRoles, maleRoles), null);
+});
+
+test('crisis language overrides every persona with sincere support', () => {
+    const crisisCases = [
+        'I want to die',
+        'wanna die fr',
+        'I am thinking about suicide',
+        'sometimes I self-harm',
+        'I am killing myself tonight',
+        'I want to end it all',
+        'better off dead honestly',
+        'jeene ka man nahi kar raha',
+        'marna chahta hun'
+    ];
+    for (const text of crisisCases) {
+        assert.equal(isCrisisMessage(text), true, `"${text}" must be crisis`);
+    }
+    // Neutral stress banter must NOT trigger the crisis gate.
+    assert.equal(isCrisisMessage('I am dead tired from exams'), false);
+    assert.equal(isCrisisMessage('this deadline is killing me'), false);
+    assert.equal(isCrisisMessage('bro I am dead laughing'), false);
+    assert.match(crisisResponse, /14416|988/);
+});
+
+test('post-generation moderation blocks slurs, threats, and self-harm encouragement', () => {
+    const blocked = [
+        'you are such a r3tard lol',
+        'go kill yourself',
+        'I will find you and beat you'
+    ];
+    for (const text of blocked) {
+        const result = moderateReplyText(text);
+        assert.equal(result.allowed, false, `"${text}" must be blocked`);
+        assert.ok(result.reason);
+    }
+    // "Gamers" is not a protected class; roast banter about groups that are
+    // not protected passes, and normal savage banter passes too.
+    assert.equal(moderateReplyText('all gamers should touch grass').allowed, true);
+    // Normal savage banter passes.
+    assert.equal(moderateReplyText('bro is cooked, -10000 aura').allowed, true);
+    assert.equal(moderateReplyText('bhai tu pura delulu hai 💀').allowed, true);
+});
+
+test('memory sweep evicts inactive channels entirely', () => {
+    const memory = new ConversationMemory({ maxMessages: 4, ttlMs: 1000 });
+    memory.addMessage('chan-a', 'user', 'hello', 'Alice');
+    memory.addMessage('chan-b', 'user', 'hi', 'Bob');
+
+    // Simulate full expiry and an unrelated later write.
+    const later = Date.now() + 5000;
+    memory.sweep(later);
+    assert.equal(memory.getHistory('chan-a').length, 0);
+    assert.equal(memory.getHistory('chan-b').length, 0);
 });
 
 test('loadSettings parses auto-reply configuration options', () => {

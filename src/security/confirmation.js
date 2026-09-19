@@ -2,6 +2,12 @@ const crypto = require('node:crypto');
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { auditLog } = require('../logging/auditLog');
 
+function isConfirmationActor(message, settings, userId) {
+    if (!userId || userId !== message.author?.id) return false;
+    const { isAuthorizedActor } = require('../tools/router');
+    return isAuthorizedActor({ author: { id: userId }, member: message.member, guild: message.guild }, settings).allowed;
+}
+
 function requestConfirmation(message, settings, intent, execute) {
     const id = crypto.randomBytes(8).toString('hex');
     const row = new ActionRowBuilder().addComponents(
@@ -10,15 +16,17 @@ function requestConfirmation(message, settings, intent, execute) {
     );
 
     return message.reply({
-        content: `⚠️ This action is destructive: **${intent.action}**${intent.target ? ` on **${intent.target}**` : ''}.\nOnly the configured server owner can confirm it. This request expires in 45 seconds.`,
+        content: `⚠️ This action is destructive: **${intent.action}**${intent.target ? ` on **${intent.target}**` : ''}.\nOnly the requesting owner or an authorized admin can confirm it. This request expires in 45 seconds.`,
         components: [row]
     }).then(async (confirmationMessage) => {
         await auditLog({ message, settings, event: 'CONFIRMATION REQUEST', action: intent.action, target: intent.target, result: 'PENDING' });
         const collector = confirmationMessage.createMessageComponentCollector({ time: 45000 });
 
         collector.on('collect', async (interaction) => {
-            if (interaction.user.id !== message.author.id || interaction.user.id !== settings.serverOwnerId) {
-                await interaction.reply({ content: '❌ Only the original server owner may confirm this action.', ephemeral: true });
+            // Clicker must be the original requester AND an authorized actor
+            // (verified owner, per-guild owner, or configured admin role).
+            if (!isConfirmationActor(message, settings, interaction.user.id)) {
+                await interaction.reply({ content: '❌ Only the requesting owner or an authorized admin may confirm this action.', ephemeral: true });
                 return;
             }
 

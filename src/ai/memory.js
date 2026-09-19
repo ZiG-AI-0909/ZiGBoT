@@ -5,9 +5,20 @@ class ConversationMemory {
         this.channels = new Map();
     }
 
+    // Drop expired messages and channels that have gone inactive. Called from
+    // addMessage/getHistory so an idle channel's memory cannot leak forever.
+    sweep(now = Date.now()) {
+        for (const [channelId, history] of this.channels) {
+            const live = history.filter((msg) => now - msg.timestamp < this.ttlMs);
+            if (live.length === 0) this.channels.delete(channelId);
+            else if (live.length !== history.length) this.channels.set(channelId, live);
+        }
+    }
+
     addMessage(channelId, role, content, name = '') {
         if (!channelId || !content) return;
         const now = Date.now();
+        this.sweep(now);
         let history = this.channels.get(channelId) || [];
 
         // Filter out expired messages
@@ -31,6 +42,7 @@ class ConversationMemory {
     getHistory(channelId) {
         if (!channelId) return [];
         const now = Date.now();
+        this.sweep(now);
         const history = (this.channels.get(channelId) || [])
             .filter((msg) => now - msg.timestamp < this.ttlMs);
         this.channels.set(channelId, history);
