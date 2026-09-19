@@ -13,6 +13,10 @@ const nvidiaSpeech = require('./nvidiaSpeech');
 
 const sessions = new Map();
 
+// Per-guild TTS playback queue: when several people talk over each other,
+// their replies play sequentially instead of overlapping into garbage.
+const playbackQueues = new Map(); // guildId -> Promise chain tail
+
 // Leave the voice channel after it has been empty of humans for this long.
 const EMPTY_VC_CHECK_MS = 15_000;
 const EMPTY_VC_LEAVE_AFTER_MS = 60_000;
@@ -161,20 +165,36 @@ async function speak(guildId, settings, text) {
         directory = result.directory;
     }
 
-    console.log(`[ZiGBoT VC] speaking reply (${text.length} chars)`);
-    const player = createAudioPlayer();
-    // Without this listener, a player error is an unhandled 'error' event
-    // and crashes the whole process.
-    player.on('error', (error) => console.error(`[ZiGBoT VC] playback error: ${error.message}`));
-    const resource = pcm
-        ? createAudioResource(Readable.from([pcm]), { inputType: StreamType.Raw })
-        : createAudioResource(outputPath, { inputType: StreamType.Arbitrary });
-    connection.subscribe(player);
-    player.play(resource);
-    player.once(AudioPlayerStatus.Idle, () => {
+    // Queue behind any reply already playing in this guild.
+    const previous = playbackQueues.get(guildId) || Promise.resolve();
+    let release;
+    const myTurn = new Promise((resolve) => { release = resolve; });
+    playbackQueues.set(guildId, previous.then(() => myTurn));
+    await previous.catch(() => {});
+
+    try {
+        console.log(`[ZiGBoT VC] speaking reply (${text.length} chars)`);
+        const player = createAudioPlayer();
+        // Without this listener, a player error is an unhandled 'error' event
+        // and crashes the whole process.
+        player.on('error', (error) => console.error(`[ZiGBoT VC] playback error: ${error.message}`));
+        const resource = pcm
+            ? createAudioResource(Readable.from([pcm]), { inputType: StreamType.Raw })
+            : createAudioResource(outputPath, { inputType: StreamType.Arbitrary });
+        connection.subscribe(player);
+        player.play(resource);
+        await new Promise((resolve) => {
+            // Idle = finished; error = give up but never wedge the queue.
+            player.once(AudioPlayerStatus.Idle, resolve);
+            player.once('error', resolve);
+            // Absolute watchdog so a stuck stream cannot block every future reply.
+            setTimeout(resolve, 120_000).unref?.();
+        });
         console.log('[ZiGBoT VC] playback finished.');
+    } finally {
+        release?.();
         if (directory) nvidiaSpeech.removeTemporaryDirectory(directory).catch(() => {});
-    });
+    }
 }
 
 // True when the guild's voice session is actively capturing audio.
