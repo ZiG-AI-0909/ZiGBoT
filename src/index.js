@@ -14,6 +14,7 @@ const { executeTool, destructiveActions } = require('./tools/router');
 const { buildVoiceTranscriptRoute } = require('./routing/voiceRoute');
 const { registerSlashCommands, interactionToIntent } = require('./slash');
 const { openDatabase, WarnStore } = require('./db');
+const { startHealthServer } = require('./health');
 
 function logAiError(error) {
     if (error?.rateLimited) {
@@ -339,5 +340,7 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
         console.error(`[ZiGBoT VOICE ROUTE] ${error.message}`);
     }
 }
+
+startHealthServer();
 
 client.login(settings.discordToken);
