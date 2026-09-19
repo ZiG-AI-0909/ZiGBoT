@@ -14,7 +14,11 @@ function getCreatorResponse(message) {
     return creatorResponse;
 }
 
-function getSystemPrompt({ tone = 'savage', gender = null, isOwner = false, isNonGentle = false } = {}) {
+// Appended to the savage system prompt for a single reply when the user just
+// swore at the bot. Roast the behavior, never the identity/family.
+const comebackInstruction = ' The user just swore at you. Fire back with a sharp, witty, Gen-Z/Hinglish comeback that matches their energy and puts them in their place — but never use sexual content, real slurs, family-directed abuse, or anything referencing violence. Roast their behavior/attitude, not their identity or family.';
+
+function getSystemPrompt({ tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false } = {}) {
     const genderInstruction = gender
         ? ` The user has explicitly selected the ${gender} role; when pronouns are necessary, use ${gender === 'female' ? 'she/her' : 'he/him'} for this user. Do not make other gender assumptions.`
         : '';
@@ -23,7 +27,8 @@ function getSystemPrompt({ tone = 'savage', gender = null, isOwner = false, isNo
             ? ' This user is ZiG, your creator and the verified main owner of this server, and he has explicitly selected roast mode with Users.heer. Roast him directly in a playful, comedic way; do not switch back to gentle mode. Do not call other users Sir.'
             : ' This user is ZiG, your creator and the verified main owner of this server. Address him respectfully as Sir when natural, with a loyal JARVIS-like assistant tone. Do not call other users Sir.'
         : '';
-    return `${tone === 'gentle' ? gentleInstructions : savageInstructions}${genderInstruction}${ownerInstruction}`;
+    const comebackSuffix = comebackMode && tone === 'savage' ? comebackInstruction : '';
+    return `${tone === 'gentle' ? gentleInstructions : savageInstructions}${genderInstruction}${ownerInstruction}${comebackSuffix}`;
 }
 
 function isCreatorQuestion(message) {
@@ -143,6 +148,11 @@ const CRISIS_PATTERNS = CRISIS_PATTERN_SOURCE.map((source) => new RegExp(`\\b(?:
 
 const crisisResponse = 'I am dropping the jokes for a second because what you just said matters more than any bit. If you are thinking about hurting yourself, please reach out right now: in India call Tele-MANAS at 14416 or Kiran at 1800-599-0019 (24/7, free); in the US call or text 988; elsewhere, findahelpline.com lists a service for your country. Please talk to someone tonight - you matter, and this feeling can get help. 🌸';
 
+// Static de-escalation for messages whose abuse at the bot falls into the
+// excluded categories (sexual/family-directed/violent). Never matches that
+// energy — declines plainly instead. No slurs or graphic terms echoed here.
+const declineReplyText = 'Nah. I banter, I roast, I clap back — but I do not touch THAT kind of talk. Keep it clean and ask me something else. 🚫';
+
 function isCrisisMessage(text) {
     if (!text || typeof text !== 'string') return false;
     return CRISIS_PATTERNS.some((pattern) => pattern.test(text));
@@ -234,7 +244,7 @@ function createAiClient(settings) {
         model: settings.aiModel,
         rateLimiter,
 
-        async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, userId = null }) {
+        async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, declineMode = false, userId = null }) {
             if (isCreatorQuestion(userMessage)) return getCreatorResponse(userMessage);
 
             // AI quota protection: applied per user before any LLM call.
@@ -245,9 +255,13 @@ function createAiClient(settings) {
             }
 
             // Crisis language overrides every persona: sincere support, never roasts.
+            // This ordering is deliberate and must stay above comeback/decline.
             if (isCrisisMessage(userMessage)) return crisisResponse;
 
-            const systemPrompt = getSystemPrompt({ tone, gender, isOwner, isNonGentle });
+            // Excluded-category abuse at the bot: de-escalate, never match energy.
+            if (declineMode) return declineReplyText;
+
+            const systemPrompt = getSystemPrompt({ tone, gender, isOwner, isNonGentle, comebackMode });
 
             const formattedUserContent = authorName
                 ? `[${authorName}]: ${userMessage}`
@@ -298,6 +312,7 @@ module.exports = {
     classifyIntent,
     isCrisisMessage,
     crisisResponse,
+    declineReplyText,
     moderateReplyText,
     creatorResponse,
     creatorWhyResponse,

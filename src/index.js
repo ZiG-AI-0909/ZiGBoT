@@ -17,6 +17,7 @@ const {
     pickReactionEmoji,
     deliverAiReply
 } = require('./reply/delivery');
+const { detectProfanityAtBot } = require('./ai/profanityDetector');
 const { registerSlashCommands, interactionToIntent } = require('./slash');
 const brain = require('./db/brain');
 const { startHealthServer } = require('./health');
@@ -299,12 +300,34 @@ client.on(Events.MessageCreate, async (message) => {
         return;
     }
 
+    // Savage comeback detection: profanity aimed at the bot itself. Crisis
+    // language (checked above) ALWAYS overrides this; tool/admin intents
+    // (handled above) never roast; gentle-tone users are excluded; owners are
+    // excluded unless they hold Users.heer, mirroring the existing owner-mode
+    // exception. Excluded categories (sexual/family-sexual/violent abuse)
+    // fall through to a de-escalating decline instead of matching energy.
+    const botTargeted = isMentioned || isReplyToBot;
+    const profanityAtBot = botTargeted
+        ? detectProfanityAtBot(userMessage)
+        : { matched: false, category: null, term: null };
+    const comebackMode = profanityAtBot.matched
+        && profanityAtBot.category === 'profanity'
+        && tone === 'savage'
+        && !(isOwner && !isNonGentle);
+    const declineMode = profanityAtBot.matched
+        && profanityAtBot.category === 'excluded'
+        && tone === 'savage';
+    if (profanityAtBot.matched) {
+        logReplyPacing(`profanity-at-bot (${profanityAtBot.category}: "${profanityAtBot.term}") in #${message.channel.id} -> ${comebackMode ? 'comeback' : declineMode ? 'decline' : 'standard'} reply`);
+    }
+
     // Occasional hesitation on keyword-triggered chit-chat only. Never
     // applies to mentions, replies, chat channels, tool/admin intents, or
     // anything the router has already answered above. Stress triggers always
     // get a real supportive reply (shouldSkipReply/pickReactionEmoji only
-    // fire on the 'fun' trigger type).
-    if (keywordOnlyTrigger) {
+    // fire on the 'fun' trigger type). A comeback/decline reply is always
+    // delivered — never swallowed by the skip or reaction chances.
+    if (keywordOnlyTrigger && !comebackMode && !declineMode) {
         if (shouldSkipReply({ isKeywordTriggered: true, triggerType: trigger.type })) {
             logReplyPacing(`intentionally skipping fun-keyword reply in #${message.channel.id} (skip chance hit)`);
             return;
@@ -335,6 +358,8 @@ client.on(Events.MessageCreate, async (message) => {
             gender,
             isOwner,
             isNonGentle,
+            comebackMode,
+            declineMode,
             userId: message.author.id
         });
 
