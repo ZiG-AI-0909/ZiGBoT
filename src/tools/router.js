@@ -8,13 +8,17 @@ const { joinMemberVoiceChannel, leaveGuildVoice, isInGuildVoice } = require('../
 const music = require('../music/player');
 const { startListening, stopListening } = require('../voice/voiceConversation');
 const brain = require('../db/brain');
+const BEHAVIOR_SIGNALS = {
+    POSITIVE: { HELPFUL: 'helpful', SUPPORTIVE: 'supportive', KIND: 'kind', DEESCALATION: 'deescalation' },
+    NEGATIVE: { TOXIC: 'toxic', SLURS: 'slurs', HARASSMENT: 'harassment', SPAM: 'spam', WARNING: 'warning' }
+};
 
 const adminActions = new Set([
     'send_message', 'create_role', 'delete_role', 'add_role', 'remove_role',
     'create_channel', 'delete_channel', 'rename_channel', 'timeout_member',
     'kick_member', 'ban_member', 'unban_member', 'delete_messages',
     'start_voice_listening', 'stop_voice_listening', 'warn_member',
-    'memory_status'
+    'memory_status', 'behavior_status'
 ]);
 
 // Destructive actions require interactive Confirm/Cancel before execution.
@@ -87,6 +91,7 @@ const actionCatalog = new Map([
     ['list_warnings', { permission: null, description: 'List warnings for a member.' }],
     ['memory_status', { permission: null, description: 'Owner/admin diagnostic: report the real state of my persistent memory (MongoDB connection, stored memories).' }],
     ['forget_memory', { permission: null, description: 'Delete stored memories (your own; admins may target another member).' }],
+    ['behavior_status', { permission: null, description: 'Owner/admin: inspect a member\'s behavior record and standing (live from the accountability ledger).' }],
     ['bot_help', { permission: null, description: 'List everything ZiGBoT can do.' }]
 ]);
 
@@ -380,6 +385,13 @@ async function executeTool(message, settings, intent, context = {}) {
                 const reason = text(intent.reason || intent.message || 'No reason provided', 'Reason', 500);
                 const warning = await warnStore.addWarning(guild.id, member.id, reason, message.author.id);
                 const warningCount = await warnStore.countWarnings(guild.id, member.id);
+                // Accountability: every issued warning is also a negative
+                // behavior signal. A recording failure must not undo the warn.
+                try {
+                    await brain.recordBehavior(guild.id, member.id, 'warning', { source: 'warn_member', note: reason.slice(0, 200) });
+                } catch (behaviorError) {
+                    console.error(`[ZiGBoT BEHAVIOR] Failed to record warning signal: ${behaviorError.message}`);
+                }
                 result = `⚠️ Warned ${member.displayName} (warning #${warning.id}): ${reason}. They now have ${warningCount} warning(s).`;
                 target = member.displayName;
                 break;
@@ -430,6 +442,39 @@ async function executeTool(message, settings, intent, context = {}) {
                 result = lines.join('\n');
                 break;
             }
+            case 'behavior_status': {
+                // Owner/admin gate already ran via adminActions. Every number
+                // comes from the REAL behavior ledger — never estimated.
+                const member = intent.target
+                    ? findMember(guild, intent.target)
+                    : guild.members.cache.get(message.author.id) || null;
+                if (!member) return '❌ I could not find that member.';
+                if (!brain.isBehaviorAvailable()) {
+                    return '⚠️ The behavior accountability system is temporarily unavailable (MongoDB unreachable) — no record can be shown right now, and I will not invent one.';
+                }
+                try {
+                    const summary = await brain.getBehaviorSummary(guild.id, member.id);
+                    const lines = [
+                        `🧾 **Behavior record for ${member.displayName}** (live from MongoDB, ${summary.windowDays}-day window):`,
+                        `• Positive signals: **${summary.positive}** (+1 each)`,
+                        `• Negative signals: **${summary.negative}** (−2 each)`,
+                        `• Net score: **${summary.net}** → standing: **${summary.tier.toUpperCase()}**`,
+                        `• Recorded events (all time): ${summary.totalEvents}`
+                    ];
+                    if (summary.recentEvents.length > 0) {
+                        lines.push('• Latest signals: ' + summary.recentEvents
+                            .map((event) => `${event.kind === 'positive' ? '➕' : '➖'} ${event.signal} (<t:${Math.floor(event.created_at / 1000)}:R>)`)
+                            .join(', '));
+                    } else {
+                        lines.push('• Latest signals: none on record');
+                    }
+                    result = lines.join('\n');
+                    target = member.displayName;
+                } catch (error) {
+                    result = `❌ Behavior lookup failed: ${error.message}. No standing was invented — the ledger is unreachable.`;
+                }
+                break;
+            }
             case 'forget_memory': {
                 // Self-service by default. Inspecting/deleting ANOTHER user's
                 // memories requires the owner/admin gate, mirroring §9 security.
@@ -466,6 +511,12 @@ async function executeTool(message, settings, intent, context = {}) {
                 if (!member) return '❌ I could not find that member.';
                 if (!Number.isInteger(minutes) || minutes < 1 || minutes > 40320) return '❌ Timeout duration must be between 1 minute and 28 days.';
                 await member.timeout(minutes * 60 * 1000, intent.reason || 'Requested by server owner through ZiGBoT');
+                // Accountability: timeouts count against the member's record too.
+                try {
+                    await brain.recordBehavior(guild.id, member.id, 'warning', { source: 'timeout_member', note: intent.reason ? String(intent.reason).slice(0, 200) : null });
+                } catch (behaviorError) {
+                    console.error(`[ZiGBoT BEHAVIOR] Failed to record timeout signal: ${behaviorError.message}`);
+                }
                 result = `✅ Timed out ${member.displayName} for ${minutes} minutes.`;
                 break;
             }

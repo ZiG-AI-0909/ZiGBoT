@@ -16,6 +16,7 @@ const slashActionByCommand = new Map([
     ['kick', 'kick_member'],
     ['ban', 'ban_member'],
     ['memory', 'memory_status'],
+    ['reputation', 'behavior_status'],
     ['help', 'bot_help']
 ]);
 
@@ -51,6 +52,13 @@ function buildDefinitions() {
                 .setDescription('Optional: count stored memories for this member'))
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
         new SlashCommandBuilder()
+            .setName('reputation')
+            .setDescription('Owner/admin: view a member\'s behavior record and standing')
+            .addUserOption((option) => option
+                .setName('member')
+                .setDescription('Optional: defaults to yourself'))
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+        new SlashCommandBuilder()
             .setName('help')
             .setDescription('List everything ZiGBoT can do')
     ].map((command) => command.toJSON());
@@ -81,7 +89,7 @@ async function interactionToIntent(interaction) {
         const user = interaction.options.getUser('member', true);
         return { action, target: `<@${user.id}>` };
     }
-    if (action === 'memory_status') {
+    if (action === 'memory_status' || action === 'behavior_status') {
         // Optional member: only set when the owner picked one.
         const user = interaction.options.getUser('member');
         return user ? { action, target: `<@${user.id}>` } : { action };

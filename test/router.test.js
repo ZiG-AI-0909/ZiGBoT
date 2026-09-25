@@ -44,9 +44,10 @@ test('every admin action has a permission entry in the catalog', () => {
     for (const action of adminActions) {
         const entry = actionCatalog.get(action);
         assert.ok(entry, `${action} missing from catalog`);
-        // memory_status intentionally has permission: null — it is gated by
-        // owner/admin identity (isAuthorizedActor), not a Discord permission.
-        if (action !== 'memory_status') {
+        // memory_status and behavior_status intentionally have permission:
+        // null — they are gated by owner/admin identity (isAuthorizedActor),
+        // not a Discord permission.
+        if (action !== 'memory_status' && action !== 'behavior_status') {
             assert.ok(entry.permission, `${action} must require a permission`);
         }
     }

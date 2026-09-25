@@ -15,7 +15,9 @@ let users = null;
 let warnings = null;
 let counters = null;
 let memories = null;
+let behaviors = null;
 let lastMemoryError = null;
+let lastBehaviorError = null;
 
 // ---- Long-term memory store constants ----
 
@@ -23,6 +25,23 @@ const MEMORY_TYPES = new Set(['fact', 'preference', 'event', 'context']);
 const MEMORY_MAX_LENGTH = 500;
 const MEMORY_DEFAULT_LIMIT = 5;
 const MEMORY_MAX_LIMIT = 20;
+
+// ---- Behavior accountability (who did what, and how the bot treats them) ----
+// Sliding-window reputation: positive signals +1, negative -2, only events
+// newer than 30 days count. Tiers are COMPUTED from the net score, never
+// stored — a member's standing always reflects recent, real behavior.
+const BEHAVIOR_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const POSITIVE_SCORE = 1;
+const NEGATIVE_SCORE = -2;
+const BEHAVIOR_TYPES = new Set(['positive', 'negative']);
+const BEHAVIOR_SIGNALS = {
+    POSITIVE: { HELPFUL: 'helpful', SUPPORTIVE: 'supportive', KIND: 'kind', DEESCALATION: 'deescalation' },
+    NEGATIVE: { TOXIC: 'toxic', SLURS: 'slurs', HARASSMENT: 'harassment', SPAM: 'spam', WARNING: 'warning' }
+};
+const BEHAVIOR_SIGNAL_SET = new Set([
+    'helpful', 'supportive', 'kind', 'deescalation',
+    'toxic', 'slurs', 'harassment', 'spam', 'warning'
+]);
 
 // Values that must never enter the memory collection. Checked before any
 // write; a match means the write is refused outright (never silently stored).
@@ -58,12 +77,15 @@ async function connectBrain(uri, { client: injectedClient = null } = {}) {
     const nextWarnings = db.collection('warnings');
     const nextCounters = db.collection('counters');
     const nextMemories = db.collection('memories');
+    const nextBehaviors = db.collection('behaviors');
 
     await nextUsers.createIndex({ userId: 1 }, { unique: true });
     // Same lookup pattern as the old idx_warnings_guild_user SQLite index.
     await nextWarnings.createIndex({ guildId: 1, userId: 1, created_at: 1 });
     // Memory recall always filters by guild+user and sorts newest-first.
     await nextMemories.createIndex({ guildId: 1, userId: 1, created_at: -1 });
+    // Behavior accountability: per-member lookups + signal aggregation.
+    await nextBehaviors.createIndex({ guildId: 1, userId: 1, created_at: -1 });
 
     // Everything succeeded — swap the live state over in one go.
     client = newClient;
@@ -71,7 +93,9 @@ async function connectBrain(uri, { client: injectedClient = null } = {}) {
     warnings = nextWarnings;
     counters = nextCounters;
     memories = nextMemories;
+    behaviors = nextBehaviors;
     lastMemoryError = null;
+    lastBehaviorError = null;
 
     return users;
 }
@@ -226,6 +250,116 @@ async function deleteAllMemories(guildId, userId) {
     }
 }
 
+// ---- Behavior accountability API ----
+// Records real behavior events and computes a sliding-window reputation from
+// them. Tiers are DERIVED, never stored, so standing always matches the
+// recent record. Every failure lands in lastBehaviorError for honest status.
+
+function noteBehaviorError(error) {
+    lastBehaviorError = error?.message || String(error);
+}
+
+async function recordBehavior(guildId, userId, signal, { source = 'system', note = null } = {}) {
+    requireBrain();
+    if (!guildId || !userId || !BEHAVIOR_SIGNAL_SET.has(signal)) {
+        throw new Error(`recordBehavior requires guildId, userId, and a known signal (${[...BEHAVIOR_SIGNAL_SET].join(', ')}).`);
+    }
+    const positive = ['helpful', 'supportive', 'kind', 'deescalation'].includes(signal);
+    try {
+        const doc = {
+            guildId: String(guildId),
+            userId: String(userId),
+            signal,
+            kind: positive ? 'positive' : 'negative',
+            source,
+            note: note ? String(note).slice(0, 200) : null,
+            created_at: Date.now()
+        };
+        await behaviors.insertOne(doc);
+        lastBehaviorError = null;
+        return { signal: doc.signal, kind: doc.kind, created_at: doc.created_at };
+    } catch (error) {
+        noteBehaviorError(error);
+        throw error;
+    }
+}
+
+// Sliding-window reputation: positive signals count +1 each, negative -2 each
+// (net). positive/negative in the result are raw EVENT COUNTS (what the UI
+// shows); only `net` carries the weighting.
+function scoreEvents(events, now = Date.now()) {
+    let positive = 0;
+    let negative = 0;
+    for (const event of events) {
+        if (now - event.created_at > BEHAVIOR_WINDOW_MS) continue;
+        if (event.kind === 'positive') positive += 1;
+        else negative += 1;
+    }
+    return { positive, negative, net: positive * POSITIVE_SCORE + negative * NEGATIVE_SCORE };
+}
+
+function tierFromScore(net) {
+    if (net <= -6) return 'hostile';
+    if (net <= -1) return 'rocky';
+    if (net >= 5) return 'valued';
+    if (net >= 2) return 'respected';
+    return 'neutral';
+}
+
+async function getBehaviorSummary(guildId, userId) {
+    requireBrain();
+    try {
+        const events = await behaviors
+            .find({ guildId: String(guildId), userId: String(userId) })
+            .sort({ created_at: -1 })
+            .limit(200)
+            .toArray();
+        lastBehaviorError = null;
+        const { positive, negative, net } = scoreEvents(events);
+        const summary = {
+            positive,
+            negative,
+            net,
+            tier: tierFromScore(net),
+            windowDays: BEHAVIOR_WINDOW_MS / (24 * 60 * 60 * 1000),
+            recentEvents: events.slice(0, 5).map(({ signal, kind, created_at, source }) => ({ signal, kind, created_at, source })),
+            totalEvents: events.length
+        };
+        return summary;
+    } catch (error) {
+        noteBehaviorError(error);
+        throw error;
+    }
+}
+
+async function countBehaviors(guildId, userId) {
+    requireBrain();
+    try {
+        const count = await behaviors.countDocuments({ guildId: String(guildId), userId: String(userId) });
+        lastBehaviorError = null;
+        return count;
+    } catch (error) {
+        noteBehaviorError(error);
+        throw error;
+    }
+}
+
+async function deleteBehaviors(guildId, userId) {
+    requireBrain();
+    try {
+        const result = await behaviors.deleteMany({ guildId: String(guildId), userId: String(userId) });
+        lastBehaviorError = null;
+        return result.deletedCount || 0;
+    } catch (error) {
+        noteBehaviorError(error);
+        throw error;
+    }
+}
+
+function isBehaviorAvailable() {
+    return Boolean(behaviors);
+}
+
 // ---- Truthful runtime capability reporting ----
 // The AI prompt and diagnostic commands must derive their memory claims from
 // these values, never from hard-coded assumptions.
@@ -263,7 +397,9 @@ function _disconnectForTests() {
     warnings = null;
     counters = null;
     memories = null;
+    behaviors = null;
     lastMemoryError = null;
+    lastBehaviorError = null;
 }
 
 module.exports = {
@@ -281,5 +417,12 @@ module.exports = {
     isMemoryAvailable,
     getMemoryCapabilities,
     getMemoryStatus,
+    recordBehavior,
+    getBehaviorSummary,
+    countBehaviors,
+    deleteBehaviors,
+    isBehaviorAvailable,
+    tierFromScore,
+    scoreEvents,
     _disconnectForTests
 };

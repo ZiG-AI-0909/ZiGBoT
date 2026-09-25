@@ -9,7 +9,9 @@ const {
     crisisResponse,
     isMemoryQuestion,
     buildMemoryAnswer,
-    shouldRemember
+    shouldRemember,
+    isReputationQuestion,
+    buildReputationAnswer
 } = require('./ai/client');
 const { defaultMemory } = require('./ai/memory');
 const { RateLimiter } = require('./ai/rateLimiter');
@@ -27,6 +29,7 @@ const {
     deliverAiReply
 } = require('./reply/delivery');
 const { detectProfanityAtBot } = require('./ai/profanityDetector');
+const { detectBehaviorSignals, defaultBehaviorTracker } = require('./ai/behaviorDetector');
 const { registerSlashCommands, interactionToIntent } = require('./slash');
 const brain = require('./db/brain');
 const { startHealthServer } = require('./health');
@@ -126,6 +129,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await reply.catch(() => {});
     }
 });
+
+// Shared helper: record behavior signals for a member, best-effort. Failures
+// are logged, never thrown — accountability must not break the reply path.
+async function recordBehaviorSignals(guildId, userId, signals, source) {
+    if (!guildId || !userId) return;
+    for (const signal of signals) {
+        try {
+            await brain.recordBehavior(guildId, userId, signal, { source });
+        } catch (error) {
+            console.error(`[ZiGBoT BEHAVIOR] Record failed (${signal}): ${error.message}`);
+        }
+    }
+}
 
 // Pure dispatcher so tests can cover gating without touching Discord or the AI API.
 async function runIntent(message, settings, intent, { onVoiceTranscript, warnStore: warns, viaVoice = false } = {}) {
@@ -290,6 +306,22 @@ client.on(Events.MessageCreate, async (message) => {
         return;
     }
 
+    // Reputation transparency: same truth policy as memory — the answer comes
+    // from the REAL behavior ledger, or honestly reports unavailability.
+    if (isReputationQuestion(userMessage) && message.guild) {
+        if (!brain.isBehaviorAvailable()) {
+            await message.reply(buildReputationAnswer({ available: false }));
+            return;
+        }
+        try {
+            const summary = await brain.getBehaviorSummary(message.guild.id, message.author.id);
+            await message.reply(buildReputationAnswer({ summary }));
+        } catch {
+            await message.reply(buildReputationAnswer({ available: true, summary: null }));
+        }
+        return;
+    }
+
     // Router path: classify the message into a tool intent. On any AI failure
     // the intent degrades to chat, so the persona reply below still answers.
     let intent = null;
@@ -396,6 +428,17 @@ client.on(Events.MessageCreate, async (message) => {
             }
         }
 
+        // Behavior accountability: the AI's treatment adapts to the member's
+        // RECORDED standing. Lookup failure must never block the reply.
+        let reputation = null;
+        if (brain.isBehaviorAvailable() && message.guild) {
+            try {
+                reputation = await brain.getBehaviorSummary(message.guild.id, message.author.id);
+            } catch (behaviorError) {
+                console.error(`[ZiGBoT BEHAVIOR] Summary lookup failed: ${behaviorError.message}`);
+            }
+        }
+
         const replyText = await ai.reply({
             userMessage,
             authorName,
@@ -409,7 +452,8 @@ client.on(Events.MessageCreate, async (message) => {
             userId: message.author.id,
             capabilities,
             memories: userMemories,
-            retrievalFailed
+            retrievalFailed,
+            reputation
         });
 
         await deliverAiReply(message, replyText, { log: logReplyPacing });
@@ -417,6 +461,19 @@ client.on(Events.MessageCreate, async (message) => {
         // Record message in conversation memory (full unsplit text)
         defaultMemory.addMessage(message.channel.id, 'user', userMessage, authorName);
         defaultMemory.addMessage(message.channel.id, 'assistant', replyText);
+
+        // ---- Behavior recording (best-effort, never blocks the reply) ----
+        if (message.guild) {
+            const { negative, positive } = detectBehaviorSignals(userMessage);
+            // Structural spam check: repeated identical content >= 3 in 10s.
+            // Profanity aimed AT the bot in roast territory is the bot's job,
+            // not an accountability event — excluded via comebackMode above.
+            if (!comebackMode && !declineMode && defaultBehaviorTracker.checkSpam(message.guild.id, message.author.id, userMessage)) {
+                negative.push('spam');
+            }
+            await recordBehaviorSignals(message.guild.id, message.author.id, negative, 'message-scan');
+            await recordBehaviorSignals(message.guild.id, message.author.id, positive, 'message-scan');
+        }
 
         // Selective long-term save: only durable facts/preferences, never
         // credentials (brain.remember refuses them). A failed save is logged
@@ -482,7 +539,7 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
         const memoryKey = `voice:${guild.id}`;
         const history = defaultMemory.getHistory(memoryKey);
 
-        // Same grounded memory context as the text path.
+        // Same grounded memory context as the text path, plus reputation.
         const capabilities = brain.getMemoryCapabilities();
         let userMemories = null;
         let retrievalFailed = false;
@@ -491,6 +548,14 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
                 userMemories = await brain.recall(guild.id, userId, 5);
             } catch {
                 retrievalFailed = true;
+            }
+        }
+        let reputation = null;
+        if (brain.isBehaviorAvailable()) {
+            try {
+                reputation = await brain.getBehaviorSummary(guild.id, userId);
+            } catch {
+                reputation = null;
             }
         }
 
@@ -504,11 +569,17 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
             userId,
             capabilities,
             memories: userMemories,
-            retrievalFailed
+            retrievalFailed,
+            reputation
         });
 
         defaultMemory.addMessage(memoryKey, 'user', transcript, authorName);
         defaultMemory.addMessage(memoryKey, 'assistant', replyText);
+
+        // Voice transcripts feed the same accountability ledger as text.
+        const voiceSignals = detectBehaviorSignals(transcript);
+        await recordBehaviorSignals(guild.id, userId, voiceSignals.negative, 'voice-scan');
+        await recordBehaviorSignals(guild.id, userId, voiceSignals.positive, 'voice-scan');
 
         // Selective long-term save from voice, same rules as text.
         try {

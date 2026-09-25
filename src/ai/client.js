@@ -82,6 +82,64 @@ function buildMemoryAnswer({ capabilities = null, memories = null, lastError = n
     return `Pulled live from MongoDB — everything I have stored for you (${memories.length}):\n${lines.join('\n')}\nThat's the complete list. Nothing else exists in my long-term memory about you.`;
 }
 
+// ---- Behavior accountability: reputation grounding ----
+// The bot's treatment of a member must match their RECORDED behavior, not a
+// vibe. The summary comes from real MongoDB events (db/brain.js) and is
+// appended to the system prompt as ground truth, like the memory block.
+
+const TIER_TREATMENT = {
+    valued: 'This member is VALUED in this server (consistently helpful/kind recently). Treat them with extra warmth and respect; acknowledge their good standing.',
+    respected: 'This member is RESPECTED (recent positive contributions). Treat them warmly and give them the benefit of the doubt.',
+    neutral: 'This member has a NEUTRAL record recently. Treat them normally per your persona.',
+    rocky: 'This member has a ROCKY record (repeated negative behavior recently). Keep roasts sharper and skip warm gestures, but stay inside the guardrails: no slurs, no protected-class attacks, no threats, no harassment of protected traits.',
+    hostile: 'This member is HOSTILE right now (sustained toxic behavior: slurs, harassment, or spam). Be curt and cold, do not play along with them, and do not spend warmth on them. You may roast their BEHAVIOR bluntly, but guardrails still bind: never slurs, never protected-class attacks, never threats or self-harm encouragement. If they are in genuine crisis, the sincere-support rule still overrides everything.'
+};
+
+// Builds the prompt block for a member's real reputation. `unavailable`
+// tells the model to say nothing about reputation at all.
+function buildReputationBlock(summary) {
+    if (!summary) return '';
+    const treatment = TIER_TREATMENT[summary.tier] || TIER_TREATMENT.neutral;
+    const lines = [
+        'RUNTIME BEHAVIOR RECORD (ground truth from the live accountability system — never contradict or invent it):',
+        `- Recent record (last ${summary.windowDays} days): ${summary.positive} positive, ${summary.negative} negative signals, net score ${summary.net}, standing: ${summary.tier.toUpperCase()}.`,
+        `- Treatment directive: ${treatment}`
+    ];
+    if (Array.isArray(summary.recentEvents) && summary.recentEvents.length > 0) {
+        lines.push(`- Latest signals: ${summary.recentEvents.map((event) => event.signal).join(', ')}.`);
+    }
+    return `\n\n${lines.join('\n')}`;
+}
+
+// "How do you treat me / what is my reputation" questions get a deterministic,
+// record-based answer — same truth policy as memory.
+const REPUTATION_QUESTION_PATTERN = /\b(what('s| is) my (reputation|record|standing|score)|how do you (see|treat|view) me|do you (track|remember) (my |our |my behavior|my behaviour)|what do you think of my (behavior|behaviour)|my (behavior|behaviour) record|do i have (a )?(record|reputation)|am i (on )?(thin ice|the naughty list))/i;
+
+function isReputationQuestion(message) {
+    return REPUTATION_QUESTION_PATTERN.test(String(message || ''));
+}
+
+function buildReputationAnswer({ summary = null, available = true, lastError = null } = {}) {
+    if (!available) {
+        return `Real talk: the behavior accountability system is temporarily unavailable (database unreachable${lastError ? ` — ${lastError}` : ''}), so I genuinely can't check any record right now. No record, no judgment. 📴`;
+    }
+    if (!summary) {
+        return `Reputation lookup failed just now, so I won't pretend to know your standing. The system itself is up — try again in a minute. 🧾`;
+    }
+    if (summary.totalEvents === 0) {
+        return `Straight answer: I DO track behavior (positive and negative signals, rolling ${summary.windowDays}-day window) — but you have a completely clean slate. Zero events on record. Neutral standing, judgment reserved. 🧾✅`;
+    }
+    const tierLine = {
+        valued: 'You are in my good books — consistently solid recently. Keep it up. 🌟',
+        respected: 'Your recent record is solid — positive contributions outweigh the rest. 👍',
+        neutral: 'Nothing special either way lately — perfectly ordinary standing. 😐',
+        rocky: 'Your recent record is rocky — the negative signals are piling up. Trim it out. ⚠️',
+        hostile: 'Your recent record is hostile — sustained toxic behavior. I am not going to pretend otherwise. 🔕'
+    }[summary.tier] || 'Standing: neutral.';
+    const signals = summary.recentEvents.map((event) => `${event.kind === 'positive' ? '➕' : '➖'} ${event.signal}`).join(', ');
+    return `Straight from the accountability ledger (${summary.windowDays}-day window, live from MongoDB):\n• Positive signals: ${summary.positive}\n• Negative signals: ${summary.negative}\n• Net score: ${summary.net} → standing: **${summary.tier.toUpperCase()}**\n• Latest: ${signals || 'none'}\n${tierLine}\nThat is the actual record — not a vibe, not a guess.`;
+}
+
 // Selective save heuristic: only durable facts/preferences get persisted.
 // Chat noise, commands, and transient states ("i am bored") are skipped.
 function shouldRemember(message) {
@@ -195,6 +253,7 @@ Actions and their fields:
 - warn_member: {target, reason} (reason = short warning reason)
 - list_warnings: {target}
 - memory_status: {} (owner/admin asks for memory diagnostics or what is stored)
+- behavior_status: {target} (owner/admin asks about a member's behavior record, reputation, or standing; omit target = the requester)
 - forget_memory: {target} (user asks you to forget/delete stored memories; omit target = the requester's own memories)
 - delete_messages: {count} (1-100)
 - bot_help: {} (user asks what the bot can do, for help, or lists commands)
@@ -327,7 +386,7 @@ function createAiClient(settings) {
         model: settings.aiModel,
         rateLimiter,
 
-        async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, declineMode = false, userId = null, capabilities = null, memories = null, retrievalFailed = false }) {
+        async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, declineMode = false, userId = null, capabilities = null, memories = null, retrievalFailed = false, reputation = null }) {
             if (isCreatorQuestion(userMessage)) return getCreatorResponse(userMessage);
 
             // AI quota protection: applied per user before any LLM call.
@@ -350,11 +409,12 @@ function createAiClient(settings) {
                 ? `[${authorName}]: ${userMessage}`
                 : userMessage;
 
-            // Ground the reply in real memory state: the capability block
-            // tells the model exactly what memory exists right now.
+            // Ground the reply in real memory + behavior state: the blocks
+            // tell the model exactly what is true about this member right now.
             const memoryBlock = buildMemoryContextBlock({ capabilities, memories, retrievalFailed });
+            const reputationBlock = buildReputationBlock(reputation);
             const messages = [
-                { role: 'system', content: systemPrompt + memoryBlock },
+                { role: 'system', content: systemPrompt + memoryBlock + reputationBlock },
                 ...contextMessages,
                 { role: 'user', content: formattedUserContent }
             ];
@@ -408,5 +468,8 @@ module.exports = {
     buildMemoryContextBlock,
     isMemoryQuestion,
     buildMemoryAnswer,
-    shouldRemember
+    shouldRemember,
+    buildReputationBlock,
+    isReputationQuestion,
+    buildReputationAnswer
 };

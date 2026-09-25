@@ -7,7 +7,8 @@ The **brain** (`src/db/brain.js`) is ZiGBoT's persistent memory — the single M
 ```
 Discord events → tools/router.js ─┐
 AI replies (src/index.js) ────────┼→ db/brain.js → MongoDB Atlas
-memory diagnostics (/memory) ─────┘        └─ db: zigbot
+memory diagnostics (/memory) ─────┤        └─ db: zigbot
+behavior ledger (/reputation) ────┘
 ```
 
 ---
@@ -33,6 +34,7 @@ The data shape mirrors the old SQLite schema one-to-one. All collections live in
 | `warnings` | `{ id, guildId, userId, reason, issued_by, created_at }` | Full warning records with moderator attribution |
 | `counters` | `{ _id: 'warning_id' \| 'memory_id', seq }` | Atomic sequence generator replacing SQLite's AUTOINCREMENT |
 | `memories` | `{ id, guildId, userId, content, type, created_at }` | **Persistent long-term memory** — durable facts/preferences about a user, per guild, surviving restarts |
+| `behaviors` | `{ guildId, userId, signal, kind, source, note, created_at }` | **Behavior accountability ledger** — every recorded positive/negative signal, per member, per guild |
 
 ### Indexes (created at connect time)
 
@@ -41,6 +43,7 @@ The data shape mirrors the old SQLite schema one-to-one. All collections live in
 | `users` | `{ userId: 1 }` **unique** | One profile per user, enforced by the DB |
 | `warnings` | `{ guildId: 1, userId: 1, created_at: 1 }` | Same lookup pattern as the old `idx_warnings_guild_user` SQLite index |
 | `memories` | `{ guildId: 1, userId: 1, created_at: -1 }` | Memory recall: newest-first per user per guild |
+| `behaviors` | `{ guildId: 1, userId: 1, created_at: -1 }` | Reputation lookups: newest-first per member per guild |
 
 `connectBrain()` publishes module state **only after** the connection and every index build succeed — a failed connect can never leave half-initialized collections behind.
 
@@ -65,6 +68,10 @@ This is the *entire* persistence contract of the bot:
 | `isMemoryAvailable()` | True only when the `memories` handle exists (post-connect). |
 | `getMemoryCapabilities()` | The runtime capability object — see §6. |
 | `getMemoryStatus()` | Capabilities + `connected`, `collection`, and `lastError` for honest diagnostics. |
+| `recordBehavior(guildId, userId, signal, opts)` | Records a behavior signal (`helpful` \| `supportive` \| `kind` \| `deescalation` = positive; `toxic` \| `slurs` \| `harassment` \| `spam` \| `warning` = negative). Unknown signals are rejected. |
+| `getBehaviorSummary(guildId, userId)` | Sliding-window reputation: event counts, weighted net score (+1/−2, 30-day window), and the DERIVED standing tier. Tiers are computed, never stored. |
+| `countBehaviors` / `deleteBehaviors` | Count / delete a member's ledger entries; real numbers only. |
+| `isBehaviorAvailable()` | True only when the `behaviors` handle exists (post-connect). |
 
 Every data function calls `requireBrain()` first — using the brain before `connectBrain()` throws a clear error instead of returning garbage.
 
@@ -108,7 +115,28 @@ When MongoDB is down: `persistentMemory/memoryRetrieval/memoryWrite` flip to `fa
 
 ---
 
-## 7. Design rules
+## 7. Behavior accountability (how ZiGBoT treats members)
+
+ZiGBoT keeps a **ledger of real behavior** and treats members according to it:
+
+1. **Signals in** — conservative message scanning (`src/ai/behaviorDetector.js`: unambiguous toxicity, slurs, harassment, gratitude, helpfulness), structural spam detection (≥3 identical messages in 10s), and admin actions (every `warn_member`/`timeout_member` automatically records a `warning` signal).
+2. **Standing out** — a 30-day sliding window weights the ledger (+1 per positive, −2 per negative) into tiers:
+
+| Net score | Standing | Treatment directive |
+|---|---|---|
+| ≥ +5 | **VALUED** | Extra warmth and respect |
+| +2…+4 | **RESPECTED** | Warm, benefit of the doubt |
+| −1…+1 | **NEUTRAL** | Normal persona |
+| −5…−2 | **ROCKY** | Sharper roasts, no warm gestures |
+| ≤ −6 | **HOSTILE** | Curt and cold — but guardrails still bind; crisis support still overrides |
+
+3. **Grounded treatment** — the standing is injected into every reply's system prompt as ground truth; the AI adapts its tone to the record, never to a vibe.
+4. **Transparency** — *"What's my reputation?" / "How do you treat me?"* are answered deterministically from the ledger (or honestly report unavailability). Owners/admins get full records via `behavior_status` or `/reputation`.
+5. **Fairness rails** — detection is deliberately conservative (roast banter is never punished), roast-exchange profanity **at the bot** is excluded, guardrails apply regardless of standing, and the crisis gate always overrides.
+
+---
+
+## 8. Design rules
 
 - **Single point of access.** No other module may create a Mongo client or query a collection. This keeps the schema auditable in one file and makes the module trivially testable (tests inject a fake client).
 - **Fail loudly, fail early.** `connectBrain()` is required at startup: if it fails, the bot exits rather than running in a broken state where warns and memories silently disappear.
