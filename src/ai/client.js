@@ -18,6 +18,87 @@ function getCreatorResponse(message) {
 // swore at the bot. Roast the behavior, never the identity/family.
 const comebackInstruction = ' The user just swore at you. Fire back with a sharp, witty, Gen-Z/Hinglish comeback that matches their energy and puts them in their place — but never use sexual content, real slurs, family-directed abuse, or anything referencing violence. Roast their behavior/attitude, not their identity or family.';
 
+// ---- Persistent memory: truthful capability + context plumbing ----
+// The AI must never claim memory powers that do not exist at runtime, and
+// never deny the ones that do. Everything below is derived from the REAL
+// state passed in by the caller (from db/brain.js), never hard-coded.
+
+// Builds the system-prompt block that grounds memory claims in reality.
+function buildMemoryContextBlock({ capabilities = null, memories = null, retrievalFailed = false } = {}) {
+    if (!capabilities) return '';
+    const lines = ['RUNTIME MEMORY CAPABILITIES (ground truth from the live system — never contradict this):'];
+    if (capabilities.persistentMemory) {
+        lines.push('- You DO have persistent long-term memory stored in MongoDB that survives restarts.');
+        lines.push('- Never deny having persistent memory. Never invent memories that are not listed below.');
+        lines.push('- Long-term saves happen automatically and silently after messages. NEVER claim "I stored that" or "I will remember this" in your reply — you cannot observe the save.');
+    } else {
+        lines.push('- Persistent long-term memory is TEMPORARILY UNAVAILABLE (database unreachable).');
+        lines.push('- NEVER claim to remember anything long-term and NEVER claim to have stored anything.');
+        lines.push('- If asked about memory, say persistent memory is temporarily unavailable; your only memory is the current conversation window.');
+    }
+    if (Array.isArray(memories)) {
+        if (memories.length > 0) {
+            lines.push(`PERSISTENT MEMORIES for this user (${memories.length}, retrieved from MongoDB, oldest first):`);
+            for (const memory of memories) {
+                lines.push(`- [${memory.type}] ${memory.content}`);
+            }
+        } else if (capabilities.persistentMemory && !retrievalFailed) {
+            lines.push('PERSISTENT MEMORIES: none stored for this user yet. If asked what you remember about them, truthfully say nothing is stored.');
+        }
+    }
+    if (retrievalFailed) {
+        lines.push('- Memory retrieval FAILED this turn: treat persistent memory as unreachable right now and do not claim to recall anything from it.');
+    }
+    return `\n\n${lines.join('\n')}`;
+}
+
+// Owner/member transparency questions must be answered from actual data, not
+// the persona's imagination. Imperative save requests ("remember that...")
+// are deliberately NOT questions and fall through to the normal chat path.
+const MEMORY_QUESTION_PATTERN = /\b(what do you (remember|recall)|what all do you remember|show me (your|the|ur) memory|what('s| is| are) (stored|kept|saved) (in|on) (your|the|ur) memory|what do you (know|remember) about me|do you have (a |any )?(persistent |long.term |permanent )?(memory|memories)|do you (remember|recall) (me|us|things|anything|stuff)|how does your memory work|is your memory (persistent|permanent)|where (do you|is your memory) store(d)?)/i;
+const MEMORY_IMPERATIVE_PATTERN = /\b(remember (that|this|to|me by)|yaad rakh|yaad kar|mujhe yaad rakhna)\b/i;
+
+function isMemoryQuestion(message) {
+    const text = String(message || '');
+    if (MEMORY_IMPERATIVE_PATTERN.test(text)) return false;
+    return MEMORY_QUESTION_PATTERN.test(text);
+}
+
+// Deterministic, data-backed answer for memory questions. Every branch
+// reflects the actual runtime state passed in — no branch can claim a memory
+// that is not in `memories`, and no branch denies memory when it exists.
+function buildMemoryAnswer({ capabilities = null, memories = null, lastError = null } = {}) {
+    const caps = capabilities || {};
+    if (!caps.persistentMemory) {
+        return `Real check, no cap: persistent memory is temporarily unavailable (MongoDB unreachable${lastError ? ` — ${lastError}` : ''}). Right now I genuinely cannot store or recall anything long-term, so the only memory I have is this conversation's short-term window. 🧠💀`;
+    }
+    if (!Array.isArray(memories)) {
+        return `Memory lookup failed just now, so I won't pretend to know what is stored. Persistent memory itself is up (MongoDB connected) — try asking me again in a minute. 🧠`;
+    }
+    if (memories.length === 0) {
+        return `Straight answer: I DO have persistent memory (MongoDB, survives restarts) — but there is literally nothing stored for you yet. Zero memories. So no, I don't remember anything about you right now, and I won't pretend otherwise. 🧠✅`;
+    }
+    const lines = memories.map((memory) => `• [${memory.type}] ${memory.content}`);
+    return `Pulled live from MongoDB — everything I have stored for you (${memories.length}):\n${lines.join('\n')}\nThat's the complete list. Nothing else exists in my long-term memory about you.`;
+}
+
+// Selective save heuristic: only durable facts/preferences get persisted.
+// Chat noise, commands, and transient states ("i am bored") are skipped.
+function shouldRemember(message) {
+    const text = String(message || '').trim();
+    if (text.length < 10) return { should: false, reason: 'too short' };
+    if (/^(\/|@|play |pause|skip|stop|queue|volume|loop|kick|ban|timeout|warn|help\b|roast (him|her|them))/i.test(text)) {
+        return { should: false, reason: 'command' };
+    }
+    const preferencePattern = /\b(my (favorite|fav|favourite)|i (really |absolutely )?(like|love|hate|prefer|enjoy)|mujhe (pasand|nahi pasand))\b/i;
+    const identityPattern = /\b(my name is|call me|my (birthday|anniversary)|i live in|i work (at|as|for)|i study(ing)? (at|in)|mera naam)\b/i;
+    const explicitPattern = /\b(remember (that|this|to)|yaad rakh(na|o)?|don'?t forget|dont forget)\b/i;
+    if (preferencePattern.test(text)) return { should: true, content: text, type: 'preference' };
+    if (identityPattern.test(text)) return { should: true, content: text, type: 'fact' };
+    if (explicitPattern.test(text)) return { should: true, content: text, type: 'fact' };
+    return { should: false, reason: 'no durable signal' };
+}
+
 function getSystemPrompt({ tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false } = {}) {
     const genderInstruction = gender
         ? ` The user has explicitly selected the ${gender} role; when pronouns are necessary, use ${gender === 'female' ? 'she/her' : 'he/him'} for this user. Do not make other gender assumptions.`
@@ -113,6 +194,8 @@ Actions and their fields:
 - unban_member: {target} (user ID, not a name)
 - warn_member: {target, reason} (reason = short warning reason)
 - list_warnings: {target}
+- memory_status: {} (owner/admin asks for memory diagnostics or what is stored)
+- forget_memory: {target} (user asks you to forget/delete stored memories; omit target = the requester's own memories)
 - delete_messages: {count} (1-100)
 - bot_help: {} (user asks what the bot can do, for help, or lists commands)
 
@@ -244,7 +327,7 @@ function createAiClient(settings) {
         model: settings.aiModel,
         rateLimiter,
 
-        async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, declineMode = false, userId = null }) {
+        async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, declineMode = false, userId = null, capabilities = null, memories = null, retrievalFailed = false }) {
             if (isCreatorQuestion(userMessage)) return getCreatorResponse(userMessage);
 
             // AI quota protection: applied per user before any LLM call.
@@ -267,8 +350,11 @@ function createAiClient(settings) {
                 ? `[${authorName}]: ${userMessage}`
                 : userMessage;
 
+            // Ground the reply in real memory state: the capability block
+            // tells the model exactly what memory exists right now.
+            const memoryBlock = buildMemoryContextBlock({ capabilities, memories, retrievalFailed });
             const messages = [
-                { role: 'system', content: systemPrompt },
+                { role: 'system', content: systemPrompt + memoryBlock },
                 ...contextMessages,
                 { role: 'user', content: formattedUserContent }
             ];
@@ -318,5 +404,9 @@ module.exports = {
     creatorWhyResponse,
     creatorHowResponse,
     getCreatorResponse,
-    getSystemPrompt
+    getSystemPrompt,
+    buildMemoryContextBlock,
+    isMemoryQuestion,
+    buildMemoryAnswer,
+    shouldRemember
 };

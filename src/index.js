@@ -2,7 +2,15 @@ require('dotenv').config();
 
 const { Client, GatewayIntentBits, Events } = require('discord.js');
 const { loadSettings } = require('./config/settings');
-const { createAiClient, classifyIntent, isCrisisMessage, crisisResponse } = require('./ai/client');
+const {
+    createAiClient,
+    classifyIntent,
+    isCrisisMessage,
+    crisisResponse,
+    isMemoryQuestion,
+    buildMemoryAnswer,
+    shouldRemember
+} = require('./ai/client');
 const { defaultMemory } = require('./ai/memory');
 const { RateLimiter } = require('./ai/rateLimiter');
 const { detectTrigger, defaultTracker } = require('./ai/triggerDetector');
@@ -262,6 +270,26 @@ client.on(Events.MessageCreate, async (message) => {
         return;
     }
 
+    // Memory transparency: questions like "what do you remember?" are answered
+    // from REAL MongoDB state (deterministic, no LLM) so the bot can never
+    // fabricate memories or deny real ones. Imperative save requests
+    // ("remember that...") fall through to the normal chat + save path.
+    if (isMemoryQuestion(userMessage) && message.guild) {
+        const capabilities = brain.getMemoryCapabilities();
+        if (!capabilities.persistentMemory) {
+            await message.reply(buildMemoryAnswer({ capabilities }));
+            return;
+        }
+        try {
+            const userMemories = await brain.recall(message.guild.id, message.author.id, 10);
+            await message.reply(buildMemoryAnswer({ capabilities, memories: userMemories }));
+        } catch {
+            // Retrieval failed: report that honestly instead of guessing.
+            await message.reply(buildMemoryAnswer({ capabilities, memories: null }));
+        }
+        return;
+    }
+
     // Router path: classify the message into a tool intent. On any AI failure
     // the intent degrades to chat, so the persona reply below still answers.
     let intent = null;
@@ -352,6 +380,22 @@ client.on(Events.MessageCreate, async (message) => {
 
     try {
         const history = defaultMemory.getHistory(message.channel.id);
+
+        // Persistent memory retrieval: real MongoDB records for THIS user in
+        // THIS guild, injected into the AI context. A retrieval failure must
+        // degrade the reply, not kill it — the AI is told recall failed.
+        const capabilities = brain.getMemoryCapabilities();
+        let userMemories = null;
+        let retrievalFailed = false;
+        if (capabilities.persistentMemory && message.guild) {
+            try {
+                userMemories = await brain.recall(message.guild.id, message.author.id, 5);
+            } catch (memoryError) {
+                console.error(`[ZiGBoT MEMORY] Recall failed: ${memoryError.message}`);
+                retrievalFailed = true;
+            }
+        }
+
         const replyText = await ai.reply({
             userMessage,
             authorName,
@@ -362,7 +406,10 @@ client.on(Events.MessageCreate, async (message) => {
             isNonGentle,
             comebackMode,
             declineMode,
-            userId: message.author.id
+            userId: message.author.id,
+            capabilities,
+            memories: userMemories,
+            retrievalFailed
         });
 
         await deliverAiReply(message, replyText, { log: logReplyPacing });
@@ -370,6 +417,18 @@ client.on(Events.MessageCreate, async (message) => {
         // Record message in conversation memory (full unsplit text)
         defaultMemory.addMessage(message.channel.id, 'user', userMessage, authorName);
         defaultMemory.addMessage(message.channel.id, 'assistant', replyText);
+
+        // Selective long-term save: only durable facts/preferences, never
+        // credentials (brain.remember refuses them). A failed save is logged
+        // but never announced — the bot does not claim "I stored that".
+        try {
+            const candidate = shouldRemember(userMessage);
+            if (candidate.should && brain.isMemoryAvailable() && message.guild) {
+                await brain.remember(message.guild.id, message.author.id, candidate.content, candidate.type);
+            }
+        } catch (memoryError) {
+            console.error(`[ZiGBoT MEMORY] Save skipped: ${memoryError.message}`);
+        }
     } catch (error) {
         logAiError(error);
         await message.reply(error.rateLimited ? rateLimitReply : aiFailureReply).catch(() => {});
@@ -422,6 +481,19 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
         );
         const memoryKey = `voice:${guild.id}`;
         const history = defaultMemory.getHistory(memoryKey);
+
+        // Same grounded memory context as the text path.
+        const capabilities = brain.getMemoryCapabilities();
+        let userMemories = null;
+        let retrievalFailed = false;
+        if (capabilities.persistentMemory) {
+            try {
+                userMemories = await brain.recall(guild.id, userId, 5);
+            } catch {
+                retrievalFailed = true;
+            }
+        }
+
         const replyText = await ai.reply({
             userMessage: transcript,
             authorName,
@@ -429,11 +501,24 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
             tone: isGentle ? 'gentle' : 'savage',
             gender: getMemberGender(member, settings.femaleRoleNames, settings.maleRoleNames),
             isNonGentle,
-            userId
+            userId,
+            capabilities,
+            memories: userMemories,
+            retrievalFailed
         });
 
         defaultMemory.addMessage(memoryKey, 'user', transcript, authorName);
         defaultMemory.addMessage(memoryKey, 'assistant', replyText);
+
+        // Selective long-term save from voice, same rules as text.
+        try {
+            const candidate = shouldRemember(transcript);
+            if (candidate.should && brain.isMemoryAvailable()) {
+                await brain.remember(guild.id, userId, candidate.content, candidate.type);
+            }
+        } catch (memoryError) {
+            console.error(`[ZiGBoT MEMORY] Save skipped: ${memoryError.message}`);
+        }
 
         await speak(guild.id, settings, replyText);
     } catch (error) {

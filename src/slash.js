@@ -15,6 +15,7 @@ const slashActionByCommand = new Map([
     ['play', 'play'],
     ['kick', 'kick_member'],
     ['ban', 'ban_member'],
+    ['memory', 'memory_status'],
     ['help', 'bot_help']
 ]);
 
@@ -34,8 +35,7 @@ function buildDefinitions() {
                 .setName('member')
                 .setDescription('Member to kick')
                 .setRequired(true))
-            .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers),
-        new SlashCommandBuilder()
+            .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers),        new SlashCommandBuilder()
             .setName('ban')
             .setDescription('Ban a member (owner confirmation required)')
             .addUserOption((option) => option
@@ -43,6 +43,13 @@ function buildDefinitions() {
                 .setDescription('Member to ban')
                 .setRequired(true))
             .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers),
+        new SlashCommandBuilder()
+            .setName('memory')
+            .setDescription('Owner/admin: inspect ZiGBoT persistent memory (live MongoDB state)')
+            .addUserOption((option) => option
+                .setName('member')
+                .setDescription('Optional: count stored memories for this member'))
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
         new SlashCommandBuilder()
             .setName('help')
             .setDescription('List everything ZiGBoT can do')
@@ -73,6 +80,11 @@ async function interactionToIntent(interaction) {
     if (action === 'kick_member' || action === 'ban_member') {
         const user = interaction.options.getUser('member', true);
         return { action, target: `<@${user.id}>` };
+    }
+    if (action === 'memory_status') {
+        // Optional member: only set when the owner picked one.
+        const user = interaction.options.getUser('member');
+        return user ? { action, target: `<@${user.id}>` } : { action };
     }
     return { action };
 }

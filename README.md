@@ -184,6 +184,7 @@ The action catalog is the single source of truth (action → required permission
 | Info | `get_server_info`, `get_member_info`, `get_channel_info` |
 | Admin (auth-gated) | `send_message`, `create_role`, `delete_role`*, `add_role`, `remove_role`*, `create_channel`, `delete_channel`*, `rename_channel`, `timeout_member`*, `kick_member`*, `ban_member`*, `unban_member`*, `delete_messages`* (1–100), `warn_member`* |
 | Moderation (open) | `list_warnings` |
+| Memory | `memory_status` (owner/admin diagnostics), `forget_memory` (own memories; admin-gated for others) |
 | Voice | `join_voice`, `leave_voice`, `voice_status`, `start_voice_listening`, `stop_voice_listening` |
 | Music | `play` (direct HTTPS URL), `pause_music`, `resume_music`, `skip_music`, `stop_music`, `queue_music`, `now_playing`, `volume_music` (0–100), `loop_music` |
 | Meta | `bot_help` (live-generated) |
@@ -228,10 +229,11 @@ Transient disconnects (channel moves, regional blips) no longer kill playback si
 
 ## 12. Warn System & Persistence (`src/db/`)
 
-- **MongoDB Atlas via the official `mongodb` Node.js driver** (no ODM), connected at startup from `MONGODB_URI`; database `zigbot` with `users`, `warnings`, and `counters` collections.
-- **All queries live in `src/db/brain.js`** — unique index on `users.userId`, compound index on `warnings (guildId, userId, created_at)`; warning ids come from an atomic counter, mirroring the old SQLite AUTOINCREMENT.
+- **MongoDB Atlas via the official `mongodb` Node.js driver** (no ODM), connected at startup from `MONGODB_URI`; database `zigbot` with `users`, `warnings`, `counters`, and `memories` collections.
+- **All queries live in `src/db/brain.js`** — unique index on `users.userId`, compound index on `warnings (guildId, userId, created_at)`, index on `memories (guildId, userId, created_at desc)`; warning/memory ids come from an atomic counter, mirroring the old SQLite AUTOINCREMENT.
 - **`warn_member`** (destructive → confirmation flow) records who warned, the reason, and when; **`list_warnings`** shows a member's warnings with timestamps.
 - Warns survive restarts. The DB is required at startup: if `connectBrain()` fails, the bot logs a clear error and exits instead of running in a broken state.
+- **Persistent long-term memory** (`memories` collection): durable user facts/preferences are saved selectively (never commands or chat noise; passwords/API keys/tokens are refused outright) via `remember()` and retrieved per user per guild via `recall()` before every AI reply. Memory questions ("what do you remember?") are answered deterministically from live MongoDB state — the bot never fakes memories and never claims a save/delete that did not happen. `memory_status` (owner/admin) reports the REAL runtime state; `forget_memory` lets users delete their own memories (admin-gated for other users).
 - Everything else (conversation memory, music queues) intentionally stays in-process.
 
 ---
@@ -295,6 +297,7 @@ Transient disconnects (channel moves, regional blips) no longer kill playback si
 | `test/authorization.test.js` | Owner checks, guild-owner match requirement, roast-target gating |
 | `test/autoReply.test.js` | Creator-question regexes, prompt contents, `Users.heer` override, gender-neutrality rules, stress/fun/neutral triggers, cooldowns, memory window **+ sweep**, Unicode role detection, settings parsing, **crisis-gate cases (incl. hyperbole false-positive guards)**, **moderation blocks & banter pass-through** |
 | `test/router.test.js` | **Non-owner admin denial, destructive-set completeness, catalog/permission consistency, info/music/help without owner auth, alias canonicalization, role-hierarchy block, voice blocks destructive actions, voice allows playback/info** |
+| `test/memory.test.js` | **Memory store CRUD + indexes, credential refusal, capability truth-telling (connected/unconnected/failing), simulated restart persistence, memory-question detection & truthful answers, selective save heuristics, owner-gated `memory_status`, `forget_memory` auth + honest zero-delete reporting** |
 | `test/p3.test.js` | **Rate-limiter window & per-user independence, Mongo warn store (add/count/list, indexes, default profile shape, unconnected guard) via fake client, strict-fallback unchanged, per-guild owner scoping, admin-role matching/scoping, warn routing, slash intent conversion** |
 
 Run everything:

@@ -7,12 +7,14 @@ const { auditLog } = require('../logging/auditLog');
 const { joinMemberVoiceChannel, leaveGuildVoice, isInGuildVoice } = require('../voice/voiceManager');
 const music = require('../music/player');
 const { startListening, stopListening } = require('../voice/voiceConversation');
+const brain = require('../db/brain');
 
 const adminActions = new Set([
     'send_message', 'create_role', 'delete_role', 'add_role', 'remove_role',
     'create_channel', 'delete_channel', 'rename_channel', 'timeout_member',
     'kick_member', 'ban_member', 'unban_member', 'delete_messages',
-    'start_voice_listening', 'stop_voice_listening', 'warn_member'
+    'start_voice_listening', 'stop_voice_listening', 'warn_member',
+    'memory_status'
 ]);
 
 // Destructive actions require interactive Confirm/Cancel before execution.
@@ -83,6 +85,8 @@ const actionCatalog = new Map([
     ['loop_music', { permission: null, description: 'Toggle looping the current track.' }],
     ['warn_member', { permission: PermissionFlagsBits.ModerateMembers, description: 'Warn a member (destructive: needs confirmation).' }],
     ['list_warnings', { permission: null, description: 'List warnings for a member.' }],
+    ['memory_status', { permission: null, description: 'Owner/admin diagnostic: report the real state of my persistent memory (MongoDB connection, stored memories).' }],
+    ['forget_memory', { permission: null, description: 'Delete stored memories (your own; admins may target another member).' }],
     ['bot_help', { permission: null, description: 'List everything ZiGBoT can do.' }]
 ]);
 
@@ -156,8 +160,12 @@ function isAuthorizedActor(message, settings) {
 async function authorize(message, settings, intent, permission) {
     const owner = isAuthorizedActor(message, settings);
     if (!owner.allowed) return denied(message, settings, intent, owner.reason);
-    const permissionResult = botPermission(message.guild, permission);
-    if (!permissionResult.allowed) return denied(message, settings, intent, permissionResult.reason);
+    // null permission = no Discord-level permission needed (e.g. memory_status);
+    // the owner/admin identity gate above is the whole check for those.
+    if (permission) {
+        const permissionResult = botPermission(message.guild, permission);
+        if (!permissionResult.allowed) return denied(message, settings, intent, permissionResult.reason);
+    }
     return null;
 }
 
@@ -389,6 +397,67 @@ async function executeTool(message, settings, intent, context = {}) {
                         .join('\n');
                 }
                 target = member.displayName;
+                break;
+            }
+            case 'memory_status': {
+                // Owner/admin gate already ran via adminActions above. Report
+                // ONLY real state from db/brain.js — never optimistic claims.
+                const status = brain.getMemoryStatus();
+                const lines = [
+                    `🧠 **Memory diagnostics** (live from MongoDB, not guesses):`,
+                    `• MongoDB connected: ${status.connected ? '✅ yes' : '❌ no'}`,
+                    `• Memory collection available: ${status.persistentMemory ? '✅ yes' : '❌ no'}`,
+                    `• Persistent memory enabled: ${status.persistentMemory ? '✅ yes' : '❌ no'}`,
+                    `• Conversation (short-term) memory: ${status.conversationMemory ? '✅ active (in-process, per-channel)' : '❌ off'}`,
+                    `• Memory retrieval before replies: ${status.memoryRetrieval ? '✅ yes' : '⚠️ no — recall skipped'}`,
+                    `• Memory writes after replies: ${status.memoryWrite ? '✅ yes (selective, credentials refused)' : '❌ no — saves disabled'}`
+                ];
+                if (status.lastError) lines.push(`• Last memory error: ${status.lastError}`);
+                else lines.push('• Last memory error: none');
+                // Per-user count is optional: omit target -> the requester's own memories.
+                const member = intent.target ? findMember(guild, intent.target) : null;
+                if (intent.target && !member) {
+                    lines.push(`⚠️ Could not resolve member "${intent.target}" for a per-user count.`);
+                } else {
+                    const userId = member ? member.id : message.author.id;
+                    try {
+                        const count = await brain.countMemories(guild.id, userId);
+                        lines.push(`• Stored memories for ${member ? member.displayName : 'you'}: **${count}**`);
+                    } catch (error) {
+                        lines.push(`• Stored memories for ${member ? member.displayName : 'you'}: ⚠️ lookup failed (${error.message})`);
+                    }
+                }
+                result = lines.join('\n');
+                break;
+            }
+            case 'forget_memory': {
+                // Self-service by default. Inspecting/deleting ANOTHER user's
+                // memories requires the owner/admin gate, mirroring §9 security.
+                let targetMember = null;
+                let targetUserId = message.author.id;
+                let targetName = 'you';
+                if (intent.target) {
+                    targetMember = findMember(guild, intent.target);
+                    if (!targetMember) return '❌ I could not find that member.';
+                    if (targetMember.id !== message.author.id) {
+                        const failure = await authorize(message, settings, intent, null);
+                        if (failure) return failure;
+                    }
+                    targetUserId = targetMember.id;
+                    targetName = targetMember.displayName;
+                }
+                if (!brain.isMemoryAvailable()) {
+                    return '⚠️ Persistent memory is currently unavailable (MongoDB unreachable) — nothing was deleted, and nothing is stored right now.';
+                }
+                try {
+                    const deleted = await brain.deleteAllMemories(guild.id, targetUserId);
+                    result = deleted > 0
+                        ? `🗑️ Deleted **${deleted}** stored memor${deleted === 1 ? 'y' : 'ies'} for ${targetName}. They are gone from MongoDB for real.`
+                        : `ℹ️ ${targetName === 'you' ? 'You have' : `${targetName} has`} no stored memories — nothing was deleted (and I will not claim otherwise).`;
+                    target = targetName;
+                } catch (error) {
+                    result = `❌ Deletion failed: ${error.message}. Whatever was stored is still stored — I did not delete anything.`;
+                }
                 break;
             }
             case 'timeout_member': {

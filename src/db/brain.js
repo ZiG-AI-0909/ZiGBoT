@@ -14,22 +14,64 @@ let client = null;
 let users = null;
 let warnings = null;
 let counters = null;
+let memories = null;
+let lastMemoryError = null;
+
+// ---- Long-term memory store constants ----
+
+const MEMORY_TYPES = new Set(['fact', 'preference', 'event', 'context']);
+const MEMORY_MAX_LENGTH = 500;
+const MEMORY_DEFAULT_LIMIT = 5;
+const MEMORY_MAX_LIMIT = 20;
+
+// Values that must never enter the memory collection. Checked before any
+// write; a match means the write is refused outright (never silently stored).
+const CREDENTIAL_VALUE_PATTERNS = [
+    /\bsk-[A-Za-z0-9_-]{16,}\b/,                                        // OpenAI-style API keys
+    /\bgh[pousr]_[A-Za-z0-9]{20,}\b/,                                   // GitHub tokens
+    /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/,                                 // Slack tokens
+    /\bAKIA[0-9A-Z]{16}\b/,                                             // AWS access key ids
+    /\bAIza[0-9A-Za-z_-]{30,}\b/,                                       // Google API keys
+    /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/ // JWTs
+];
+// Label-style secrets: "password: hunter2", "api_key=abc123", "the token is xyz".
+// (Note: \\s*[=:] catches label:value and label=value; the second alternative
+// catches the prose "X is Y" form.)
+const CREDENTIAL_LABEL_PATTERN = /\b(?:api[-_ ]?keys?|tokens?|secrets?|passw(?:or)?ds?|passwd|credentials?)\s*[=:]\s*\S+|\b(?:password|passwd|secret|token|api[-_ ]?keys?|credentials?)\s+is\s+\S+/i;
+
+function containsCredential(text) {
+    return CREDENTIAL_VALUE_PATTERNS.some((pattern) => pattern.test(text))
+        || CREDENTIAL_LABEL_PATTERN.test(text);
+}
 
 async function connectBrain(uri, { client: injectedClient = null } = {}) {
     if (!uri) {
         throw new Error('connectBrain requires a MongoDB URI (set MONGODB_URI)');
     }
-    client = injectedClient || new MongoClient(uri);
-    await client.connect();
+    // Connect fully BEFORE publishing any module state: a failed connect must
+    // never leave half-initialized collections behind.
+    const newClient = injectedClient || new MongoClient(uri);
+    await newClient.connect();
 
-    const db = client.db('zigbot');
-    users = db.collection('users');
-    warnings = db.collection('warnings');
-    counters = db.collection('counters');
+    const db = newClient.db('zigbot');
+    const nextUsers = db.collection('users');
+    const nextWarnings = db.collection('warnings');
+    const nextCounters = db.collection('counters');
+    const nextMemories = db.collection('memories');
 
-    await users.createIndex({ userId: 1 }, { unique: true });
+    await nextUsers.createIndex({ userId: 1 }, { unique: true });
     // Same lookup pattern as the old idx_warnings_guild_user SQLite index.
-    await warnings.createIndex({ guildId: 1, userId: 1, created_at: 1 });
+    await nextWarnings.createIndex({ guildId: 1, userId: 1, created_at: 1 });
+    // Memory recall always filters by guild+user and sorts newest-first.
+    await nextMemories.createIndex({ guildId: 1, userId: 1, created_at: -1 });
+
+    // Everything succeeded — swap the live state over in one go.
+    client = newClient;
+    users = nextUsers;
+    warnings = nextWarnings;
+    counters = nextCounters;
+    memories = nextMemories;
+    lastMemoryError = null;
 
     return users;
 }
@@ -83,4 +125,161 @@ async function countWarnings(guildId, userId) {
     return warnings.countDocuments({ guildId, userId });
 }
 
-module.exports = { connectBrain, getUser, updateUser, addWarning, listWarnings, countWarnings };
+// ---- Long-term memory store (persistent conversational memory) ----
+// Unlike ConversationMemory in ai/memory.js (8 msgs / 15 min, in-process),
+// these records survive restarts because MongoDB Atlas is the source of truth.
+// Every failure is recorded in lastMemoryError so the bot can report its real
+// state instead of claiming a save or recall that never happened.
+
+function noteMemoryError(error) {
+    lastMemoryError = error?.message || String(error);
+}
+
+async function remember(guildId, userId, content, type = 'fact') {
+    requireBrain();
+    const raw = String(content || '').trim();
+    if (!guildId || !userId || !raw) {
+        throw new Error('remember requires guildId, userId, and non-empty content.');
+    }
+    if (containsCredential(raw)) {
+        throw new Error('Refusing to store passwords, API keys, tokens, or credentials in memory.');
+    }
+    const doc = {
+        guildId: String(guildId),
+        userId: String(userId),
+        content: raw.slice(0, MEMORY_MAX_LENGTH),
+        type: MEMORY_TYPES.has(type) ? type : 'fact',
+        created_at: Date.now()
+    };
+    try {
+        // Atomic sequence, same pattern as warning ids.
+        const { value } = await counters.findOneAndUpdate(
+            { _id: 'memory_id' },
+            { $inc: { seq: 1 } },
+            { upsert: true, returnDocument: 'after' }
+        );
+        doc.id = value.seq;
+        await memories.insertOne(doc);
+        lastMemoryError = null;
+        return { id: doc.id, content: doc.content, type: doc.type, created_at: doc.created_at };
+    } catch (error) {
+        noteMemoryError(error);
+        throw error;
+    }
+}
+
+async function recall(guildId, userId, limit = MEMORY_DEFAULT_LIMIT) {
+    requireBrain();
+    const capped = Math.max(1, Math.min(Number(limit) || MEMORY_DEFAULT_LIMIT, MEMORY_MAX_LIMIT));
+    try {
+        const rows = await memories
+            .find({ guildId: String(guildId), userId: String(userId) })
+            .sort({ created_at: -1, id: -1 })
+            .limit(capped)
+            .toArray();
+        lastMemoryError = null;
+        // Returned oldest-first so the AI reads them like a timeline.
+        return rows.reverse().map(({ id, content, type, created_at }) => ({ id, content, type, created_at }));
+    } catch (error) {
+        noteMemoryError(error);
+        throw error;
+    }
+}
+
+async function countMemories(guildId, userId) {
+    requireBrain();
+    try {
+        const count = await memories.countDocuments({ guildId: String(guildId), userId: String(userId) });
+        lastMemoryError = null;
+        return count;
+    } catch (error) {
+        noteMemoryError(error);
+        throw error;
+    }
+}
+
+async function deleteMemoryById(guildId, userId, id) {
+    requireBrain();
+    const numericId = Number(id);
+    if (!Number.isInteger(numericId) || numericId <= 0) {
+        throw new Error('Memory id must be a positive number.');
+    }
+    try {
+        const result = await memories.deleteOne({ guildId: String(guildId), userId: String(userId), id: numericId });
+        lastMemoryError = null;
+        return result.deletedCount > 0;
+    } catch (error) {
+        noteMemoryError(error);
+        throw error;
+    }
+}
+
+async function deleteAllMemories(guildId, userId) {
+    requireBrain();
+    try {
+        const result = await memories.deleteMany({ guildId: String(guildId), userId: String(userId) });
+        lastMemoryError = null;
+        return result.deletedCount || 0;
+    } catch (error) {
+        noteMemoryError(error);
+        throw error;
+    }
+}
+
+// ---- Truthful runtime capability reporting ----
+// The AI prompt and diagnostic commands must derive their memory claims from
+// these values, never from hard-coded assumptions.
+
+function isMemoryAvailable() {
+    return Boolean(memories);
+}
+
+function getMemoryCapabilities() {
+    const available = Boolean(memories);
+    return {
+        persistentMemory: available,
+        memoryDatabase: available ? 'MongoDB' : null,
+        conversationMemory: true, // in-process sliding window, always wired
+        memoryRetrieval: available,
+        memoryWrite: available
+    };
+}
+
+function getMemoryStatus() {
+    return {
+        ...getMemoryCapabilities(),
+        connected: Boolean(client),
+        collection: 'memories',
+        lastError: lastMemoryError
+    };
+}
+
+// Test-only hook: revert to the never-connected state so suites can assert
+// the loud-failure guards and truthful capability reporting without spawning
+// a new process or mutating require.cache.
+function _disconnectForTests() {
+    client = null;
+    users = null;
+    warnings = null;
+    counters = null;
+    memories = null;
+    lastMemoryError = null;
+}
+
+module.exports = {
+    connectBrain,
+    getUser,
+    updateUser,
+    addWarning,
+    listWarnings,
+    countWarnings,
+    remember,
+    recall,
+    countMemories,
+    deleteMemoryById,
+    deleteAllMemories,
+    isMemoryAvailable,
+    getMemoryCapabilities,
+    getMemoryStatus,
+    _disconnectForTests
+};
