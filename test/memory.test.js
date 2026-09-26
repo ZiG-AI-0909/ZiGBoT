@@ -9,12 +9,32 @@ const brain = require('../src/db/brain');
 const { executeTool, isAuthorizedActor } = require('../src/tools/router');
 const {
     buildMemoryContextBlock,
+    buildServerContextBlock,
+    extractTopicKeyword,
+    extractPassiveMemory,
     isMemoryQuestion,
     buildMemoryAnswer,
     shouldRemember
 } = require('../src/ai/client');
 
 // ---------- Fake Mongo client (same surface the p3 suite uses) ----------
+
+// Filter matcher with the operator subset brain.js uses: plain equality,
+// { $lt / $gte } range operators, and Mongo's "query null matches missing
+// field" semantics (used by the keyword-permanence filter).
+function matchesFilter(doc, filter) {
+    return Object.entries(filter).every(([key, expected]) => {
+        if (expected !== null && typeof expected === 'object') {
+            if (expected.$lt !== undefined && !(doc[key] < expected.$lt)) return false;
+            if (expected.$lte !== undefined && !(doc[key] <= expected.$lte)) return false;
+            if (expected.$gt !== undefined && !(doc[key] > expected.$gt)) return false;
+            if (expected.$gte !== undefined && !(doc[key] >= expected.$gte)) return false;
+            return true;
+        }
+        if (expected === null) return doc[key] === null || doc[key] === undefined;
+        return doc[key] === expected;
+    });
+}
 
 function fakeMongoClient() {
     const collections = new Map();
@@ -34,11 +54,11 @@ function fakeMongoClient() {
                     return { insertedId: doc._id ?? null };
                 },
                 async findOne(filter) {
-                    const doc = docs.find((d) => Object.entries(filter).every(([k, v]) => d[k] === v));
+                    const doc = docs.find((d) => matchesFilter(d, filter));
                     return doc ? { ...doc } : null;
                 },
                 async updateOne(filter, update) {
-                    let doc = docs.find((d) => Object.entries(filter).every(([k, v]) => d[k] === v));
+                    let doc = docs.find((d) => matchesFilter(d, filter));
                     if (!doc) {
                         doc = { ...filter };
                         docs.push(doc);
@@ -49,7 +69,7 @@ function fakeMongoClient() {
                     return { matchedCount: 1 };
                 },
                 async countDocuments(filter) {
-                    return docs.filter((d) => Object.entries(filter).every(([k, v]) => d[k] === v)).length;
+                    return docs.filter((d) => matchesFilter(d, filter)).length;
                 },
                 async deleteOne(filter) {
                     const index = docs.findIndex((d) => Object.entries(filter).every(([k, v]) => d[k] === v));
@@ -60,14 +80,14 @@ function fakeMongoClient() {
                     return { deletedCount: 0 };
                 },
                 async deleteMany(filter) {
-                    const keep = docs.filter((d) => !Object.entries(filter).every(([k, v]) => d[k] === v));
+                    const keep = docs.filter((d) => !matchesFilter(d, filter));
                     const deleted = docs.length - keep.length;
                     docs.length = 0;
                     docs.push(...keep);
                     return { deletedCount: deleted };
                 },
                 find(filter) {
-                    const matches = () => docs.filter((d) => Object.entries(filter).every(([k, v]) => d[k] === v));
+                    const matches = () => docs.filter((d) => matchesFilter(d, filter));
                     let sortKeys = {};
                     let limitCount = 0;
                     return {
@@ -89,7 +109,7 @@ function fakeMongoClient() {
                     };
                 },
                 async findOneAndUpdate(filter, update) {
-                    let doc = docs.find((d) => Object.entries(filter).every(([k, v]) => d[k] === v));
+                    let doc = docs.find((d) => matchesFilter(d, filter));
                     if (!doc) {
                         doc = { ...filter };
                         docs.push(doc);
@@ -393,6 +413,162 @@ test('shouldRemember saves durable facts and preferences, skips chat noise', () 
     for (const message of skips) {
         assert.equal(shouldRemember(message).should, false, `"${message}" must NOT be remembered`);
     }
+});
+
+// ---------- Cross-user recent context + 1-month retention ----------
+
+test('remember accepts keyword/author metadata and stores it', async () => {
+    await connectTestBrain();
+    const stored = await brain.remember('guild-1', 'user-1', 'my exam is happening', 'event', {
+        authorName: 'Rohit',
+        keyword: 'exam'
+    });
+    assert.ok(stored.id > 0);
+
+    const recent = await brain.recallRecent('guild-1', { limit: 10 });
+    assert.equal(recent.length, 1);
+    assert.equal(recent[0].authorName, 'Rohit');
+    assert.equal(recent[0].keyword, 'exam');
+    assert.equal(recent[0].content, 'my exam is happening');
+});
+
+test('recallRecent returns memories from ALL users guild-wide, newest first', async () => {
+    await connectTestBrain();
+    await brain.remember('guild-1', 'user-1', 'user-1 old memory');
+    await brain.remember('guild-1', 'user-2', 'user-2 exam stress', 'event', { authorName: 'Anna', keyword: 'exam' });
+    await brain.remember('guild-1', 'user-3', 'user-3 gym day', 'event', { authorName: 'Sam', keyword: 'gym' });
+    await brain.remember('guild-2', 'user-1', 'other guild stays out');
+
+    const recent = await brain.recallRecent('guild-1', { limit: 10 });
+    assert.equal(recent.length, 3);
+    assert.deepEqual(
+        recent.map((m) => m.content),
+        ['user-3 gym day', 'user-2 exam stress', 'user-1 old memory'],
+        'must be newest-first across ALL members'
+    );
+});
+
+test('recallRecent excludes a user and windows normal conversation memories', async () => {
+    await connectTestBrain();
+    await brain.remember('g', 'user-1', 'mine');
+    await brain.remember('g', 'user-2', 'theirs');
+
+    const excluded = await brain.recallRecent('g', { limit: 10, excludeUserId: 'user-1' });
+    assert.deepEqual(excluded.map((m) => m.content), ['theirs']);
+
+    // A cutoff far in the future expires untagged conversation memories,
+    // while keyword-tagged anchors are PERMANENT and still come through.
+    const windowed = await brain.recallRecent('g', { limit: 10, windowMs: -1_000_000 });
+    assert.deepEqual(windowed.map((m) => m.content), [], 'untagged memories must be window-gated');
+});
+
+test('keyword-tagged memories are PERMANENT: never pruned, never window-gated', async () => {
+    const fake = await connectTestBrain();
+    const store = fake.collections.get('memories');
+    const monthAgo = Date.now() - 31 * 24 * 60 * 60 * 1000;
+
+    // A keyword anchor from 40 days ago and a normal memory from 40 days ago.
+    store.docs.push({
+        id: 901, guildId: 'g', userId: 'u1', content: 'rohit exam anchor',
+        type: 'event', keyword: 'exam', created_at: monthAgo
+    });
+    store.docs.push({
+        id: 902, guildId: 'g', userId: 'u2', content: 'stale chatter',
+        type: 'fact', keyword: null, created_at: monthAgo
+    });
+
+    // Prune: only the untagged old memory dies.
+    const deleted = await brain.pruneOldMemories('g');
+    assert.equal(deleted, 1, 'keyword anchors must survive the prune');
+
+    // Recall: only the anchor qualifies despite being outside the window.
+    const recent = await brain.recallRecent('g', { limit: 10 });
+    assert.deepEqual(recent.map((m) => m.content), ['rohit exam anchor']);
+
+    // And the anchor remains recallable for its OWN user too.
+    const own = await brain.recall('g', 'u1', 10);
+    assert.deepEqual(own.map((m) => m.content), ['rohit exam anchor']);
+});
+
+test('pruneOldMemories deletes only untagged entries older than 30 days', async () => {
+    const fake = await connectTestBrain();
+    await brain.remember('g', 'u', 'fresh memory');
+    // Backdate one doc past the window directly in the fake store.
+    const store = fake.collections.get('memories');
+    store.docs.push({
+        id: 999, guildId: 'g', userId: 'u', content: 'ancient memory',
+        type: 'fact', keyword: null, created_at: Date.now() - 31 * 24 * 60 * 60 * 1000
+    });
+
+    const deleted = await brain.pruneOldMemories('g');
+    assert.equal(deleted, 1);
+    const remaining = await brain.recall('g', 'u', 10);
+    assert.deepEqual(remaining.map((m) => m.content), ['fresh memory']);
+    assert.equal(await brain.pruneOldMemories('g'), 0, 'second prune deletes nothing');
+});
+
+// ---------- Passive capture + topic keywords ----------
+
+test('extractTopicKeyword tags exams, jobs, gym, health and more', () => {
+    const cases = [
+        ['my exam is happening tomorrow', 'exam'],
+        ['semester test ka time aa gaya', 'exam'],
+        ['I have an interview on monday', 'job'],
+        ['boss gave a deadline today', 'work'],
+        ['leg day at the gym', 'gym'],
+        ['down with fever since morning', 'health'],
+        ['results came out and I passed', 'exam-result']
+    ];
+    for (const [text, keyword] of cases) {
+        assert.equal(extractTopicKeyword(text), keyword, `"${text}" -> ${keyword}`);
+    }
+    assert.equal(extractTopicKeyword('just vibing'), null);
+});
+
+test('extractPassiveMemory captures durable events and skips chat noise', () => {
+    const captures = [
+        ['my exam is happening next week', 'event', 'exam'],
+        ['remember that I have a game night on saturday', 'fact', 'game'],
+        ['mera interview kal hai wish me luck', 'event', 'job']
+    ];
+    for (const [text, type, keyword] of captures) {
+        const result = extractPassiveMemory(text);
+        assert.ok(result, `"${text}" should be captured passively`);
+        assert.equal(result.type, type);
+        assert.equal(result.keyword, keyword);
+    }
+
+    const skips = [
+        'lol',
+        'hey bro what is up',
+        'anyone here?',
+        'i am bored',
+        'play https://example.com/song.mp3',
+        'kick him'
+    ];
+    for (const text of skips) {
+        assert.equal(extractPassiveMemory(text), null, `"${text}" must NOT be captured`);
+    }
+});
+
+test('passive capture refuses crisis content so it is never persisted', () => {
+    assert.equal(extractPassiveMemory('my exam is happening and I want to die'), null);
+});
+
+test('buildServerContextBlock lists who + topic + content for the AI', () => {
+    const block = buildServerContextBlock({
+        recentMemories: [
+            { authorName: 'Rohit', keyword: 'exam', content: 'my exam is happening', type: 'event' },
+            { authorName: null, keyword: null, content: 'anonymous note', type: 'fact' }
+        ]
+    });
+    assert.match(block, /SERVER HAPPENINGS/);
+    assert.match(block, /Rohit \[topic: exam\]: my exam is happening/);
+    assert.match(block, /someone: anonymous note/);
+
+    // Empty/missing recent memories -> empty block (no noise in the prompt).
+    assert.equal(buildServerContextBlock({ recentMemories: [] }), '');
+    assert.equal(buildServerContextBlock({}), '');
 });
 
 // ---------- Owner-only diagnostics via the router ----------

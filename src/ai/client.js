@@ -52,9 +52,83 @@ function buildMemoryContextBlock({ capabilities = null, memories = null, retriev
     return `\n\n${lines.join('\n')}`;
 }
 
-// Owner/member transparency questions must be answered from actual data, not
-// the persona's imagination. Imperative save requests ("remember that...")
-// are deliberately NOT questions and fall through to the normal chat path.
+// Selective save heuristic: only durable facts/preferences get persisted.
+// Chat noise, commands, and transient states ("i am bored") are skipped.
+// ---- Passive topic-keyword extraction (server-wide memory) ----
+
+// Topic keyword for a message. Deterministic, cheap, no LLM call: a compact
+// label like 'exam', 'job', 'gym' that later replies can hook context onto.
+const TOPIC_KEYWORD_PATTERNS = [
+    { keyword: 'exam', regex: /\b(exams?|test|semester|midterms?|finals?|paper)\b/i },
+    { keyword: 'job', regex: /\b(job|interview|hiring|resume|offer letter|notice period)\b/i },
+    { keyword: 'work', regex: /\b(work|office|boss|client|deadline|project due|standup)\b/i },
+    { keyword: 'gym', regex: /\b(gym|workout|bulking|cutting|deadlift|protein)\b/i },
+    { keyword: 'health', regex: /\b(sick|fever|cough|hospital|doctor|medicine|not feeling well)\b/i },
+    { keyword: 'relationship', regex: /\b(girlfriend|boyfriend|crush|breakup|date night|proposal)\b/i },
+    { keyword: 'family', regex: /\b(mom|dad|parents|brother|sister|family|ghar wale)\b/i },
+    { keyword: 'travel', regex: /\b(trip|travel|flight|vacation|holiday|train ticket)\b/i },
+    { keyword: 'moving', regex: /\b(shifting|moving (out|in|to)|new apartment|new flat|rent agreement)\b/i },
+    { keyword: 'money', regex: /\b(broke|salary|rent due|loan|emi|expenses)\b/i },
+    { keyword: 'coding', regex: /\b(coding|debug|deploy|production (down|bug)|hackathon|leetcode)\b/i },
+    { keyword: 'game', regex: /\b(rank up|valorant|bgmi|minecraft|gta|game night|lobby)\b/i },
+    { keyword: 'exam-result', regex: /\b(results? (aaye|came|declared|out)|passed|failed|backlog|cgpa|gpa)\b/i }
+];
+
+function extractTopicKeyword(message) {
+    const text = String(message || '');
+    for (const { keyword, regex } of TOPIC_KEYWORD_PATTERNS) {
+        if (regex.test(text)) return keyword;
+    }
+    return null;
+}
+
+// Passive-capture detector: what goes into server-wide memory from EVERY
+// chat message (not just mentions). Bars are higher than shouldRemember —
+// passive capture sees 10x more traffic, so noise tolerance is near zero.
+const PASSIVE_LENGTH_MIN = 15;
+const PASSIVE_LENGTH_MAX = 300;
+
+function extractPassiveMemory(message) {
+    const text = String(message || '').trim();
+    if (text.length < PASSIVE_LENGTH_MIN || text.length > PASSIVE_LENGTH_MAX) return null;
+    // Never capture commands or bot-directed meta-talk.
+    if (/^(\/|@|play |pause|skip|stop|queue|volume|loop|kick|ban|timeout|warn|help\b|roast (him|her|them))/i.test(text)) return null;
+    // Crisis content must never be persisted as a memory.
+    if (isCrisisMessage(text)) return null;
+
+    const explicit = /\b(remember (that|this|to)|yaad rakh(na|o)?|don'?t forget|dont forget)\b/i;
+    if (explicit.test(text)) {
+        return { content: text, type: 'fact', keyword: extractTopicKeyword(text) };
+    }
+    // Durable life events worth cross-referencing later ("my exam is on...").
+    const eventPattern = /\b(my|mera|meri)\s+(exam|exams|interview|test|semester|job|match|game|birthday|internals|finals|practical|result)\b/i;
+    if (eventPattern.test(text)) {
+        return { content: text, type: 'event', keyword: extractTopicKeyword(text) };
+    }
+    return null;
+}
+
+// Builds the system-prompt block grounding the AI in WHAT IS HAPPENING in the
+// server RIGHT NOW (last 30 days, all members). This is what enables replies
+// like asking a member about another member's exam — one member said "my exam
+// is happening", and the AI references it when someone else chats.
+function buildServerContextBlock({ recentMemories = null, retrievalFailed = false } = {}) {
+    if (!Array.isArray(recentMemories) || recentMemories.length === 0) return '';
+    const lines = [
+        'SERVER HAPPENINGS (last 30 days, live from MongoDB, all members — ground truth, never contradict or invent):',
+        'Use these naturally: if the current topic relates to one, you may reference it (ask how it went, follow up, tease about it).'
+    ];
+    for (const memory of recentMemories) {
+        const who = memory.authorName || 'someone';
+        const tag = memory.keyword ? ` [topic: ${memory.keyword}]` : '';
+        lines.push(`- ${who}${tag}: ${memory.content}`);
+    }
+    if (retrievalFailed) {
+        lines.push('- (Recent-context retrieval FAILED this turn: do not claim awareness of any recent server events.)');
+    }
+    return `\n\n${lines.join('\n')}`;
+}
+
 const MEMORY_QUESTION_PATTERN = /\b(what do you (remember|recall)|what all do you remember|show me (your|the|ur) memory|what('s| is| are) (stored|kept|saved) (in|on) (your|the|ur) memory|what do you (know|remember) about me|do you have (a |any )?(persistent |long.term |permanent )?(memory|memories)|do you (remember|recall) (me|us|things|anything|stuff)|how does your memory work|is your memory (persistent|permanent)|where (do you|is your memory) store(d)?)/i;
 const MEMORY_IMPERATIVE_PATTERN = /\b(remember (that|this|to|me by)|yaad rakh|yaad kar|mujhe yaad rakhna)\b/i;
 
@@ -386,7 +460,7 @@ function createAiClient(settings) {
         model: settings.aiModel,
         rateLimiter,
 
-        async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, declineMode = false, userId = null, capabilities = null, memories = null, retrievalFailed = false, reputation = null }) {
+        async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, declineMode = false, userId = null, capabilities = null, memories = null, retrievalFailed = false, reputation = null, recentMemories = null, recentRetrievalFailed = false }) {
             if (isCreatorQuestion(userMessage)) return getCreatorResponse(userMessage);
 
             // AI quota protection: applied per user before any LLM call.
@@ -409,15 +483,16 @@ function createAiClient(settings) {
                 ? `[${authorName}]: ${userMessage}`
                 : userMessage;
 
-            // Ground the reply in real memory + behavior state: the blocks
-            // tell the model exactly what is true about this member right now.
+            // Ground the reply in real memory + behavior + server-happenings
+            // state: the blocks tell the model exactly what is true right now.
             const memoryBlock = buildMemoryContextBlock({ capabilities, memories, retrievalFailed });
             const reputationBlock = buildReputationBlock(reputation);
+            const serverContextBlock = buildServerContextBlock({ recentMemories, retrievalFailed: recentRetrievalFailed });
             const messages = [
-                { role: 'system', content: systemPrompt + memoryBlock + reputationBlock },
+                { role: 'system', content: systemPrompt + memoryBlock + reputationBlock + serverContextBlock },
                 ...contextMessages,
                 { role: 'user', content: formattedUserContent }
-            ];
+ ];
 
             const response = await client.chat.completions.create({
                 model: settings.aiModel,
@@ -469,6 +544,9 @@ module.exports = {
     isMemoryQuestion,
     buildMemoryAnswer,
     shouldRemember,
+    extractTopicKeyword,
+    extractPassiveMemory,
+    buildServerContextBlock,
     buildReputationBlock,
     isReputationQuestion,
     buildReputationAnswer

@@ -30,6 +30,10 @@ const {
 } = require('./reply/delivery');
 const { detectProfanityAtBot } = require('./ai/profanityDetector');
 const { detectBehaviorSignals, defaultBehaviorTracker } = require('./ai/behaviorDetector');
+const {
+    extractPassiveMemory,
+    extractTopicKeyword
+} = require('./ai/client');
 const { registerSlashCommands, interactionToIntent } = require('./slash');
 const brain = require('./db/brain');
 const { startHealthServer } = require('./health');
@@ -410,6 +414,26 @@ client.on(Events.MessageCreate, async (message) => {
 
     const authorName = message.member?.displayName || message.author.username;
 
+    // ---- Passive server-wide memory capture (ALL chat, not just mentions) ----
+    // The bot reads every message it already sees and quietly stores durable
+    // life events ("my exam is happening") with a topic keyword, so future
+    // replies to ANYONE can reference them ("btw how did the exam go?").
+    // Best-effort: a capture failure must never block the reply path.
+    if (message.guild && userMessage && !comebackMode && !declineMode) {
+        try {
+            const keyword = extractTopicKeyword(userMessage);
+            const passive = extractPassiveMemory(userMessage);
+            if (passive && brain.isMemoryAvailable()) {
+                await brain.remember(message.guild.id, message.author.id, passive.content, passive.type, {
+                    authorName,
+                    keyword: passive.keyword || keyword
+                });
+            }
+        } catch (memoryError) {
+            console.error(`[ZiGBoT MEMORY] Passive capture skipped: ${memoryError.message}`);
+        }
+    }
+
     try {
         const history = defaultMemory.getHistory(message.channel.id);
 
@@ -439,6 +463,24 @@ client.on(Events.MessageCreate, async (message) => {
             }
         }
 
+        // Server happenings: recent memories from ALL members (last 30 days)
+        // so the AI can reference one member's situation while talking to
+        // another. Excludes the current speaker (their own memories are
+        // already in the personal block). Failure degrades silently.
+        let recentMemories = null;
+        let recentRetrievalFailed = false;
+        if (brain.isMemoryAvailable() && message.guild) {
+            try {
+                recentMemories = await brain.recallRecent(message.guild.id, {
+                    limit: 15,
+                    excludeUserId: message.author.id
+                });
+            } catch (recentError) {
+                console.error(`[ZiGBoT MEMORY] Recent-context lookup failed: ${recentError.message}`);
+                recentRetrievalFailed = true;
+            }
+        }
+
         const replyText = await ai.reply({
             userMessage,
             authorName,
@@ -453,7 +495,9 @@ client.on(Events.MessageCreate, async (message) => {
             capabilities,
             memories: userMemories,
             retrievalFailed,
-            reputation
+            reputation,
+            recentMemories,
+            recentRetrievalFailed
         });
 
         await deliverAiReply(message, replyText, { log: logReplyPacing });
@@ -481,7 +525,10 @@ client.on(Events.MessageCreate, async (message) => {
         try {
             const candidate = shouldRemember(userMessage);
             if (candidate.should && brain.isMemoryAvailable() && message.guild) {
-                await brain.remember(message.guild.id, message.author.id, candidate.content, candidate.type);
+                await brain.remember(message.guild.id, message.author.id, candidate.content, candidate.type, {
+                    authorName,
+                    keyword: extractTopicKeyword(candidate.content)
+                });
             }
         } catch (memoryError) {
             console.error(`[ZiGBoT MEMORY] Save skipped: ${memoryError.message}`);
@@ -585,7 +632,10 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
         try {
             const candidate = shouldRemember(transcript);
             if (candidate.should && brain.isMemoryAvailable()) {
-                await brain.remember(guild.id, userId, candidate.content, candidate.type);
+                await brain.remember(guild.id, userId, candidate.content, candidate.type, {
+                    authorName,
+                    keyword: extractTopicKeyword(candidate.content)
+                });
             }
         } catch (memoryError) {
             console.error(`[ZiGBoT MEMORY] Save skipped: ${memoryError.message}`);

@@ -25,6 +25,13 @@ const MEMORY_TYPES = new Set(['fact', 'preference', 'event', 'context']);
 const MEMORY_MAX_LENGTH = 500;
 const MEMORY_DEFAULT_LIMIT = 5;
 const MEMORY_MAX_LIMIT = 20;
+// Retention policy (two-tier):
+//   • NORMAL CONVERSATION memories (keyword: null) expire after 30 days and
+//     are pruned automatically on every write.
+//   • KEYWORD-TAGGED memories (topic anchors like 'exam', 'job') are
+//     PERMANENT — never pruned, always eligible for cross-user context.
+const MEMORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const MEMORY_RECALL_RECENT_CAP = 200;
 
 // ---- Behavior accountability (who did what, and how the bot treats them) ----
 // Sliding-window reputation: positive signals +1, negative -2, only events
@@ -84,6 +91,8 @@ async function connectBrain(uri, { client: injectedClient = null } = {}) {
     await nextWarnings.createIndex({ guildId: 1, userId: 1, created_at: 1 });
     // Memory recall always filters by guild+user and sorts newest-first.
     await nextMemories.createIndex({ guildId: 1, userId: 1, created_at: -1 });
+    // Guild-wide recent-context lookups (cross-user, time-windowed).
+    await nextMemories.createIndex({ guildId: 1, created_at: -1 });
     // Behavior accountability: per-member lookups + signal aggregation.
     await nextBehaviors.createIndex({ guildId: 1, userId: 1, created_at: -1 });
 
@@ -159,7 +168,9 @@ function noteMemoryError(error) {
     lastMemoryError = error?.message || String(error);
 }
 
-async function remember(guildId, userId, content, type = 'fact') {
+// meta: { authorName, keyword } — passive-capture enrichment so cross-user
+// context can say WHOSE memory it is and WHAT topic it belongs to.
+async function remember(guildId, userId, content, type = 'fact', meta = {}) {
     requireBrain();
     const raw = String(content || '').trim();
     if (!guildId || !userId || !raw) {
@@ -173,6 +184,8 @@ async function remember(guildId, userId, content, type = 'fact') {
         userId: String(userId),
         content: raw.slice(0, MEMORY_MAX_LENGTH),
         type: MEMORY_TYPES.has(type) ? type : 'fact',
+        author_name: meta.authorName ? String(meta.authorName).slice(0, 80) : null,
+        keyword: meta.keyword ? String(meta.keyword).slice(0, 40) : null,
         created_at: Date.now()
     };
     try {
@@ -185,6 +198,13 @@ async function remember(guildId, userId, content, type = 'fact') {
         doc.id = value.seq;
         await memories.insertOne(doc);
         lastMemoryError = null;
+        // Retention: prune anything older than the window. A prune failure
+        // must never fail the save that just succeeded.
+        try {
+            await pruneOldMemories(guildId);
+        } catch (pruneError) {
+            console.error(`[ZiGBoT MEMORY] Prune skipped: ${pruneError.message}`);
+        }
         return { id: doc.id, content: doc.content, type: doc.type, created_at: doc.created_at };
     } catch (error) {
         noteMemoryError(error);
@@ -216,6 +236,63 @@ async function countMemories(guildId, userId) {
         const count = await memories.countDocuments({ guildId: String(guildId), userId: String(userId) });
         lastMemoryError = null;
         return count;
+    } catch (error) {
+        noteMemoryError(error);
+        throw error;
+    }
+}
+
+// ---- Cross-user recent context + 1-month retention ----
+
+// Deletes NORMAL CONVERSATION memories older than the retention window
+// (guild-scoped when a guildId is given). Keyword-tagged memories are
+// permanent anchors and are NEVER pruned. Returns the real deleted count.
+async function pruneOldMemories(guildId = null) {
+    requireBrain();
+    const cutoff = Date.now() - MEMORY_RETENTION_MS;
+    const filter = guildId
+        ? { guildId: String(guildId), keyword: null, created_at: { $lt: cutoff } }
+        : { keyword: null, created_at: { $lt: cutoff } };
+    try {
+        const result = await memories.deleteMany(filter);
+        lastMemoryError = null;
+        return result.deletedCount || 0;
+    } catch (error) {
+        noteMemoryError(error);
+        throw error;
+    }
+}
+
+// Guild-wide memories across ALL users (newest first). This is what lets the
+// bot reference one member's situation while talking to another ("how did
+// your exam go?"). Normal conversation memories are windowed to the
+// retention period (30 days); keyword-tagged memories are PERMANENT anchors
+// and always qualify regardless of age.
+async function recallRecent(guildId, { limit = 15, windowMs = MEMORY_RETENTION_MS, excludeUserId = null } = {}) {
+    requireBrain();
+    const capped = Math.max(1, Math.min(Number(limit) || 15, 50));
+    const cutoff = Date.now() - (Number(windowMs) || MEMORY_RETENTION_MS);
+    try {
+        const rows = await memories
+            .find({ guildId: String(guildId) })
+            .sort({ created_at: -1, id: -1 })
+            .limit(MEMORY_RECALL_RECENT_CAP)
+            .toArray();
+        lastMemoryError = null;
+        return rows
+            // Permanent keyword anchors bypass the window; normal conversation
+            // memories must be inside it.
+            .filter((row) => (row.keyword !== null && row.keyword !== undefined) || row.created_at >= cutoff)
+            .filter((row) => !excludeUserId || String(row.userId) !== String(excludeUserId))
+            .slice(0, capped)
+            .map(({ id, content, type, created_at, author_name, keyword }) => ({
+                id,
+                content,
+                type,
+                created_at,
+                authorName: author_name || null,
+                keyword: keyword || null
+            }));
     } catch (error) {
         noteMemoryError(error);
         throw error;
@@ -411,6 +488,8 @@ module.exports = {
     countWarnings,
     remember,
     recall,
+    recallRecent,
+    pruneOldMemories,
     countMemories,
     deleteMemoryById,
     deleteAllMemories,
