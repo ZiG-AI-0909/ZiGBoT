@@ -59,6 +59,20 @@ test('read-only info action works without owner authorization', async () => {
     assert.match(result, /Members: 10/);
 });
 
+test('audit logging does not crash when message.client is missing (slash fakeMessage path)', async () => {
+    // /memory via slash builds a fakeMessage WITHOUT message.client; with
+    // LOG_CHANNEL_ID set, auditLog used to hit
+    // "Cannot read properties of undefined (reading 'channels')".
+    const message = fakeMessage({ author: { id: 'owner-123' } });
+    assert.equal(message.client, undefined);
+    const result = await executeTool(
+        message,
+        { ...settings, logChannelId: 'log-channel-1' },
+        { action: 'memory_status' }
+    );
+    assert.match(result, /Memory diagnostics/);
+});
+
 test('music and help actions work without owner authorization', async () => {
     const message = fakeMessage({ author: { id: 'random-user' } });
     assert.doesNotMatch(await executeTool(message, settings, { action: 'queue_music' }), /Only the server owner/);
