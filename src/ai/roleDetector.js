@@ -7,20 +7,30 @@ function normalizeRoleName(name) {
         .replace(/[^a-z0-9]/g, '');      // strip all symbols/spaces
 }
 
-function getMemberGender(member, configuredFemaleRoles = [], configuredMaleRoles = []) {
+function getMemberGender(
+    member,
+    configuredFemaleRoles = [],
+    configuredMaleRoles = [],
+    configuredFemaleRoleIds = [],
+    configuredMaleRoleIds = []
+) {
     if (!member?.roles?.cache) return null;
 
     const femaleRoles = new Set(configuredFemaleRoles.map(normalizeRoleName).filter(Boolean));
     const maleRoles = new Set(configuredMaleRoles.map(normalizeRoleName).filter(Boolean));
-    let gender = null;
+    const femaleRoleIds = new Set(configuredFemaleRoleIds.map(String));
+    const maleRoleIds = new Set(configuredMaleRoleIds.map(String));
+    let hasFemaleRole = false;
+    let hasMaleRole = false;
 
     for (const role of member.roles.cache.values()) {
         const normalizedRole = normalizeRoleName(role.name);
-        if (femaleRoles.has(normalizedRole)) gender = 'female';
-        if (maleRoles.has(normalizedRole)) gender = 'male';
+        if (femaleRoles.has(normalizedRole) || femaleRoleIds.has(String(role.id))) hasFemaleRole = true;
+        if (maleRoles.has(normalizedRole) || maleRoleIds.has(String(role.id))) hasMaleRole = true;
     }
 
-    return gender;
+    if (hasFemaleRole === hasMaleRole) return null;
+    return hasFemaleRole ? 'female' : 'male';
 }
 
 function hasRole(member, configuredRoles = []) {

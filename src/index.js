@@ -233,20 +233,22 @@ client.on(Events.MessageCreate, async (message) => {
         message.guild?.id,
         settings.nonGentleRoleNames
     );
-    const tone = isGentle ? 'gentle' : 'savage';
+    const tone = isOwner || isGentle ? 'gentle' : 'savage';
     const gender = getMemberGender(
         message.member,
         settings.femaleRoleNames,
-        settings.maleRoleNames
+        settings.maleRoleNames,
+        settings.femaleRoleIds,
+        settings.maleRoleIds
     );
 
     // If a user just mentions @ZiGBoT without any text
     if (!userMessage) {
         if (isMentioned || isReplyToBot) {
-            const greeting = isGentle
-                ? (isOwner
-                    ? "Hello, Sir. ZiGBoT online. Your Users.heer roast mode is active. Who are we cooking today?"
-                    : "Hey! ✨ Kya chal raha hai? Kuch share karna hai ya koi help chahiye? 🌸")
+            const greeting = isOwner
+                ? 'At your service. ZiGBoT online. How can I help?'
+                : isGentle
+                    ? "Hey! ✨ Kya chal raha hai? Kuch share karna hai ya koi help chahiye? 🌸"
                 : "Haan, tag kiya hai toh bol bhi de. Kya dukh dard baantna hai?";
             await message.reply(greeting);
         }
@@ -270,7 +272,9 @@ client.on(Events.MessageCreate, async (message) => {
                 gender: getMemberGender(
                     targetMember,
                     settings.femaleRoleNames,
-                    settings.maleRoleNames
+                    settings.maleRoleNames,
+                    settings.femaleRoleIds,
+                    settings.maleRoleIds
                 )
             });
 
@@ -368,9 +372,8 @@ client.on(Events.MessageCreate, async (message) => {
 
     // Savage comeback detection: profanity aimed at the bot itself. Crisis
     // language (checked above) ALWAYS overrides this; tool/admin intents
-    // (handled above) never roast; gentle-tone users are excluded; owners are
-    // excluded unless they hold Users.heer, mirroring the existing owner-mode
-    // exception. Excluded categories (sexual/family-sexual/violent abuse)
+    // (handled above) never roast; gentle-tone users and owners are excluded.
+    // Excluded categories (sexual/family-sexual/violent abuse)
     // fall through to a de-escalating decline instead of matching energy.
     const botTargeted = isMentioned || isReplyToBot;
     const profanityAtBot = botTargeted
@@ -379,7 +382,7 @@ client.on(Events.MessageCreate, async (message) => {
     const comebackMode = profanityAtBot.matched
         && profanityAtBot.category === 'profanity'
         && tone === 'savage'
-        && !(isOwner && !isNonGentle);
+        && !isOwner;
     const declineMode = profanityAtBot.matched
         && profanityAtBot.category === 'excluded'
         && tone === 'savage';
@@ -611,7 +614,13 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
             authorName,
             contextMessages: history,
             tone: isGentle ? 'gentle' : 'savage',
-            gender: getMemberGender(member, settings.femaleRoleNames, settings.maleRoleNames),
+            gender: getMemberGender(
+                member,
+                settings.femaleRoleNames,
+                settings.maleRoleNames,
+                settings.femaleRoleIds,
+                settings.maleRoleIds
+            ),
             isNonGentle,
             userId,
             capabilities,

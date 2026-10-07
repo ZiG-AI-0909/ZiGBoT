@@ -50,11 +50,17 @@ test('assistant prompts define respectful owner recognition', () => {
     const memberPrompt = getSystemPrompt({ tone: 'gentle', isOwner: false });
     assert.match(ownerPrompt, /verified main owner/i);
     assert.match(ownerPrompt, /JARVIS-like assistant tone/i);
-    assert.match(ownerPrompt, /Do not call other users Sir/i);
+    assert.match(ownerPrompt, /Never roast, insult, mock/i);
+    assert.match(ownerPrompt, /regardless of their roles or message/i);
+    assert.match(ownerPrompt, /A roast command from the owner may target only the explicitly mentioned user/i);
+    assert.match(getSystemPrompt({ tone: 'savage', isOwner: true, isNonGentle: true }), /JARVIS-like assistant tone/i);
+    assert.doesNotMatch(getSystemPrompt({ tone: 'savage', isOwner: true, isNonGentle: true }), /Roast him directly/i);
+    assert.doesNotMatch(getSystemPrompt({ tone: 'savage', isOwner: true, comebackMode: true }), /Fire back with a sharp/i);
+    assert.match(getSystemPrompt({ tone: 'savage', isOwner: true }), /GENTLE, RESPECTFUL & WHOLESOME MODE/);
     assert.doesNotMatch(memberPrompt, /JARVIS-like assistant tone/i);
 });
 
-test('Users.heer overrides gentle mode for the owner', () => {
+test('Users.heer cannot override respectful owner treatment', () => {
     const member = {
         roles: {
             cache: new Map([['role', { name: 'Users.heer' }]])
@@ -62,16 +68,17 @@ test('Users.heer overrides gentle mode for the owner', () => {
     };
 
     assert.equal(isNonGentleMember(member, ['Users.heer']), true);
-    assert.match(getSystemPrompt({ tone: 'savage', isOwner: true, isNonGentle: true }), /explicitly selected roast mode/i);
-    assert.match(getSystemPrompt({ tone: 'savage', isOwner: true, isNonGentle: true }), /Roast him directly/i);
+    assert.match(getSystemPrompt({ tone: 'savage', isOwner: true, isNonGentle: true }), /Never roast, insult, mock/i);
+    assert.doesNotMatch(getSystemPrompt({ tone: 'savage', isOwner: true, isNonGentle: true }), /explicitly selected roast mode/i);
 });
 
-test('gentle mode does not infer gender from roles or names', () => {
-    assert.match(gentleInstructions, /Do not infer or assign gender/i);
+test('configured pronoun roles select gender while other roles and names do not', () => {
+    assert.match(gentleInstructions, /Do not infer or assign gender from non-pronoun roles/i);
     assert.match(gentleInstructions, /gender-neutral language by default/i);
-    assert.match(gentleInstructions, /Only use a user's stated name or pronouns/i);
-    assert.doesNotMatch(gentleInstructions, /If user is female.*Treat her/i);
-    assert.doesNotMatch(gentleInstructions, /If user is male.*Treat him/i);
+    assert.match(gentleInstructions, /Treat the configured he\/him or she\/her pronoun role as the user's explicit pronoun choice/i);
+    assert.match(getSystemPrompt({ tone: 'gentle', gender: 'male' }), /use he\/him for this user/i);
+    assert.match(getSystemPrompt({ tone: 'gentle', gender: 'female' }), /use she\/her for this user/i);
+    assert.doesNotMatch(gentleInstructions, /gendered nickname/i);
 });
 
 test('detectTrigger identifies stress keywords correctly in English and Hinglish', () => {
@@ -208,16 +215,27 @@ test('isGentleMember detects Unicode and standard she/her / girl roles', () => {
 });
 
 test('getMemberGender detects only the explicit female and male roles', () => {
-    const createMemberWithRoles = (roleNames) => ({
+    const createMemberWithRoles = (roles) => ({
         roles: {
-            cache: new Map(roleNames.map((name, i) => [`${i}`, { name }]))
+            cache: new Map(roles.map((role, i) => [
+                `${i}`,
+                typeof role === 'string' ? { name: role } : role
+            ]))
         }
     });
     const femaleRoles = ['ｓｈｅ ﹒ ｈｅｒ'];
     const maleRoles = ['ｈｅ ﹒ ｈｉｍ'];
+    const femaleRoleIds = ['1367088122873253988'];
+    const maleRoleIds = ['1367086916142366760'];
 
     assert.equal(getMemberGender(createMemberWithRoles(femaleRoles), femaleRoles, maleRoles), 'female');
     assert.equal(getMemberGender(createMemberWithRoles(maleRoles), femaleRoles, maleRoles), 'male');
+    assert.equal(getMemberGender(createMemberWithRoles([{ id: femaleRoleIds[0], name: 'renamed' }]), [], [], femaleRoleIds, maleRoleIds), 'female');
+    assert.equal(getMemberGender(createMemberWithRoles([{ id: maleRoleIds[0], name: 'renamed' }]), [], [], femaleRoleIds, maleRoleIds), 'male');
+    assert.equal(getMemberGender(createMemberWithRoles([
+        { id: femaleRoleIds[0], name: 'she/her' },
+        { id: maleRoleIds[0], name: 'he/him' }
+    ]), femaleRoles, maleRoles, femaleRoleIds, maleRoleIds), null);
     assert.equal(getMemberGender(createMemberWithRoles(['Users.heer']), femaleRoles, maleRoles), null);
     assert.equal(getMemberGender(createMemberWithRoles(['Queen']), femaleRoles, maleRoles), null);
 });
@@ -290,4 +308,6 @@ test('loadSettings parses auto-reply configuration options', () => {
     assert.ok(settings.gentleRoleNames.includes('ｓｈｅ ﹒ ｈｅｒ'));
     assert.deepEqual(settings.femaleRoleNames, ['ｓｈｅ ﹒ ｈｅｒ', 'she/her']);
     assert.deepEqual(settings.maleRoleNames, ['ｈｅ ﹒ ｈｉｍ', 'he/him']);
+    assert.deepEqual(settings.femaleRoleIds, ['1367088122873253988']);
+    assert.deepEqual(settings.maleRoleIds, ['1367086916142366760']);
 });

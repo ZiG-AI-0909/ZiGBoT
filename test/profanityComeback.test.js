@@ -15,11 +15,11 @@ const {
 // Mirror of the gating computed in src/index.js, kept as a pure helper so the
 // precedence rules are testable without Discord. index.js computes the same
 // values from the live message object.
-function computeModes({ profanity, tone, isOwner, isNonGentle }) {
+function computeModes({ profanity, tone, isOwner }) {
     const comebackMode = profanity.matched
         && profanity.category === 'profanity'
         && tone === 'savage'
-        && !(isOwner && !isNonGentle);
+        && !isOwner;
     const declineMode = profanity.matched
         && profanity.category === 'excluded'
         && tone === 'savage';
@@ -78,7 +78,7 @@ test('gentle-role users are excluded even when swearing at the bot', () => {
     assert.equal(declineMode, false);
 });
 
-test('owner without Users.heer is excluded; owner with Users.heer still gets the comeback', () => {
+test('owner never receives a roast comeback, regardless of roles', () => {
     const profanity = detectProfanityAtBot('fuck you bot');
     assert.equal(profanity.matched, true);
 
@@ -86,9 +86,9 @@ test('owner without Users.heer is excluded; owner with Users.heer still gets the
     const plainOwner = computeModes({ profanity, tone: 'savage', isOwner: true, isNonGentle: false });
     assert.equal(plainOwner.comebackMode, false);
 
-    // Owner with Users.heer: roast mode exception, comeback allowed.
+    // Users.heer does not opt the owner into being roasted.
     const heerOwner = computeModes({ profanity, tone: 'savage', isOwner: true, isNonGentle: true });
-    assert.equal(heerOwner.comebackMode, true);
+    assert.equal(heerOwner.comebackMode, false);
 });
 
 test('sexual/family/violent category never triggers the comeback path', () => {

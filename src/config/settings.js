@@ -33,6 +33,8 @@ const defaultGentleRoles = [
 ];
 const defaultFemaleRoles = ['ｓｈｅ ﹒ ｈｅｒ', 'she/her'];
 const defaultMaleRoles = ['ｈｅ ﹒ ｈｉｍ', 'he/him'];
+const defaultFemaleRoleIds = ['1367088122873253988'];
+const defaultMaleRoleIds = ['1367086916142366760'];
 const defaultNonGentleRoles = ['Users.heer'];
 
 function loadSettings() {
@@ -103,6 +105,12 @@ function loadSettings() {
         maleRoleNames: process.env.MALE_ROLE_NAMES
             ? parseList(process.env.MALE_ROLE_NAMES)
             : defaultMaleRoles,
+        femaleRoleIds: process.env.FEMALE_ROLE_IDS
+            ? parseList(process.env.FEMALE_ROLE_IDS)
+            : defaultFemaleRoleIds,
+        maleRoleIds: process.env.MALE_ROLE_IDS
+            ? parseList(process.env.MALE_ROLE_IDS)
+            : defaultMaleRoleIds,
         nonGentleRoleNames: process.env.NON_GENTLE_ROLE_NAMES
             ? parseList(process.env.NON_GENTLE_ROLE_NAMES)
             : defaultNonGentleRoles,

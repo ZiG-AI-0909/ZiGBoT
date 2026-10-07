@@ -272,6 +272,8 @@ Transient disconnects (channel moves, regional blips) no longer kill playback si
 | `GENTLE_ROLE_NAMES` | Roles that receive gentle, wholesome treatment |
 | `FEMALE_ROLE_NAMES` | Roles that map to she/her pronouns |
 | `MALE_ROLE_NAMES` | Roles that map to he/him pronouns |
+| `FEMALE_ROLE_IDS` | Discord role IDs that map to she/her pronouns |
+| `MALE_ROLE_IDS` | Discord role IDs that map to he/him pronouns |
 | `NON_GENTLE_ROLE_NAMES` | Roles (e.g., `Users.heer`) that force savage mode even for the owner |
 
 ### Voice
