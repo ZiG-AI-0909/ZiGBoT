@@ -156,6 +156,27 @@ function buildMemoryAnswer({ capabilities = null, memories = null, lastError = n
     return `Pulled live from MongoDB — everything I have stored for you (${memories.length}):\n${lines.join('\n')}\nThat's the complete list. Nothing else exists in my long-term memory about you.`;
 }
 
+function buildOwnerMemoryAnswer({ targetName, memories = [], totalCount = 0 } = {}) {
+    if (totalCount === 0) {
+        return `I have no stored memories about ${targetName} from the last 30 days.`;
+    }
+
+    const entries = [...memories].reverse();
+    const header = `Recent memories about ${targetName} (${totalCount} stored in the last 30 days):\n`;
+    const lines = [];
+    let length = header.length;
+    for (const memory of entries) {
+        const content = String(memory.content || '').replace(/\s+/g, ' ').slice(0, 240);
+        const line = `• [${memory.type}] ${content}${memory.content?.length > 240 ? '…' : ''}\n`;
+        if (length + line.length > 1750) break;
+        lines.push(line);
+        length += line.length;
+    }
+    const omitted = totalCount - lines.length;
+    if (omitted > 0) lines.push(`• …and ${omitted} more; ask again for the latest memories.`);
+    return `${header}${lines.join('')}`.slice(0, 1900);
+}
+
 // ---- Behavior accountability: reputation grounding ----
 // The bot's treatment of a member must match their RECORDED behavior, not a
 // vibe. The summary comes from real MongoDB events (db/brain.js) and is
@@ -542,6 +563,7 @@ module.exports = {
     buildMemoryContextBlock,
     isMemoryQuestion,
     buildMemoryAnswer,
+    buildOwnerMemoryAnswer,
     shouldRemember,
     extractTopicKeyword,
     extractPassiveMemory,

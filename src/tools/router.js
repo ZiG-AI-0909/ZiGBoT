@@ -194,7 +194,8 @@ async function executeTool(message, settings, intent, context = {}) {
             case 'bot_help': {
                 result = '**ZiGBoT actions:**\n' + [...actionCatalog.values()]
                     .map(({ description }) => `• ${description}`)
-                    .join('\n');
+                    .join('\n')
+                    + '\n• Verified server owner: ask “what do you know about” and mention a member for their private 30-day memory summary.';
                 break;
             }
             case 'get_server_info':

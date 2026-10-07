@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { isOwner, isServerOwner, ownerAuthorization } = require('../src/security/authorization');
-const { getOwnerRoastTarget } = require('../src/security/ownerCommands');
+const { getOwnerRoastTarget, getOwnerMemoryTarget } = require('../src/security/ownerCommands');
 
 const settings = { serverOwnerId: 'owner-123' };
 const zigServerOwnerId = '1296202178263912448';
@@ -52,4 +52,19 @@ test('only the server owner can command ZiGBoT to roast a mentioned user', () =>
     assert.equal(getOwnerRoastTarget(command, 'bot', zigSettings), target);
     assert.equal(getOwnerRoastTarget({ ...command, author: { id: 'not-owner' } }, 'bot', zigSettings), null);
     assert.equal(getOwnerRoastTarget({ ...command, content: '<@bot> <@target> hello' }, 'bot', zigSettings), null);
+});
+
+test('only the verified server owner can request stored memories about a mentioned member', () => {
+    const target = { id: 'target-456', username: 'Target', bot: false };
+    const command = {
+        author: { id: zigServerOwnerId },
+        guild: { ownerId: zigServerOwnerId },
+        content: '<@bot> what do you know about <@target>?',
+        mentions: { users: new Map([['target-456', target]]) }
+    };
+
+    assert.equal(getOwnerMemoryTarget(command, 'bot', { serverOwnerId: zigServerOwnerId }), target);
+    assert.equal(getOwnerMemoryTarget({ ...command, author: { id: 'not-owner' } }, 'bot', { serverOwnerId: zigServerOwnerId }), null);
+    assert.equal(getOwnerMemoryTarget({ ...command, guild: { ownerId: 'different-owner' } }, 'bot', { serverOwnerId: zigServerOwnerId }), null);
+    assert.equal(getOwnerMemoryTarget({ ...command, content: '<@bot> tell me a joke' }, 'bot', { serverOwnerId: zigServerOwnerId }), null);
 });

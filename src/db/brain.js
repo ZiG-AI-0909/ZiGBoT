@@ -25,11 +25,7 @@ const MEMORY_TYPES = new Set(['fact', 'preference', 'event', 'context']);
 const MEMORY_MAX_LENGTH = 500;
 const MEMORY_DEFAULT_LIMIT = 5;
 const MEMORY_MAX_LIMIT = 20;
-// Retention policy (two-tier):
-//   • NORMAL CONVERSATION memories (keyword: null) expire after 30 days and
-//     are pruned automatically on every write.
-//   • KEYWORD-TAGGED memories (topic anchors like 'exam', 'job') are
-//     PERMANENT — never pruned, always eligible for cross-user context.
+// All conversational memories expire 30 days after they are created.
 const MEMORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const MEMORY_RECALL_RECENT_CAP = 200;
 
@@ -86,6 +82,9 @@ async function connectBrain(uri, { client: injectedClient = null } = {}) {
     const nextMemories = db.collection('memories');
     const nextBehaviors = db.collection('behaviors');
 
+    // Clean up records created before the TTL field was added, and enforce the
+    // retention boundary immediately when the bot starts.
+    await nextMemories.deleteMany({ created_at: { $lt: Date.now() - MEMORY_RETENTION_MS } });
     await nextUsers.createIndex({ userId: 1 }, { unique: true });
     // Same lookup pattern as the old idx_warnings_guild_user SQLite index.
     await nextWarnings.createIndex({ guildId: 1, userId: 1, created_at: 1 });
@@ -93,6 +92,8 @@ async function connectBrain(uri, { client: injectedClient = null } = {}) {
     await nextMemories.createIndex({ guildId: 1, userId: 1, created_at: -1 });
     // Guild-wide recent-context lookups (cross-user, time-windowed).
     await nextMemories.createIndex({ guildId: 1, created_at: -1 });
+    // MongoDB TTL cleanup is asynchronous; every read also enforces the cutoff.
+    await nextMemories.createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 });
     // Behavior accountability: per-member lookups + signal aggregation.
     await nextBehaviors.createIndex({ guildId: 1, userId: 1, created_at: -1 });
 
@@ -188,6 +189,7 @@ async function remember(guildId, userId, content, type = 'fact', meta = {}) {
         keyword: meta.keyword ? String(meta.keyword).slice(0, 40) : null,
         created_at: Date.now()
     };
+    doc.expires_at = new Date(doc.created_at + MEMORY_RETENTION_MS);
     try {
         // Atomic sequence, same pattern as warning ids.
         const { value } = await counters.findOneAndUpdate(
@@ -215,9 +217,10 @@ async function remember(guildId, userId, content, type = 'fact', meta = {}) {
 async function recall(guildId, userId, limit = MEMORY_DEFAULT_LIMIT) {
     requireBrain();
     const capped = Math.max(1, Math.min(Number(limit) || MEMORY_DEFAULT_LIMIT, MEMORY_MAX_LIMIT));
+    const cutoff = Date.now() - MEMORY_RETENTION_MS;
     try {
         const rows = await memories
-            .find({ guildId: String(guildId), userId: String(userId) })
+            .find({ guildId: String(guildId), userId: String(userId), created_at: { $gte: cutoff } })
             .sort({ created_at: -1, id: -1 })
             .limit(capped)
             .toArray();
@@ -233,7 +236,11 @@ async function recall(guildId, userId, limit = MEMORY_DEFAULT_LIMIT) {
 async function countMemories(guildId, userId) {
     requireBrain();
     try {
-        const count = await memories.countDocuments({ guildId: String(guildId), userId: String(userId) });
+        const count = await memories.countDocuments({
+            guildId: String(guildId),
+            userId: String(userId),
+            created_at: { $gte: Date.now() - MEMORY_RETENTION_MS }
+        });
         lastMemoryError = null;
         return count;
     } catch (error) {
@@ -244,15 +251,14 @@ async function countMemories(guildId, userId) {
 
 // ---- Cross-user recent context + 1-month retention ----
 
-// Deletes NORMAL CONVERSATION memories older than the retention window
-// (guild-scoped when a guildId is given). Keyword-tagged memories are
-// permanent anchors and are NEVER pruned. Returns the real deleted count.
+// Deletes all memories older than the retention window (guild-scoped when a
+// guildId is given). Returns the real deleted count.
 async function pruneOldMemories(guildId = null) {
     requireBrain();
     const cutoff = Date.now() - MEMORY_RETENTION_MS;
     const filter = guildId
-        ? { guildId: String(guildId), keyword: null, created_at: { $lt: cutoff } }
-        : { keyword: null, created_at: { $lt: cutoff } };
+        ? { guildId: String(guildId), created_at: { $lt: cutoff } }
+        : { created_at: { $lt: cutoff } };
     try {
         const result = await memories.deleteMany(filter);
         lastMemoryError = null;
@@ -265,24 +271,20 @@ async function pruneOldMemories(guildId = null) {
 
 // Guild-wide memories across ALL users (newest first). This is what lets the
 // bot reference one member's situation while talking to another ("how did
-// your exam go?"). Normal conversation memories are windowed to the
-// retention period (30 days); keyword-tagged memories are PERMANENT anchors
-// and always qualify regardless of age.
+// your exam go?"). Memories are windowed to the retention period (30 days),
+// whether or not they have a topic keyword.
 async function recallRecent(guildId, { limit = 15, windowMs = MEMORY_RETENTION_MS, excludeUserId = null } = {}) {
     requireBrain();
     const capped = Math.max(1, Math.min(Number(limit) || 15, 50));
     const cutoff = Date.now() - (Number(windowMs) || MEMORY_RETENTION_MS);
     try {
         const rows = await memories
-            .find({ guildId: String(guildId) })
+            .find({ guildId: String(guildId), created_at: { $gte: cutoff } })
             .sort({ created_at: -1, id: -1 })
             .limit(MEMORY_RECALL_RECENT_CAP)
             .toArray();
         lastMemoryError = null;
         return rows
-            // Permanent keyword anchors bypass the window; normal conversation
-            // memories must be inside it.
-            .filter((row) => (row.keyword !== null && row.keyword !== undefined) || row.created_at >= cutoff)
             .filter((row) => !excludeUserId || String(row.userId) !== String(excludeUserId))
             .slice(0, capped)
             .map(({ id, content, type, created_at, author_name, keyword }) => ({

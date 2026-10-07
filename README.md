@@ -26,7 +26,7 @@
 index.js                      # 1-line launcher → src/index.js
 src/
   index.js                    # Discord client, MessageCreate + InteractionCreate handlers,
-                              #   intent dispatch (runIntent), voice transcript handling
+                              #   intent dispatch (runIntent), all-channel memory capture, voice transcript handling
   slash.js                    # Slash commands (/play /kick /ban /help): definitions,
                               #   registration, interaction → intent conversion
   config/settings.js          # Env parsing/validation, role name defaults, GUILD_CONFIG parsing
@@ -44,13 +44,13 @@ src/
   security/
     authorization.js          # Owner checks (config ID must match actual guild owner), bot permission checks
     confirmation.js           # Destructive-action Confirm/Cancel buttons (45s expiry, audited)
-    ownerCommands.js          # Owner-only "roast him/her/them" targeting
+    ownerCommands.js          # Owner-only roast targeting and private member-memory lookup
   logging/auditLog.js         # Console + optional LOG_CHANNEL_ID audit entries
   tools/router.js             # ~30 admin/info/voice/music/warn intents with auth gates,
                               #   action catalog (permissions + descriptions), destructive set
   db/
     brain.js                  # MongoDB Atlas connection (native driver), users/warnings
-                              #   collections, async warn store (all queries live here)
+                              #   collections, async warn store and 30-day memory (all queries live here)
   voice/
     voiceManager.js           # Join/leave voice, permission checks, reconnect retry logic
     localSpeech.js            # External STT/TTS executables ({input}/{output}/{text} templates)
@@ -234,7 +234,7 @@ Transient disconnects (channel moves, regional blips) no longer kill playback si
 - **All queries live in `src/db/brain.js`** — unique index on `users.userId`, compound index on `warnings (guildId, userId, created_at)`, index on `memories (guildId, userId, created_at desc)` and `behaviors (guildId, userId, created_at desc)`; warning/memory ids come from an atomic counter, mirroring the old SQLite AUTOINCREMENT.
 - **`warn_member`** (destructive → confirmation flow) records who warned, the reason, and when; **`list_warnings`** shows a member's warnings with timestamps. Every warning AND timeout also lands in the behavior ledger as a negative accountability signal.
 - Warns survive restarts. The DB is required at startup: if `connectBrain()` fails, the bot logs a clear error and exits instead of running in a broken state.
-- **Persistent long-term memory** (`memories` collection): durable user facts/preferences are saved selectively (never commands or chat noise; passwords/API keys/tokens are refused outright) via `remember()` and retrieved per user per guild via `recall()` before every AI reply. Memory questions ("what do you remember?") are answered deterministically from live MongoDB state — the bot never fakes memories and never claims a save/delete that did not happen. `memory_status` (owner/admin) reports the REAL runtime state; `forget_memory` lets users delete their own memories (admin-gated for other users).
+- **Persistent long-term memory** (`memories` collection): every guild message delivered to the bot is checked automatically, including messages in channels where it does not reply. Only durable facts, preferences, and notable events are saved; ordinary chat and crisis messages are skipped, and passwords/API keys/tokens are refused outright. All entries expire after 30 days (MongoDB TTL plus read-time filtering and startup cleanup), including topic-tagged events. The verified server owner can ask “what do you know about” and mention a member to receive that member's stored summary privately by DM. Users can ask what ZiGBoT remembers about themselves and delete their own memories with `forget_memory` (admins may target other members).
 - Everything else (conversation memory, music queues) intentionally stays in-process.
 
 ---
@@ -343,7 +343,7 @@ Quick sanity checks after inviting the bot:
 ## 16. Design Notes & Limitations
 
 - **Multi-server:** per-guild owners/admins via `GUILD_CONFIG`; conversation memory, music queues, and voice sessions are per-guild.
-- **Persistence scope:** only warns are persisted (MongoDB Atlas, required at startup). Conversation memory and music queues intentionally stay in-process and reset on restart.
+- **Persistence scope:** warnings and selective 30-day personal memories are persisted in MongoDB Atlas (required at startup). Short-term conversation memory and music queues intentionally stay in-process and reset on restart. Automatic memory capture depends on Discord delivering guild messages to the bot; grant it View Channel access in each channel to monitor, and enable the privileged Message Content intent in the Discord Developer Portal.
 - **Voice listening** uses NVIDIA hosted speech by default (`NVIDIA_SPEECH=true`): Discord audio is downsampled in pure JS (no ffmpeg) and sent to the hosted Riva ASR endpoint, and replies are synthesized with hosted Magpie TTS and played back as raw PCM — no local binaries, so it works on Render's free tier. Plain conversation in voice chat gets spoken replies; set `NVIDIA_SPEECH=false` to restore the legacy local-executable pipeline.
 - **Slash-command global registration** (when `SLASH_COMMAND_GUILD_IDS` is empty) can take up to an hour to propagate on Discord's side; guild-scoped registration is instant.
 - **Compliance stance:** playback is restricted to direct HTTPS sources — no YouTube/Spotify scraping, search, or DRM bypass, by explicit design.

@@ -14,6 +14,7 @@ const {
     extractPassiveMemory,
     isMemoryQuestion,
     buildMemoryAnswer,
+    buildOwnerMemoryAnswer,
     shouldRemember
 } = require('../src/ai/client');
 
@@ -45,8 +46,8 @@ function fakeMongoClient() {
             const docs = [];
             const store = {
                 docs,
-                async createIndex(spec) {
-                    createdIndexes.push({ name, spec });
+                async createIndex(spec, options) {
+                    createdIndexes.push({ name, spec, options });
                     return `${name}_idx_${createdIndexes.length}`;
                 },
                 async insertOne(doc) {
@@ -145,7 +146,7 @@ async function connectTestBrain(client = fakeMongoClient()) {
 function brokenMemoryMongoClient() {
     const fake = fakeMongoClient();
     const memoriesStore = fake.collections.get('memories') || fake.db().collection('memories');
-    const brokenMethods = ['insertOne', 'findOne', 'updateOne', 'countDocuments', 'deleteOne', 'deleteMany', 'findOneAndUpdate'];
+    const brokenMethods = ['insertOne', 'findOne', 'updateOne', 'countDocuments', 'deleteOne', 'findOneAndUpdate'];
     for (const method of brokenMethods) {
         memoriesStore[method] = async () => { throw new Error('connection refused by server'); };
     }
@@ -456,18 +457,17 @@ test('recallRecent excludes a user and windows normal conversation memories', as
     const excluded = await brain.recallRecent('g', { limit: 10, excludeUserId: 'user-1' });
     assert.deepEqual(excluded.map((m) => m.content), ['theirs']);
 
-    // A cutoff far in the future expires untagged conversation memories,
-    // while keyword-tagged anchors are PERMANENT and still come through.
+    // A cutoff in the future expires memories regardless of their topic.
     const windowed = await brain.recallRecent('g', { limit: 10, windowMs: -1_000_000 });
     assert.deepEqual(windowed.map((m) => m.content), [], 'untagged memories must be window-gated');
 });
 
-test('keyword-tagged memories are PERMANENT: never pruned, never window-gated', async () => {
+test('keyword-tagged and untagged memories both expire after 30 days', async () => {
     const fake = await connectTestBrain();
     const store = fake.collections.get('memories');
     const monthAgo = Date.now() - 31 * 24 * 60 * 60 * 1000;
 
-    // A keyword anchor from 40 days ago and a normal memory from 40 days ago.
+    // Both a topic-tagged event and an untagged fact are older than 30 days.
     store.docs.push({
         id: 901, guildId: 'g', userId: 'u1', content: 'rohit exam anchor',
         type: 'event', keyword: 'exam', created_at: monthAgo
@@ -477,20 +477,17 @@ test('keyword-tagged memories are PERMANENT: never pruned, never window-gated', 
         type: 'fact', keyword: null, created_at: monthAgo
     });
 
-    // Prune: only the untagged old memory dies.
+    // Prune removes both stale records regardless of topic metadata.
     const deleted = await brain.pruneOldMemories('g');
-    assert.equal(deleted, 1, 'keyword anchors must survive the prune');
+    assert.equal(deleted, 2);
 
-    // Recall: only the anchor qualifies despite being outside the window.
     const recent = await brain.recallRecent('g', { limit: 10 });
-    assert.deepEqual(recent.map((m) => m.content), ['rohit exam anchor']);
-
-    // And the anchor remains recallable for its OWN user too.
+    assert.deepEqual(recent, []);
     const own = await brain.recall('g', 'u1', 10);
-    assert.deepEqual(own.map((m) => m.content), ['rohit exam anchor']);
+    assert.deepEqual(own, []);
 });
 
-test('pruneOldMemories deletes only untagged entries older than 30 days', async () => {
+test('pruneOldMemories deletes every entry older than 30 days', async () => {
     const fake = await connectTestBrain();
     await brain.remember('g', 'u', 'fresh memory');
     // Backdate one doc past the window directly in the fake store.
@@ -505,6 +502,36 @@ test('pruneOldMemories deletes only untagged entries older than 30 days', async 
     const remaining = await brain.recall('g', 'u', 10);
     assert.deepEqual(remaining.map((m) => m.content), ['fresh memory']);
     assert.equal(await brain.pruneOldMemories('g'), 0, 'second prune deletes nothing');
+});
+
+test('memory collection has automatic 30-day TTL cleanup and startup removes legacy records', async () => {
+    const fake = fakeMongoClient();
+    const store = fake.db().collection('memories');
+    store.docs.push({
+        id: 901, guildId: 'g', userId: 'u', content: 'legacy topic record',
+        type: 'event', keyword: 'exam', created_at: Date.now() - 31 * 24 * 60 * 60 * 1000
+    });
+
+    await connectTestBrain(fake);
+    const ttlIndex = fake.createdIndexes.find(({ name, spec }) =>
+        name === 'memories' && spec.expires_at === 1
+    );
+    assert.equal(ttlIndex.options.expireAfterSeconds, 0);
+    assert.deepEqual(store.docs, [], 'stale legacy records are removed at startup');
+});
+
+test('owner memory summary reports stored entries and handles an empty history', () => {
+    const answer = buildOwnerMemoryAnswer({
+        targetName: 'Ravi',
+        totalCount: 2,
+        memories: [
+            { type: 'fact', content: 'Ravi lives in Pune' },
+            { type: 'preference', content: 'Ravi likes chess' }
+        ]
+    });
+    assert.match(answer, /Ravi \(2 stored in the last 30 days\)/);
+    assert.match(answer, /\[preference\] Ravi likes chess/);
+    assert.match(buildOwnerMemoryAnswer({ targetName: 'Ravi' }), /no stored memories.*last 30 days/i);
 });
 
 // ---------- Passive capture + topic keywords ----------

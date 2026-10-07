@@ -70,6 +70,13 @@ function fakeMongoClient() {
                 async countDocuments(filter) {
                     return docs.filter((d) => Object.entries(filter).every(([k, v]) => d[k] === v)).length;
                 },
+                async deleteMany(filter) {
+                    const keep = docs.filter((doc) => !Object.entries(filter).every(([key, value]) => doc[key] === value));
+                    const deletedCount = docs.length - keep.length;
+                    docs.length = 0;
+                    docs.push(...keep);
+                    return { deletedCount };
+                },
                 find(filter) {
                     const matches = () => docs.filter((d) => Object.entries(filter).every(([k, v]) => d[k] === v));
                     let sortKeys = {};

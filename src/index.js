@@ -9,6 +9,7 @@ const {
     crisisResponse,
     isMemoryQuestion,
     buildMemoryAnswer,
+    buildOwnerMemoryAnswer,
     shouldRemember,
     isReputationQuestion,
     buildReputationAnswer
@@ -18,7 +19,7 @@ const { RateLimiter } = require('./ai/rateLimiter');
 const { detectTrigger, defaultTracker } = require('./ai/triggerDetector');
 const { isGentleMember, getMemberGender, isNonGentleMember } = require('./ai/roleDetector');
 const { isServerOwner } = require('./security/authorization');
-const { getOwnerRoastTarget } = require('./security/ownerCommands');
+const { getOwnerRoastTarget, getOwnerMemoryTarget } = require('./security/ownerCommands');
 const { requestConfirmation } = require('./security/confirmation');
 const { executeTool, destructiveActions } = require('./tools/router');
 const { buildVoiceTranscriptRoute } = require('./routing/voiceRoute');
@@ -206,8 +207,33 @@ client.on(Events.MessageCreate, async (message) => {
         ? detectTrigger(message.content)
         : { matched: false };
 
+    const userMessage = message.content
+        .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '')
+        .trim();
+    // Capture durable facts/events from every message the gateway delivers in
+    // a server, whether or not ZiGBoT is configured to reply in that channel.
+    // This is selective memory, not a transcript: ordinary chat and crisis
+    // content are skipped, and brain.remember refuses credentials.
+    if (message.guild && userMessage && !isCrisisMessage(userMessage)) {
+        try {
+            const passive = extractPassiveMemory(userMessage);
+            const selective = shouldRemember(userMessage);
+            const candidate = passive || (selective.should ? selective : null);
+            if (candidate && brain.isMemoryAvailable()) {
+                const authorName = message.member?.displayName || message.author.username;
+                await brain.remember(message.guild.id, message.author.id, candidate.content, candidate.type, {
+                    authorName,
+                    keyword: candidate.keyword || extractTopicKeyword(candidate.content)
+                });
+            }
+        } catch (memoryError) {
+            console.error(`[ZiGBoT MEMORY] Automatic capture skipped: ${memoryError.message}`);
+        }
+    }
+
+    const ownerMemoryTarget = getOwnerMemoryTarget(message, client.user.id, settings);
     // Reply to explicit interactions, configured chat channels, or enabled keywords.
-    const shouldReply = isMentioned || isReplyToBot || inChatChannel || settings.respondToAllMessages || trigger.matched;
+    const shouldReply = isMentioned || isReplyToBot || inChatChannel || settings.respondToAllMessages || trigger.matched || ownerMemoryTarget;
     if (!shouldReply) return;
 
     // The keyword detector is the ONLY reason we are replying — no mention,
@@ -219,11 +245,6 @@ client.on(Events.MessageCreate, async (message) => {
         if (!defaultTracker.canTrigger(message.channel.id, message.author.id, settings.cooldownSeconds)) return;
         defaultTracker.recordTrigger(message.channel.id, message.author.id);
     }
-
-    // Clean user message by removing the @bot mention tag
-    const userMessage = message.content
-        .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '')
-        .trim();
 
     const isOwner = isServerOwner(message, settings);
     const isNonGentle = isNonGentleMember(message.member, settings.nonGentleRoleNames);
@@ -251,6 +272,29 @@ client.on(Events.MessageCreate, async (message) => {
                     ? "Hey! ✨ Kya chal raha hai? Kuch share karna hai ya koi help chahiye? 🌸"
                 : "Haan, tag kiya hai toh bol bhi de. Kya dukh dard baantna hai?";
             await message.reply(greeting);
+        }
+        return;
+    }
+
+    if (ownerMemoryTarget) {
+        if (!brain.isMemoryAvailable()) {
+            await message.reply('Persistent memory is temporarily unavailable, so I cannot check what is stored.').catch(() => {});
+            return;
+        }
+        try {
+            const totalCount = await brain.countMemories(message.guild.id, ownerMemoryTarget.id);
+            const memories = await brain.recall(message.guild.id, ownerMemoryTarget.id, 20);
+            const member = message.guild.members.cache.get(ownerMemoryTarget.id);
+            const targetName = member?.displayName || ownerMemoryTarget.globalName || ownerMemoryTarget.username;
+            const summary = buildOwnerMemoryAnswer({ targetName, memories, totalCount });
+            await message.author.send({
+                content: summary,
+                allowedMentions: { parse: [] }
+            });
+            await message.reply(`I sent the 30-day memory summary for ${ownerMemoryTarget} to your DMs.`);
+        } catch (memoryError) {
+            console.error(`[ZiGBoT MEMORY] Owner lookup failed: ${memoryError.message}`);
+            await message.reply('I could not retrieve or privately deliver that memory summary. No details were posted here.').catch(() => {});
         }
         return;
     }
@@ -417,26 +461,6 @@ client.on(Events.MessageCreate, async (message) => {
 
     const authorName = message.member?.displayName || message.author.username;
 
-    // ---- Passive server-wide memory capture (ALL chat, not just mentions) ----
-    // The bot reads every message it already sees and quietly stores durable
-    // life events ("my exam is happening") with a topic keyword, so future
-    // replies to ANYONE can reference them ("btw how did the exam go?").
-    // Best-effort: a capture failure must never block the reply path.
-    if (message.guild && userMessage && !comebackMode && !declineMode) {
-        try {
-            const keyword = extractTopicKeyword(userMessage);
-            const passive = extractPassiveMemory(userMessage);
-            if (passive && brain.isMemoryAvailable()) {
-                await brain.remember(message.guild.id, message.author.id, passive.content, passive.type, {
-                    authorName,
-                    keyword: passive.keyword || keyword
-                });
-            }
-        } catch (memoryError) {
-            console.error(`[ZiGBoT MEMORY] Passive capture skipped: ${memoryError.message}`);
-        }
-    }
-
     try {
         const history = defaultMemory.getHistory(message.channel.id);
 
@@ -522,20 +546,6 @@ client.on(Events.MessageCreate, async (message) => {
             await recordBehaviorSignals(message.guild.id, message.author.id, positive, 'message-scan');
         }
 
-        // Selective long-term save: only durable facts/preferences, never
-        // credentials (brain.remember refuses them). A failed save is logged
-        // but never announced — the bot does not claim "I stored that".
-        try {
-            const candidate = shouldRemember(userMessage);
-            if (candidate.should && brain.isMemoryAvailable() && message.guild) {
-                await brain.remember(message.guild.id, message.author.id, candidate.content, candidate.type, {
-                    authorName,
-                    keyword: extractTopicKeyword(candidate.content)
-                });
-            }
-        } catch (memoryError) {
-            console.error(`[ZiGBoT MEMORY] Save skipped: ${memoryError.message}`);
-        }
     } catch (error) {
         logAiError(error);
         await message.reply(error.rateLimited ? rateLimitReply : aiFailureReply).catch(() => {});
