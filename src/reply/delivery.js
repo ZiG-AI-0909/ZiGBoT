@@ -7,15 +7,29 @@
 
 // --- Tunable constants -------------------------------------------------------
 
+function readEnvInt(name, fallback) {
+    const raw = process.env[name];
+    if (raw === undefined || raw === null || raw === '') return fallback;
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function readEnvFloat(name, fallback) {
+    const raw = process.env[name];
+    if (raw === undefined || raw === null || raw === '') return fallback;
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 && value <= 1 ? value : fallback;
+}
+
 // Simulated typing speed, in words per minute. The delay before a reply is
 // derived from this: words / WPM * 60_000 ms, clamped to the min/max below.
-const TYPING_WPM_MIN = 40;
-const TYPING_WPM_MAX = 60;
+const TYPING_WPM_MIN = readEnvInt('REPLY_TYPING_WPM_MIN', 80);
+const TYPING_WPM_MAX = readEnvInt('REPLY_TYPING_WPM_MAX', 140);
 
 // Reply pacing clamps, in milliseconds. Short replies never feel sluggish
 // (minimum) and very long replies never take absurdly long (maximum).
-const TYPING_DELAY_MIN_MS = 800;
-const TYPING_DELAY_MAX_MS = 4500;
+const TYPING_DELAY_MIN_MS = readEnvInt('REPLY_TYPING_DELAY_MIN_MS', 250);
+const TYPING_DELAY_MAX_MS = readEnvInt('REPLY_TYPING_DELAY_MAX_MS', 2200);
 
 // Discord's typing indicator lasts ~10s per sendTyping() call. When the
 // computed delay exceeds this window, we re-send typing partway through so
@@ -24,8 +38,8 @@ const TYPING_INDICATOR_WINDOW_MS = 9000;
 
 // Base pause between messages of a split reply, plus a small random jitter
 // added on top of it, in milliseconds. Kept short and human-feeling.
-const MULTI_MESSAGE_BASE_GAP_MS = 1200;
-const MULTI_MESSAGE_JITTER_MS = 600;
+const MULTI_MESSAGE_BASE_GAP_MS = readEnvInt('REPLY_MULTI_MESSAGE_BASE_GAP_MS', 350);
+const MULTI_MESSAGE_JITTER_MS = readEnvInt('REPLY_MULTI_MESSAGE_JITTER_MS', 200);
 
 // Chance (0..1) that a fun-keyword-triggered reply is silently skipped
 // entirely: no message, no reaction, no typing. Intentionally never applied
@@ -43,7 +57,7 @@ const FUN_EMOJI_POOL = ['😂', '💀', '👀', '🔥', '😭', '🤡', '🥶'];
 
 // Chance (0..1) that an organic persona reply is split into 2-3 shorter
 // messages sent with a human-like gap between them.
-const MULTI_MESSAGE_SPLIT_CHANCE = 0.25;
+const MULTI_MESSAGE_SPLIT_CHANCE = readEnvFloat('REPLY_MULTI_MESSAGE_SPLIT_CHANCE', 0.12);
 
 // Replies shorter than this many words are never split.
 const MULTI_MESSAGE_MIN_WORDS = 15;

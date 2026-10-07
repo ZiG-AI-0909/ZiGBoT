@@ -260,6 +260,13 @@ Transient disconnects (channel moves, regional blips) no longer kill playback si
 | `CHAT_CHANNEL_IDS` | — | Comma-separated channel IDs for always-on chat |
 | `AUTO_REPLY_KEYWORDS` | `false` | Enable stress/fun keyword triggers |
 | `COOLDOWN_SECONDS` | `15` | Anti-spam cooldown per channel and per user (keyword triggers) |
+| `REPLY_TYPING_WPM_MIN` | `80` | Minimum simulated typing speed for a reply |
+| `REPLY_TYPING_WPM_MAX` | `140` | Maximum simulated typing speed for a reply |
+| `REPLY_TYPING_DELAY_MIN_MS` | `250` | Fastest reply delay floor |
+| `REPLY_TYPING_DELAY_MAX_MS` | `2200` | Slowest reply delay ceiling |
+| `REPLY_MULTI_MESSAGE_BASE_GAP_MS` | `350` | Gap between split multi-part replies |
+| `REPLY_MULTI_MESSAGE_JITTER_MS` | `200` | Extra jitter added to multi-part gaps |
+| `REPLY_MULTI_MESSAGE_SPLIT_CHANCE` | `0.12` | Chance a long reply is split into multiple messages |
 | `AI_RATE_LIMIT_MAX` | `8` | Max AI calls per user per window (classification + replies) |
 | `AI_RATE_LIMIT_WINDOW_SECONDS` | `60` | Sliding window for the AI rate limit |
 | `SLASH_COMMAND_GUILD_IDS` | — | Comma-separated guild IDs for instant guild-only slash registration; empty = global |
