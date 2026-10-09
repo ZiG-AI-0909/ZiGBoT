@@ -51,7 +51,7 @@ their own sections here.
 
 ---
 
-## Environment variables (all in `.env.example` with comments)
+## Environment variables (all in `.env.example` with comments
 
 | Var | Required | Purpose |
 |---|---|---|
