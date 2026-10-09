@@ -162,4 +162,4 @@ _flagged_ to the user and remains unverified without a real stream. If it does n
 detector will disable itself after 4 consecutive failures and log a loud PROPOSAL — at
 that point the fallback options are (a) re-issue the token from the OWNER account to
 unlock `liveBroadcasts.list(mine=true)` at 1 unit/call, or (b) rely on manual `/watch`.
-`search.list` is deliberately NOT the default fallback (per the owner's explicit instruction).
+`search.list` is deliberately NOT the default fallback (per the owner's explicit instruction)
