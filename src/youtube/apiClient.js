@@ -116,13 +116,15 @@ function getYoutubeClient({ youtube = null, clientId = '', clientSecret = '', re
  * Returns the response, or throws (tagged) on failure.
  */
 async function ytCall(youtube, resourceMethod, params, { costUnits = 1, budget = 10_000 } = {}) {
-    if (quotaExhausted()) {
-        const error = new Error(`YouTube quota budget exhausted (${quotaUsedToday()}/${budget} units today). Pausing all YouTube calls until the PT-day resets.`);
+    const callCost = Math.max(1, Number(costUnits) || 1);
+    const remaining = quotaRemaining();
+    if (remaining < callCost) {
+        const error = new Error(`YouTube quota budget insufficient for this ${callCost}-unit call (${quotaUsedToday()}/${budget} units used today, ${remaining} remaining). Pausing calls that exceed the remaining PT-day budget.`);
         error.yt = { kind: KIND.QUOTA, budgetExhausted: true };
         throw error;
     }
     try {
-        recordQuota(Math.max(1, costUnits));
+        recordQuota(callCost);
         const response = await resourceMethod(params);
         return response;
     } catch (error) {
