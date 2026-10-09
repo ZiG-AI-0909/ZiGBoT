@@ -35,7 +35,8 @@ const {
     extractPassiveMemory,
     extractTopicKeyword
 } = require('./ai/client');
-const { registerSlashCommands, interactionToIntent } = require('./slash');
+const { registerSlashCommands, interactionToIntent, runYouTubeInteraction } = require('./slash');
+const { initYouTube } = require('./youtube');
 const brain = require('./db/brain');
 const { startHealthServer } = require('./health');
 
@@ -92,6 +93,20 @@ client.once(Events.ClientReady, async (c) => {
     } catch (error) {
         console.error(`[ZiGBoT SLASH] Registration failed, continuing without slash commands: ${error.message}`);
     }
+
+    // YouTube live chat: completely optional. Any init failure still leaves
+    // the Discord bot running normally.
+    try {
+        const ytState = await initYouTube();
+        if (ytState.enabled) {
+            console.log('[ZiGBoT YT] YouTube live-chat support enabled.');
+            if (!ytState.selfId) console.log('[ZiGBoT YT] NOTE: bot channel not resolved via channels.list(mine=true); rely on authorDetails.isChatOwner/isChatModerator for self-filtering.');
+        } else {
+            console.log(`[ZiGBoT YT] YouTube disabled (${(ytState.missingVars || []).join(', ') || 'init failure'}); continuing without it.`);
+        }
+    } catch (error) {
+        console.error(`[ZiGBoT YT] Startup failed, YouTube disabled: ${error.message}`);
+    }
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -110,6 +125,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
         if (interaction.commandName === 'help') {
             const result = await executeTool(fakeMessage, settings, { action: 'bot_help' });
             await interaction.editReply(result);
+            return;
+        }
+
+        // YouTube live chat commands, before the general intent router.
+        // A YouTube failure is handled inside runYouTubeInteraction (returns a
+        // friendly error line) and never bubbles up as a Discord crash.
+        const ytReply = await runYouTubeInteraction(interaction, settings, client);
+        if (ytReply !== null) {
+            await interaction.editReply(ytReply);
             return;
         }
 

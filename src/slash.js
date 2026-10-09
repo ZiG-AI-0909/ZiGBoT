@@ -8,6 +8,13 @@ const {
     PermissionFlagsBits
 } = require('discord.js');
 const { destructiveActions } = require('./tools/router');
+const { isOwner } = require('./security/authorization');
+const {
+    isYouTubeReady,
+    getYouTubeStatus,
+    handleWatchCommand,
+    handleUnwatchCommand
+} = require('./youtube');
 
 // Only the highest-traffic actions get slash commands (per the roadmap);
 // everything else stays on the text/voice path.
@@ -60,7 +67,24 @@ function buildDefinitions() {
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
         new SlashCommandBuilder()
             .setName('help')
-            .setDescription('List everything ZiGBoT can do')
+            .setDescription('List everything ZiGBoT can do'),
+        // YouTube live-chat watching — owner-only, hidden from non-owners by
+        // default_member_permissions and a silent ignore inside the handler.
+        new SlashCommandBuilder()
+            .setName('watch')
+            .setDescription('Owner: watch a YouTube live stream chat by videoId')
+            .addStringOption((option) => option
+                .setName('videoid')
+                .setDescription('11-character YouTube video id'))
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+        new SlashCommandBuilder()
+            .setName('unwatch')
+            .setDescription('Owner: stop watching the YouTube live stream chat')
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+        new SlashCommandBuilder()
+            .setName('ytstatus')
+            .setDescription('Owner: inspect the YouTube live-chat watcher state')
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     ].map((command) => command.toJSON());
 }
 
@@ -97,4 +121,45 @@ async function interactionToIntent(interaction) {
     return { action };
 }
 
-module.exports = { buildDefinitions, registerSlashCommands, interactionToIntent, slashActionByCommand };
+// FakeMessage shape so handleWatchCommand can reuse the existing gating.
+const ytMessageShape = (authorId) => ({ author: { id: authorId } });
+
+/** YouTube slash commands. YouTube failures never crash the Discord path. */
+async function runYouTubeInteraction(interaction, settings, client) {
+    const isDiscordOwner = isOwner(interaction.user.id, settings)
+        || interaction.user.id === settings.serverOwnerId;
+    if (!isDiscordOwner) return null; // silent non-owner ignore
+
+    try {
+        if (interaction.commandName === 'watch') {
+            const videoId = (interaction.options.getString('videoid') || '').trim().slice(0, 32);
+            return await handleWatchCommand(videoId, true);
+        }
+        if (interaction.commandName === 'unwatch') {
+            return await handleUnwatchCommand(true);
+        }
+        if (interaction.commandName === 'ytstatus') {
+            const status = getYouTubeStatus();
+            return [
+                `enabled: ${status.enabled}`,
+                `ownerId: ${status.ownerId || 'not resolved'}`,
+                `watching: ${status.watching || 'none'}`,
+                `autoDetect: ${status.autoDetect ? 'on' : 'off'}`,
+                `quota used today: ${status.quotaUsed}/${status.quotaBudget ?? 'unknown'}`
+            ].join(' | ');
+        }
+    } catch (error) {
+        // YouTube problems must never fall through to a Discord crash.
+        console.error(`[ZiGBoT YT SLASH] ${error.message}`);
+        return '❌ YouTube command failed; check the server logs.';
+    }
+    return null;
+}
+
+module.exports = {
+    buildDefinitions,
+    registerSlashCommands,
+    interactionToIntent,
+    slashActionByCommand,
+    runYouTubeInteraction
+};

@@ -271,7 +271,9 @@ test('buildDefinitions returns plain JSON payloads ready for the Discord API', (
     // Regression guard: a stray inline .toJSON() once left a plain object in
     // the array, and the map then crashed the whole bot on startup.
     const definitions = buildDefinitions();
-    assert.equal(definitions.length, 6); // play, kick, ban, memory, reputation, help
+    // Original 6 (play, kick, ban, memory, reputation, help)
+    // + 3 YouTube commands (/watch, /unwatch, /ytstatus)
+    assert.equal(definitions.length, 9);
     for (const definition of definitions) {
         assert.equal(typeof definition.toJSON, 'undefined');
         assert.equal(typeof definition.name, 'string');
@@ -279,7 +281,7 @@ test('buildDefinitions returns plain JSON payloads ready for the Discord API', (
     }
     assert.deepEqual(
         definitions.map(({ name }) => name),
-        ['play', 'kick', 'ban', 'memory', 'reputation', 'help']
+        ['play', 'kick', 'ban', 'memory', 'reputation', 'help', 'watch', 'unwatch', 'ytstatus']
     );
 });
 

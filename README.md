@@ -338,6 +338,71 @@ Quick sanity checks after inviting the bot:
 - `@ZiGBoT kick @someone` as the owner — should produce a Confirm/Cancel prompt, not an instant kick.
 - Same command as a non-owner — should be denied and audited.
 
+### YouTube Live Chat (optional)
+
+ZiGBoT can watch a YouTube live stream's chat and (in later phases) reply and moderate it.
+This feature is entirely opt-in and never blocks the Discord bot: any missing
+`YOUTUBE_*` variable or a failing YouTube API call leaves everything else working.
+
+**One-time Google Cloud setup**
+1. Create a Google Cloud project at https://console.cloud.google.com.
+2. Enable the **YouTube Data API v3** (APIs & Services → Library).
+3. Configure the **OAuth consent screen** — External; add the Google account(s)
+   that will consent as test users.
+4. Create an **OAuth client ID** of type *Web application* with redirect URI
+   `http://127.0.0.1:5455/oauth-callback` (matches `scripts/youtube-auth.js`).
+5. `cp .env.example .env` and set `YOUTUBE_CLIENT_ID` / `YOUTUBE_CLIENT_SECRET`.
+
+**One-time OAuth run (on your local machine, never the server)**
+```bash
+node scripts/youtube-auth.js
+```
+A browser opens, you consent to the `youtube.force-ssl` scope, and the script
+prints ONLY the refresh token — paste it into `.env` as `YOUTUBE_REFRESH_TOKEN`.
+The client id/secret are never printed or logged.
+
+**Which account consents?** Use the **separate bot channel's** account
+(recommended in this project's design). That way replies are posted from the
+bot channel. Two consequences:
+- the bot channel must be promoted to a **live-chat moderator** of the owner's
+  stream (owner clicks the chat participant list → add moderator), otherwise
+  moderation actions in later phases are rejected with 403;
+- because the token is NOT the stream owner's, live detection cannot use
+  `liveBroadcasts.list(mine=true)`. The implemented detector instead polls the
+  owner's **uploads playlist** (`playlistItems.list` + `videos.list`, 2 units
+  per poll) and finds the item whose `liveBroadcastContent == "live"`.
+
+**7-day refresh-token expiry warning:** while the OAuth consent screen is in
+**Testing** status, refresh tokens expire after 7 days. When that happens the
+bot logs `auth failure (refresh token expired?)` and pauses YouTube until you
+re-run `scripts/youtube-auth.js`. Publish the consent screen to
+**In production** to stop the expiry.
+
+**Runtime options** (all in `.env.example`, all optional):
+- `YOUTUBE_OWNER_HANDLE` — whose channel to detect (default `@YourBoyZiG`).
+- `YOUTUBE_OWNER_CHANNEL_ID` — hard override for the channel id.
+- `YOUTUBE_AUTO_DETECT=true|false` (default on) with
+  `YOUTUBE_DETECT_INTERVAL_MS` (default 3 minutes) and
+  `YOUTUBE_ACTIVE_HOURS=HH-HH` (server-local, wrapping windows like `22-4` allowed).
+- `YOUTUBE_QUOTA_BUDGET` — daily safety cap in units (default 10000).
+
+**Owner Discord commands**
+- `/watch <videoId>` — force the bot to watch a specific stream's chat.
+- `/unwatch` — stop.
+- `/ytstatus` — is YouTube enabled? which video? how much quota used today?
+
+**Quota math** (live chat via `liveChatMessages.list`, 5 units per poll at the
+API's own `pollingIntervalMillis` pacing ~5s→10s+): roughly 1,800–3,600
+units/hour of active stream, or ~4,000–9,000 units per 2–3 hour stream —
+about one stream per day within the default 10,000. Detection adds ~40
+units/hour of polling. When the quota budget runs out, the bot logs it,
+pauses every YouTube call until midnight Pacific, and keeps the Discord bot
+running normally.
+
+Manual step for the channel owner (not automatable): add the bot channel as a
+live-chat moderator of https://www.youtube.com/@YourBoyZiG during a live
+stream, via the chat's participant list → ⋮ → Add moderator.
+
 ---
 
 ## 16. Design Notes & Limitations
