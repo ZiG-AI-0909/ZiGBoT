@@ -17,6 +17,7 @@ const { startLiveDetector } = require('./liveDetector');
 const { resolveOwnerChannel, resolveSelfChannel, _resetForTests } = require('./ownerChannel');
 const YT_API = require('./apiClient');
 const { readYouTubeConfig, withinActiveHours } = require('./config');
+const { hasDirtyLanguage, getPlayfulRoast } = require('./chatModeration');
 
 const state = {
     enabled: false,
@@ -88,6 +89,23 @@ async function initYouTube(youtubeConfigOverride = null, deps = {}) {
                 ownerId: state.ownerId,
                 config,
                 onLive: async ({ videoId, liveChatId, title }) => {
+                    if (deps.discordClient) {
+                        const channelId = process.env.YOUTUBE_DISCORD_CHANNEL_ID || '1366908121754239009';
+                        const roleId = process.env.YOUTUBE_DISCORD_ROLE_ID || '1366912959510478868';
+                        try {
+                            const channel = await deps.discordClient.channels.fetch(channelId);
+                            if (!channel?.isTextBased?.()) {
+                                log(`live notification skipped: Discord channel ${channelId} is unavailable or not text-based.`);
+                            } else {
+                                await channel.send({
+                                    content: `<@&${roleId}> We’re live on YouTube! https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`,
+                                    allowedMentions: { roles: [roleId] }
+                                });
+                            }
+                        } catch (error) {
+                            log(`live notification failed: ${error.message}`);
+                        }
+                    }
                     await watch({ videoId, liveChatId, title, via: 'auto-detect' });
                 },
                 onEnded: async () => { await stopWatcher('auto-detected stream ended'); },
@@ -141,14 +159,68 @@ async function watch({ videoId, liveChatId = null, title = '', via = 'manual' })
     }
 
     state.lastWatchedVideoId = videoId;
+    const timedOutUsers = new Set();
+    const roastCooldowns = new Map();
     state.watcher = startChatMonitor({
         youtube: state.youtube,
         videoId,
         liveChatId,
         config: state.config,
         onMessage: async (message) => {
-            // Message handling is Phase 2/3/4; here we just prove the pipe.
             log(`chat ← ${message.author.displayName}: ${message.text}`);
+            const author = message.author;
+            if (!author?.channelId || author.channelId === state.ownerId || author.channelId === state.selfId
+                || author.isChatOwner || author.isChatModerator) return;
+
+            if (hasDirtyLanguage(message.text)) {
+                if (timedOutUsers.has(author.channelId)) return;
+                timedOutUsers.add(author.channelId);
+                try {
+                    await YT_API.ytCall(
+                        state.youtube,
+                        (params) => state.youtube.liveChatBans.insert(params),
+                        {
+                            part: 'snippet',
+                            requestBody: {
+                                snippet: {
+                                    liveChatId,
+                                    type: 'temporary',
+                                    banDurationSeconds: 300,
+                                    bannedUserDetails: { channelId: author.channelId }
+                                }
+                            }
+                        },
+                        { costUnits: 200, budget: state.config.quotaBudgetPerDay }
+                    );
+                    notice(`timed out YouTube chatter ${author.channelId} for 5 minutes (dirty language).`);
+                } catch (error) {
+                    notice(`could not time out YouTube chatter ${author.channelId}: ${error.message}. Check that the bot is a live-chat moderator.`);
+                }
+                return;
+            }
+
+            const roast = getPlayfulRoast(message.text);
+            if (!roast || Date.now() - (roastCooldowns.get(author.channelId) || 0) < 60_000) return;
+            roastCooldowns.set(author.channelId, Date.now());
+            try {
+                await YT_API.ytCall(
+                    state.youtube,
+                    (params) => state.youtube.liveChatMessages.insert(params),
+                    {
+                        part: 'snippet',
+                        requestBody: {
+                            snippet: {
+                                liveChatId,
+                                type: 'textMessageEvent',
+                                textMessageDetails: { messageText: roast }
+                            }
+                        }
+                    },
+                    { costUnits: 20, budget: state.config.quotaBudgetPerDay }
+                );
+            } catch (error) {
+                notice(`could not post YouTube chat roast: ${error.message}`);
+            }
         },
         onEnded: async () => {
             notice('stream ended (chat went offline).');

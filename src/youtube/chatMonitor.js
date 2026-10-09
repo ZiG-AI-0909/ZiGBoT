@@ -16,6 +16,12 @@
 const YT_API = require('./apiClient');
 
 const DEFAULT_FALLBACK_INTERVAL_MS = 5_000;
+const DEFAULT_ENGAGEMENT_INTERVAL_MS = 15 * 60_000;
+const ENGAGEMENT_MESSAGES = [
+    'Enjoying the stream? Please hit like and subscribe, and tell us in chat what you think! 💙',
+    'Thanks for hanging out! If you’re enjoying it, leave a like, subscribe, and keep the chat going 😊',
+    'What has been your favorite moment so far? Drop it in chat—and remember to like and subscribe if you’re having fun!'
+];
 const FATAL_KINDS = new Set([YT_API.KIND.QUOTA, YT_API.KIND.AUTH]);
 
 /**
@@ -23,13 +29,51 @@ const FATAL_KINDS = new Set([YT_API.KIND.QUOTA, YT_API.KIND.AUTH]);
  *   { id, text, author: { channelId, displayName, isChatOwner,
  *     isChatModerator, isChatSponsor }, publishedAt }
  */
-function startChatMonitor({ youtube, videoId, liveChatId, config, onMessage, onEnded, onNotice, baseBackoffMs = null }) {
+function startChatMonitor({ youtube, videoId, liveChatId, config, onMessage, onEnded, onNotice, baseBackoffMs = null, engagementIntervalMs = DEFAULT_ENGAGEMENT_INTERVAL_MS }) {
     const backoffBase = Math.max(50, Number(baseBackoffMs) || DEFAULT_FALLBACK_INTERVAL_MS);
     let stopped = false;
     let timer = null;
+    let engagementTimer = null;
+    let engagementMessageIndex = 0;
+    let engagementDisabled = false;
     let pollIntervalMs = DEFAULT_FALLBACK_INTERVAL_MS;
     let pageToken = null;
     let consecutiveFailures = 0;
+
+    async function postEngagementMessage() {
+        if (stopped || engagementDisabled) return;
+        const messageText = ENGAGEMENT_MESSAGES[engagementMessageIndex % ENGAGEMENT_MESSAGES.length];
+        engagementMessageIndex += 1;
+        try {
+            await YT_API.ytCall(
+                youtube,
+                (params) => youtube.liveChatMessages.insert(params),
+                {
+                    part: 'snippet',
+                    requestBody: {
+                        snippet: {
+                            liveChatId,
+                            type: 'textMessageEvent',
+                            textMessageDetails: { messageText }
+                        }
+                    }
+                },
+                { costUnits: 20, budget: config.quotaBudgetPerDay }
+            );
+        } catch (error) {
+            if (onNotice) onNotice(`engagement message could not be posted: ${error.message}`);
+            const kind = error?.yt?.kind || YT_API.classifyYouTubeError(error);
+            if (kind === YT_API.KIND.QUOTA || kind === YT_API.KIND.AUTH) engagementDisabled = true;
+        }
+    }
+
+    function scheduleEngagementMessage() {
+        if (stopped || engagementDisabled) return;
+        engagementTimer = setTimeout(async () => {
+            await postEngagementMessage();
+            scheduleEngagementMessage();
+        }, Math.max(60_000, Number(engagementIntervalMs) || DEFAULT_ENGAGEMENT_INTERVAL_MS));
+    }
 
     async function poll() {
         if (stopped) return;
@@ -110,7 +154,13 @@ function startChatMonitor({ youtube, videoId, liveChatId, config, onMessage, onE
     function stop() {
         stopped = true;
         if (timer) clearTimeout(timer);
+        if (engagementTimer) clearTimeout(engagementTimer);
     }
+
+    // A welcome prompt starts the conversation; later reminders are spaced
+    // out so the bot encourages engagement without dominating the chat.
+    postEngagementMessage();
+    scheduleEngagementMessage();
 
     // Kick off the first poll immediately (async, never awaited by callers).
     setImmediate(() => { poll().catch((error) => {
@@ -125,4 +175,4 @@ function startChatMonitor({ youtube, videoId, liveChatId, config, onMessage, onE
     };
 }
 
-module.exports = { startChatMonitor, DEFAULT_FALLBACK_INTERVAL_MS, FATAL_KINDS };
+module.exports = { startChatMonitor, DEFAULT_FALLBACK_INTERVAL_MS, DEFAULT_ENGAGEMENT_INTERVAL_MS, FATAL_KINDS };

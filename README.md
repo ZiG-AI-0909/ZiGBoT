@@ -395,7 +395,13 @@ re-run `scripts/youtube-auth.js`. Publish the consent screen to
 API's own `pollingIntervalMillis` pacing ~5s→10s+): roughly 1,800–3,600
 units/hour of active stream, or ~4,000–9,000 units per 2–3 hour stream —
 about one stream per day within the default 10,000. Detection adds ~40
-units/hour of polling. When the quota budget runs out, the bot logs it,
+units/hour of polling. The bot also posts an initial chat welcome asking viewers
+to like, subscribe, and join the conversation, then rotates a prompt every 15
+minutes (20 quota units per message). It replies to mild jokes aimed at the
+streamer/bot with a playful comeback, and gives viewers who use detected
+English or Hindi/Hinglish profanity a 5-minute timeout (200 quota units per
+timeout). The bot account must be a live-chat moderator for timeouts to work.
+When the quota budget runs out, the bot logs it,
 pauses every YouTube call until midnight Pacific, and keeps the Discord bot
 running normally.
 

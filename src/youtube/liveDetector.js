@@ -58,14 +58,13 @@ async function pollForLiveStream(youtube, channelId, config) {
 
         const liveVideo = (videosRes?.data?.items || []).find((video) =>
             video?.snippet?.liveBroadcastContent === 'live'
-            && video?.liveStreamingDetails?.activeLiveChatId
         );
 
         if (liveVideo) {
             return {
                 live: true,
                 videoId: liveVideo.id,
-                liveChatId: liveVideo.liveStreamingDetails.activeLiveChatId,
+                liveChatId: liveVideo.liveStreamingDetails?.activeLiveChatId || null,
                 title: liveVideo.snippet?.title || ''
             };
         }
