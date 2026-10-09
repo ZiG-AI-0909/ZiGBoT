@@ -84,29 +84,44 @@ async function initYouTube(youtubeConfigOverride = null, deps = {}) {
         else log(`self channel: ${state.selfId}`);
 
         if (config.autoDetect) {
+            const discordIds = () => ({
+                channelId: process.env.YOUTUBE_DISCORD_CHANNEL_ID || '1366908121754239009',
+                roleId: process.env.YOUTUBE_DISCORD_ROLE_ID || '1366912959510478868'
+            });
+            const postDiscordNotice = async (content) => {
+                if (!deps.discordClient) return;
+                const { channelId, roleId } = discordIds();
+                try {
+                    const channel = await deps.discordClient.channels.fetch(channelId);
+                    if (!channel?.isTextBased?.()) {
+                        log(`live notification skipped: Discord channel ${channelId} is unavailable or not text-based.`);
+                        return;
+                    }
+                    await channel.send({
+                        content: `<@&${roleId}> ${content}`,
+                        allowedMentions: { roles: [roleId] }
+                    });
+                } catch (error) {
+                    log(`live notification failed: ${error.message}`);
+                }
+            };
             state.detector = startLiveDetector({
                 youtube: state.youtube,
                 ownerId: state.ownerId,
                 config,
                 onLive: async ({ videoId, liveChatId, title }) => {
-                    if (deps.discordClient) {
-                        const channelId = process.env.YOUTUBE_DISCORD_CHANNEL_ID || '1366908121754239009';
-                        const roleId = process.env.YOUTUBE_DISCORD_ROLE_ID || '1366912959510478868';
-                        try {
-                            const channel = await deps.discordClient.channels.fetch(channelId);
-                            if (!channel?.isTextBased?.()) {
-                                log(`live notification skipped: Discord channel ${channelId} is unavailable or not text-based.`);
-                            } else {
-                                await channel.send({
-                                    content: `<@&${roleId}> We’re live on YouTube! https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`,
-                                    allowedMentions: { roles: [roleId] }
-                                });
-                            }
-                        } catch (error) {
-                            log(`live notification failed: ${error.message}`);
-                        }
-                    }
+                    await postDiscordNotice(`We’re live on YouTube! https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`);
                     await watch({ videoId, liveChatId, title, via: 'auto-detect' });
+                },
+                onScheduled: async ({ videoId, title, scheduledStartTime }) => {
+                    const scheduledDate = new Date(scheduledStartTime);
+                    if (Number.isNaN(scheduledDate.getTime())) return;
+                    const when = new Intl.DateTimeFormat(undefined, {
+                        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+                        hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
+                    }).format(scheduledDate);
+                    const label = title ? `**${title}**` : 'A YouTube live stream';
+                    await postDiscordNotice(`${label} is scheduled for **${when}**. https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`);
                 },
                 onEnded: async () => { await stopWatcher('auto-detected stream ended'); },
                 log

@@ -27,8 +27,8 @@ function uploadsPlaylistForChannel(channelId) {
 
 /**
  * One detection poll. Returns:
- *   { live: true, videoId, liveChatId } |
- *   { live: false } |
+ *   { live: true, videoId, liveChatId, scheduledStreams } |
+ *   { live: false, scheduledStreams } |
  *   { failed: true, kind }
  */
 async function pollForLiveStream(youtube, channelId, config) {
@@ -56,19 +56,29 @@ async function pollForLiveStream(youtube, channelId, config) {
             { costUnits: 1, budget: config.quotaBudgetPerDay }
         );
 
-        const liveVideo = (videosRes?.data?.items || []).find((video) =>
+        const videos = videosRes?.data?.items || [];
+        const liveVideo = videos.find((video) =>
             video?.snippet?.liveBroadcastContent === 'live'
         );
+        const scheduledStreams = videos
+            .filter((video) => video?.snippet?.liveBroadcastContent === 'upcoming'
+                && video?.liveStreamingDetails?.scheduledStartTime)
+            .map((video) => ({
+                videoId: video.id,
+                title: video.snippet?.title || '',
+                scheduledStartTime: video.liveStreamingDetails.scheduledStartTime
+            }));
 
         if (liveVideo) {
             return {
                 live: true,
                 videoId: liveVideo.id,
                 liveChatId: liveVideo.liveStreamingDetails?.activeLiveChatId || null,
-                title: liveVideo.snippet?.title || ''
+                title: liveVideo.snippet?.title || '',
+                scheduledStreams
             };
         }
-        return { live: false };
+        return { live: false, scheduledStreams };
     } catch (error) {
         return { failed: true, kind: error?.yt?.kind || YT_API.KIND.TRANSIENT, reason: error.message };
     }
@@ -80,12 +90,13 @@ async function pollForLiveStream(youtube, channelId, config) {
  * disappears. intervalMs and activeHours come from the YouTube config.
  * The loop self-schedules with setTimeout so it never stacks on slow calls.
  */
-function startLiveDetector({ youtube, ownerId, config, onLive, onEnded, log }) {
+function startLiveDetector({ youtube, ownerId, config, onLive, onScheduled, onEnded, log }) {
     let consecutiveMisses = 0;
     let disabled = false;
     let timer = null;
     let running = false;
     let lastSeenLive = null; // videoId currently believed live
+    const reportedScheduled = new Set();
 
     async function tick() {
         if (disabled || running) return;
@@ -114,6 +125,13 @@ function startLiveDetector({ youtube, ownerId, config, onLive, onEnded, log }) {
                     );
                 }
                 return;
+            }
+
+            for (const stream of result.scheduledStreams || []) {
+                if (reportedScheduled.has(stream.videoId)) continue;
+                reportedScheduled.add(stream.videoId);
+                if (reportedScheduled.size > 100) reportedScheduled.delete(reportedScheduled.values().next().value);
+                if (onScheduled) await onScheduled(stream);
             }
 
             if (result.live) {
