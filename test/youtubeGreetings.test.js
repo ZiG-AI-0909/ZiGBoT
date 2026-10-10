@@ -141,6 +141,21 @@ test('owner-only /ytgreet gate and command registration', async () => {
     orch._resetForTestHarness();
 });
 
+test('moderation text uses the shared paced sender even when greeting replies are disabled', async () => {
+    const sent = [];
+    const api = {
+        KIND: YT_API.KIND,
+        quotaRemaining: () => 1000,
+        classifyYouTubeError: YT_API.classifyYouTubeError,
+        async ytCall(youtube, method, params) { return method(params); }
+    };
+    const sender = new Greetings({ youtube: { liveChatMessages: { insert: async (params) => sent.push(params.requestBody.snippet.textMessageDetails.messageText) } },
+        videoId: 'v1', liveChatId: 'c1', config: { greetingsEnabled: false, quotaReserve: 2500, maxPendingReplies: 10 }, api });
+    assert.equal(sender.enqueueText('timed out Viewer for 5 min', { quotaReserve: 400 }), true);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(sent, ['timed out Viewer for 5 min']);
+});
+
 test('with greetings enabled and engagement prompts off, chat sends only the greeting reply', async () => {
     YT_API._resetQuotaForTests();
     YT_API.setQuotaBudget(10_000);

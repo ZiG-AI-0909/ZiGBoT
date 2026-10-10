@@ -17,6 +17,7 @@ let counters = null;
 let memories = null;
 let behaviors = null;
 let ytGreeted = null;
+let ytBans = null;
 let lastMemoryError = null;
 let lastBehaviorError = null;
 
@@ -83,6 +84,7 @@ async function connectBrain(uri, { client: injectedClient = null } = {}) {
     const nextMemories = db.collection('memories');
     const nextBehaviors = db.collection('behaviors');
     const nextYtGreeted = db.collection('ytGreeted');
+    const nextYtBans = db.collection('ytBans');
 
     // Clean up records created before the TTL field was added, and enforce the
     // retention boundary immediately when the bot starts.
@@ -100,6 +102,8 @@ async function connectBrain(uri, { client: injectedClient = null } = {}) {
     await nextBehaviors.createIndex({ guildId: 1, userId: 1, created_at: -1 });
     await nextYtGreeted.createIndex({ videoId: 1, channelId: 1 }, { unique: true });
     await nextYtGreeted.createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 });
+    await nextYtBans.createIndex({ videoId: 1, channelId: 1 }, { unique: true });
+    await nextYtBans.createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 });
 
     // Everything succeeded — swap the live state over in one go.
     client = newClient;
@@ -109,6 +113,7 @@ async function connectBrain(uri, { client: injectedClient = null } = {}) {
     memories = nextMemories;
     behaviors = nextBehaviors;
     ytGreeted = nextYtGreeted;
+    ytBans = nextYtBans;
     lastMemoryError = null;
     lastBehaviorError = null;
 
@@ -460,6 +465,27 @@ async function recordYtGreetedViewer(videoId, channelId) {
     );
 }
 
+async function recordYtBan(videoId, channelId, banId, displayName = '') {
+    if (!ytBans) throw new Error('Brain is not connected.');
+    const now = Date.now();
+    await ytBans.updateOne({ videoId: String(videoId), channelId: String(channelId) }, {
+        $set: { banId: String(banId), displayName: String(displayName).slice(0, 100), created_at: now,
+            expires_at: new Date(now + 24 * 60 * 60 * 1000) }
+    }, { upsert: true });
+}
+
+async function getYtBanId(videoId, channelId) {
+    if (!ytBans) throw new Error('Brain is not connected.');
+    const row = await ytBans.findOne({ videoId: String(videoId), channelId: String(channelId) });
+    if (!row || !row.banId || (row.expires_at && new Date(row.expires_at).getTime() <= Date.now())) return null;
+    return row.banId;
+}
+
+async function deleteYtBan(videoId, channelId) {
+    if (!ytBans) throw new Error('Brain is not connected.');
+    await ytBans.deleteOne({ videoId: String(videoId), channelId: String(channelId) });
+}
+
 // ---- Truthful runtime capability reporting ----
 // The AI prompt and diagnostic commands must derive their memory claims from
 // these values, never from hard-coded assumptions.
@@ -499,6 +525,7 @@ function _disconnectForTests() {
     memories = null;
     behaviors = null;
     ytGreeted = null;
+    ytBans = null;
     lastMemoryError = null;
     lastBehaviorError = null;
 }
@@ -527,6 +554,9 @@ module.exports = {
     isBehaviorAvailable,
     listYtGreetedViewers,
     recordYtGreetedViewer,
+    recordYtBan,
+    getYtBanId,
+    deleteYtBan,
     tierFromScore,
     scoreEvents,
     _disconnectForTests

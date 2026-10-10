@@ -340,7 +340,7 @@ Quick sanity checks after inviting the bot:
 
 ### YouTube Live Chat (optional)
 
-ZiGBoT can watch a YouTube live stream's chat and (in later phases) reply and moderate it.
+ZiGBoT can watch a YouTube live stream's chat, greet viewers, and support owner-only moderation commands.
 This feature is entirely opt-in and never blocks the Discord bot: any missing
 `YOUTUBE_*` variable or a failing YouTube API call leaves everything else working.
 
@@ -394,6 +394,10 @@ re-run `scripts/youtube-auth.js`. Publish the consent screen to
 
 **Phase 2 greeting replies:** `YOUTUBE_GREETINGS=true` (default) enables short greeting and direct-mention replies. Greetings are limited to one per viewer per stream; mentions have a 60-second per-viewer cooldown. Replies are queued at least 5 seconds apart, capped at 60 per stream by default, and stop when daily quota reaches the 2,500-unit reserve. `YOUTUBE_ENGAGEMENT_PROMPTS=false` keeps the older unsolicited YouTube-chat prompts disabled; set it to `true` to restore them. The bot ignores its own/owner/moderator messages, configured channel IDs, common chat bots, old backlog, and commands.
 
+**Phase 3 YouTube moderation:** `YOUTUBE_MODERATION=true` (default) enables owner-only live-chat commands using `YOUTUBE_COMMAND_PREFIX` (default `!`). Every command requires both the resolved stream-owner channel ID and YouTube's `isChatOwner` flag. Supported commands are `!timeout <target> [minutes] [reason]` (default 5 minutes), `!ban <target> [reason]` (requires `!confirm` or `!cancel` within 30 seconds), `!unban <target>` (only removes bans created by this bot), and `!delete <target> [count]` (up to 10 cached messages from the last 30 minutes). Names must resolve to one recent chatter; exact `UC...` channel IDs can be used when names are ambiguous. Moderation stops at the configurable 400-unit quota reserve and 25 actions per stream by default, and ban/timeout requests have a 2-second cooldown. Attempts and results are written to `LOG_CHANNEL_ID`. `/ytmod on|off` controls moderation at runtime, while `/ytstatus` reports its state and action count.
+
+The YouTube bot channel must be a **live-chat moderator** of the stream to timeout/ban viewers or delete messages. Add it through the chat participant list → ⋮ → Add moderator. A 403 pauses moderation for the stream; `/ytmod on` retries after moderator access has been fixed.
+
 **Quota math** (live chat via `liveChatMessages.list`, 5 units per poll at the
 API's own `pollingIntervalMillis` pacing ~5s→10s+): roughly 1,800–3,600
 units/hour of active stream, or ~4,000–9,000 units per 2–3 hour stream —
@@ -410,7 +414,8 @@ running normally.
 
 Manual step for the channel owner (not automatable): add the bot channel as a
 live-chat moderator of https://www.youtube.com/@YourBoyZiG during a live
-stream, via the chat's participant list → ⋮ → Add moderator.
+stream, via the chat's participant list → ⋮ → Add moderator. Moderation
+commands require this permission.
 
 ---
 

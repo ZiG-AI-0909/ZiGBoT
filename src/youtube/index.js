@@ -19,6 +19,7 @@ const YT_API = require('./apiClient');
 const { readYouTubeConfig, withinActiveHours } = require('./config');
 const { hasDirtyLanguage, getPlayfulRoast } = require('./chatModeration');
 const { Greetings } = require('./greetings');
+const { YouTubeCommandRouter } = require('./commands');
 const brain = require('../db/brain');
 
 const state = {
@@ -33,7 +34,10 @@ const state = {
     noticeLog: [],
     greetings: null,
     greetingContext: null,
-    botTitle: null
+    botTitle: null,
+    moderation: null,
+    discordClient: null,
+    discordSettings: null
 };
 
 function log(message) {
@@ -61,6 +65,8 @@ async function initYouTube(youtubeConfigOverride = null, deps = {}) {
     }
 
     state.config = config;
+    state.discordClient = deps.discordClient || null;
+    state.discordSettings = deps.settings || { logChannelId: process.env.LOG_CHANNEL_ID || '' };
     if (deps.youtube) {
         state.youtube = deps.youtube;
     } else {
@@ -185,6 +191,10 @@ async function watch({ videoId, liveChatId = null, title = '', via = 'manual' })
     state.greetings = new Greetings({ youtube: state.youtube, liveChatId, videoId, config: state.config,
         selfId: state.selfId, ownerId: state.ownerId, botTitle: state.botTitle, brain,
         onNotice: (message) => notice(`watch ${videoId}: ${message}`) });
+    state.moderation = new YouTubeCommandRouter({ youtube: state.youtube, videoId, liveChatId,
+        ownerId: state.ownerId, selfId: state.selfId, botTitle: state.botTitle, config: state.config, greetings: state.greetings,
+        brain, discordClient: state.discordClient, settings: state.discordSettings,
+        onNotice: (message) => notice(`watch ${videoId}: ${message}`) });
     const timedOutUsers = new Set();
     const roastCooldowns = new Map();
     state.watcher = startChatMonitor({
@@ -193,6 +203,7 @@ async function watch({ videoId, liveChatId = null, title = '', via = 'manual' })
         liveChatId,
         config: state.config,
         onMessage: async (message) => {
+            if (state.moderation && await state.moderation.handleMessage(message)) return;
             const author = message.author;
             if (!author?.channelId || author.channelId === state.ownerId || author.channelId === state.selfId
                 || author.isChatOwner || author.isChatModerator) return;
@@ -267,11 +278,14 @@ async function stopWatcher(reason = 'unspecified') {
     if (!state.watcher) return { stopped: false };
     const watcher = state.watcher;
     state.watcher = null;
+    watcher.stop();
+    const moderation = state.moderation;
+    state.moderation = null;
+    if (moderation) await moderation.stop();
     state.greetings?.stop();
     state.greetings = null;
     state.greetingContext = null;
     state.lastWatchedVideoId = null;
-    watcher.stop();
     log(`stopped watcher: ${reason}`);
     return { stopped: true };
 }
@@ -308,14 +322,25 @@ async function handleYtGreetCommand(value, isOwnerDiscord) {
     }
     state.config.greetingsEnabled = normalized === 'on';
     if (state.greetings) {
-        state.greetings.enabled = state.config.greetingsEnabled;
-        if (!state.greetings.enabled) state.greetings.stop();
+        state.greetings.setGreetingsEnabled(state.config.greetingsEnabled);
     } else if (state.config.greetingsEnabled && state.greetingContext) {
         state.greetings = new Greetings({ youtube: state.youtube, ...state.greetingContext,
             config: state.config, selfId: state.selfId, ownerId: state.ownerId,
             botTitle: state.botTitle, brain, onNotice: (message) => notice(message) });
     }
     return `✅ YouTube greetings ${normalized === 'on' ? 'enabled' : 'disabled'}.`;
+}
+
+async function handleYtModCommand(value, isOwnerDiscord) {
+    if (!state.enabled) return '❌ YouTube support is not enabled.';
+    if (!isOwnerDiscord) return null;
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!['on', 'off'].includes(normalized)) return '⚠️ Use `/ytmod on` or `/ytmod off`.';
+    state.config.moderationEnabled = normalized === 'on';
+    if (state.moderation) {
+        await state.moderation.setEnabled(state.config.moderationEnabled, { allowForbiddenRecovery: normalized === 'on' });
+    }
+    return `✅ YouTube moderation ${normalized === 'on' ? 'enabled' : 'disabled'}.`;
 }
 
 /** True if the Discord-side /watch /unwatch commands should even be registered. */
@@ -335,6 +360,8 @@ function getYouTubeStatus() {
         quotaRemaining: YT_API.quotaRemaining(),
         greetings: state.greetings ? state.greetings.enabled : Boolean(state.config?.greetingsEnabled),
         repliesSent: state.greetings?.repliesSent || 0,
+        moderation: state.moderation ? state.moderation.active : Boolean(state.config?.moderationEnabled),
+        moderationActions: state.moderation?.actionsUsed || 0,
         notices: state.noticeLog.slice(-20)
     };
 }
@@ -342,6 +369,10 @@ function getYouTubeStatus() {
 /** Test-only: reset in-memory module state. */
 function _resetForTestHarness() {
     stopAll();
+    state.moderation = null;
+    state.greetings?.stop();
+    state.greetings = null;
+    state.greetingContext = null;
     state.noticeLog = [];
 }
 
@@ -356,10 +387,19 @@ function _seedStateForTests({ youtube = null, ownerId = null, selfId = null, con
     state.ownerId = ownerId;
     state.selfId = selfId;
     state.config = config || { quotaBudgetPerDay: 10_000, autoDetect: false, activeHours: null, autoDetectIntervalMs: 180_000 };
+    state.moderation = null;
+    state.discordClient = null;
+    state.discordSettings = null;
 }
 
 function stopAll() {
     if (state.watcher) stopWatcher('shutdown');
+    else if (state.moderation) {
+        void state.moderation.stop();
+        state.moderation = null;
+        state.greetings?.stop();
+        state.greetings = null;
+    }
     if (state.detector) state.detector.stop();
     state.detector = null;
     state.enabled = false;
@@ -371,6 +411,7 @@ module.exports = {
     handleWatchCommand,
     handleUnwatchCommand,
     handleYtGreetCommand,
+    handleYtModCommand,
     isYouTubeReady,
     getYouTubeStatus,
     stopAll,

@@ -42,8 +42,8 @@ function fakeMongoClient() {
             let seq = 0;
             const store = {
                 docs,
-                async createIndex(spec) {
-                    createdIndexes.push({ name, spec });
+                async createIndex(spec, options = {}) {
+                    createdIndexes.push({ name, spec, options });
                     return `${name}_idx_${createdIndexes.length}`;
                 },
                 async insertOne(doc) {
@@ -76,6 +76,12 @@ function fakeMongoClient() {
                     docs.length = 0;
                     docs.push(...keep);
                     return { deletedCount };
+                },
+                async deleteOne(filter) {
+                    const index = docs.findIndex((doc) => Object.entries(filter).every(([key, value]) => doc[key] === value));
+                    if (index < 0) return { deletedCount: 0 };
+                    docs.splice(index, 1);
+                    return { deletedCount: 1 };
                 },
                 find(filter) {
                     const matches = () => docs.filter((d) => Object.entries(filter).every(([k, v]) => d[k] === v));
@@ -151,6 +157,20 @@ test('brain warns store adds, counts, and lists per guild+user with increasing i
         fake.createdIndexes.find(({ name }) => name === 'warnings').spec,
         { guildId: 1, userId: 1, created_at: 1 }
     );
+});
+
+test('YouTube ban ids persist per stream/viewer with unique and 24-hour TTL indexes', async () => {
+    const fake = fakeMongoClient();
+    await brain.connectBrain('mongodb://fake', { client: fake });
+    await brain.recordYtBan('video-1', 'UC_viewer', 'ban-id-1', 'Viewer');
+    assert.equal(await brain.getYtBanId('video-1', 'UC_viewer'), 'ban-id-1');
+    assert.equal(await brain.getYtBanId('video-2', 'UC_viewer'), null);
+    assert.deepEqual(fake.createdIndexes.filter((index) => index.name === 'ytBans').map((index) => index.options), [
+        { unique: true }, { expireAfterSeconds: 0 }
+    ]);
+    await brain.deleteYtBan('video-1', 'UC_viewer');
+    assert.equal(await brain.getYtBanId('video-1', 'UC_viewer'), null);
+    brain._disconnectForTests();
 });
 
 test('brain user profile defaults match the documented shape', async () => {
@@ -272,8 +292,8 @@ test('buildDefinitions returns plain JSON payloads ready for the Discord API', (
     // the array, and the map then crashed the whole bot on startup.
     const definitions = buildDefinitions();
     // Original 6 (play, kick, ban, memory, reputation, help)
-    // + 4 YouTube commands (/watch, /unwatch, /ytstatus, /ytgreet)
-    assert.equal(definitions.length, 10);
+    // + 5 YouTube commands (/watch, /unwatch, /ytstatus, /ytgreet, /ytmod)
+    assert.equal(definitions.length, 11);
     for (const definition of definitions) {
         assert.equal(typeof definition.toJSON, 'undefined');
         assert.equal(typeof definition.name, 'string');
@@ -281,7 +301,7 @@ test('buildDefinitions returns plain JSON payloads ready for the Discord API', (
     }
     assert.deepEqual(
         definitions.map(({ name }) => name),
-        ['play', 'kick', 'ban', 'memory', 'reputation', 'help', 'watch', 'unwatch', 'ytstatus', 'ytgreet']
+        ['play', 'kick', 'ban', 'memory', 'reputation', 'help', 'watch', 'unwatch', 'ytstatus', 'ytgreet', 'ytmod']
     );
 });
 

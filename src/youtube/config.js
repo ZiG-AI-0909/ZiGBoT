@@ -58,7 +58,12 @@ function readYouTubeConfig(env = process.env) {
         backlogToleranceMs: number('YOUTUBE_BACKLOG_TOLERANCE_MS', 3000),
         outgoingIntervalMs: number('YOUTUBE_REPLY_INTERVAL_MS', 5000),
         maxPendingReplies: number('YOUTUBE_REPLY_QUEUE_MAX', 10, 1),
-        mentionCooldownMs: number('YOUTUBE_MENTION_COOLDOWN_MS', 60_000)
+        mentionCooldownMs: number('YOUTUBE_MENTION_COOLDOWN_MS', 60_000),
+        commandPrefix: (env.YOUTUBE_COMMAND_PREFIX || '!').trim() || '!',
+        moderationEnabled: env.YOUTUBE_MODERATION !== 'false',
+        moderationQuotaReserve: number('YOUTUBE_MOD_QUOTA_RESERVE', 400),
+        maxModerationActionsPerStream: number('YOUTUBE_MAX_MOD_ACTIONS_PER_STREAM', 25),
+        moderationActionCooldownMs: number('YOUTUBE_MOD_ACTION_COOLDOWN_MS', 2000)
     };
 }
 

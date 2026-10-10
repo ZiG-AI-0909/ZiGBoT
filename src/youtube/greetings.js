@@ -100,7 +100,7 @@ class Greetings {
             || author.isChatModerator || author.isChatOwner
             || (this.config.ignoredChannelIds || []).includes(author.channelId)
             || IGNORED_BOT_NAMES.has(String(author.displayName || '').trim().toLocaleLowerCase())) return false;
-        if (/^\s*!/.test(String(message.text || ''))) return false;
+        if (String(message.text || '').trimStart().startsWith(this.config.commandPrefix || '!')) return false;
         const mention = mentionsBot(message.text, this.botTitle, this.config.botName || 'ZiGBoT');
         const greeting = isGreeting(message.text, this.maxWords);
         if (!mention && !greeting) return false;
@@ -125,8 +125,27 @@ class Greetings {
         return templates[index].replace('{name}', name).slice(0, 199);
     }
 
+    enqueueText(text, { quotaReserve = this.reserve } = {}) {
+        const messageText = String(text || '').replace(/[\p{Cc}\p{Cf}\r\n]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 199);
+        if (!messageText || this.queue.length + Number(this.sending) >= this.maxPending) return false;
+        this.queue.push({ type: 'moderation', channelId: null, text: messageText, quotaReserve });
+        this.pump();
+        return true;
+    }
+
+    setGreetingsEnabled(enabled) {
+        this.enabled = Boolean(enabled);
+        if (!this.enabled) {
+            this.queue = this.queue.filter((item) => item.type === 'moderation');
+            if (this.timer) this.clearTimer(this.timer);
+            this.timer = null;
+        }
+        if (this.queue.length) this.pump();
+    }
+
     async pump() {
-        if (this.sending || !this.enabled || !this.queue.length) return;
+        if (this.sending || !this.queue.length) return;
+        if (!this.enabled && this.queue[0].type !== 'moderation') return;
         const wait = this.lastSentAt === null ? 0 : this.outgoingInterval - (this.clock() - this.lastSentAt);
         if (wait > 0) {
             this.timer = this.setTimer(() => { this.timer = null; this.pump(); }, wait);
@@ -135,20 +154,21 @@ class Greetings {
         this.sending = true;
         const reply = this.queue.shift();
         try {
-            if (this.repliesSent >= this.maxReplies) {
-                this.queue.length = 0;
+            if (['greeting', 'mention'].includes(reply.type) && this.repliesSent >= this.maxReplies) {
+                this.queue = this.queue.filter((item) => item.type === 'moderation');
                 if (!this.capNotice) { this.capNotice = true; this.onNotice('YouTube reply cap reached for this stream; replies paused until the next stream.'); }
                 return;
             }
-            if (this.api.quotaRemaining() - 20 < this.reserve) {
-                this.queue.length = 0;
-                if (!this.reserveNotice) { this.reserveNotice = true; this.onNotice('YouTube greeting replies paused to preserve the configured API quota reserve.'); }
+            if (this.api.quotaRemaining() - 20 < (reply.quotaReserve ?? this.reserve)) {
+                const minimumReserve = reply.quotaReserve ?? this.reserve;
+                this.queue = this.queue.filter((item) => item.type === 'moderation' && (item.quotaReserve ?? this.reserve) < minimumReserve);
+                if (!this.reserveNotice) { this.reserveNotice = true; this.onNotice('YouTube replies paused to preserve the configured API quota reserve.'); }
                 return;
             }
             await this.api.ytCall(this.youtube, (params) => this.youtube.liveChatMessages.insert(params), {
                 part: 'snippet', requestBody: { snippet: { liveChatId: this.liveChatId, type: 'textMessageEvent', textMessageDetails: { messageText: reply.text } } }
             }, { costUnits: 20, budget: this.config.quotaBudgetPerDay });
-            this.repliesSent += 1;
+            if (['greeting', 'mention'].includes(reply.type)) this.repliesSent += 1;
             this.lastSentAt = this.clock();
             if (reply.type === 'greeting') {
                 try { await this.brain?.recordYtGreetedViewer?.(this.videoId, reply.channelId); }
@@ -169,7 +189,7 @@ class Greetings {
             // Transient send failures drop this reply; the chat reader continues.
         } finally {
             this.sending = false;
-            if (this.queue.length && this.enabled) this.pump();
+            if (this.queue.length && (this.enabled || this.queue[0].type === 'moderation')) this.pump();
         }
     }
 

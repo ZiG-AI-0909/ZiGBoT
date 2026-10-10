@@ -97,7 +97,7 @@ client.once(Events.ClientReady, async (c) => {
     // YouTube live chat: completely optional. Any init failure still leaves
     // the Discord bot running normally.
     try {
-        const ytState = await initYouTube(null, { discordClient: client });
+        const ytState = await initYouTube(null, { discordClient: client, settings });
         if (ytState.enabled) {
             console.log('[ZiGBoT YT] YouTube live-chat support enabled.');
             if (!ytState.selfId) console.log('[ZiGBoT YT] NOTE: bot channel not resolved via channels.list(mine=true); rely on authorDetails.isChatOwner/isChatModerator for self-filtering.');

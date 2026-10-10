@@ -103,6 +103,7 @@ function startChatMonitor({ youtube, videoId, liveChatId, config, onMessage, onE
                 await onMessage({
                     id: item.id,
                     eventType: item.snippet?.type,
+                    rawText: item.snippet?.textMessageDetails?.messageText ?? null,
                     text: item.snippet?.displayMessage || item.snippet?.textMessageDetails?.messageContent || '',
                     author: {
                         channelId: item.authorDetails?.channelId,

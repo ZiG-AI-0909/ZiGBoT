@@ -14,7 +14,8 @@ const {
     getYouTubeStatus,
     handleWatchCommand,
     handleUnwatchCommand,
-    handleYtGreetCommand
+    handleYtGreetCommand,
+    handleYtModCommand
 } = require('./youtube');
 
 // Only the highest-traffic actions get slash commands (per the roadmap);
@@ -91,6 +92,12 @@ function buildDefinitions() {
             .setDescription('Owner: enable or disable YouTube greeting replies')
             .addStringOption((option) => option.setName('state').setDescription('on or off').setRequired(true)
                 .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' }))
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+        new SlashCommandBuilder()
+            .setName('ytmod')
+            .setDescription('Owner: enable or disable YouTube live-chat moderation')
+            .addStringOption((option) => option.setName('state').setDescription('on or off').setRequired(true)
+                .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' }))
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     ].map((command) => command.toJSON());
 }
@@ -154,11 +161,16 @@ async function runYouTubeInteraction(interaction, settings, client) {
                 `autoDetect: ${status.autoDetect ? 'on' : 'off'}`,
                 `greetings: ${status.greetings ? 'on' : 'off'}`,
                 `replies this stream: ${status.repliesSent}`,
+                `moderation: ${status.moderation ? 'on' : 'off'}`,
+                `moderation actions this stream: ${status.moderationActions}`,
                 `quota used today: ${status.quotaUsed}/${status.quotaBudget ?? 'unknown'}`
             ].join(' | ');
         }
         if (interaction.commandName === 'ytgreet') {
             return await handleYtGreetCommand(interaction.options.getString('state', true), true);
+        }
+        if (interaction.commandName === 'ytmod') {
+            return await handleYtModCommand(interaction.options.getString('state', true), true);
         }
     } catch (error) {
         // YouTube problems must never fall through to a Discord crash.
