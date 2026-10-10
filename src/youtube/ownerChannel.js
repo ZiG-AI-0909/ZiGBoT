@@ -25,7 +25,7 @@ async function resolveOwnerChannel(youtube, config) {
             part: 'id,snippet',
             forHandle: handle
         },
-        { costUnits: 1, budget: config.quotaBudgetPerDay }
+        { costUnits: 1, budget: config.quotaBudgetPerDay, method: 'channels.list' }
     );
 
     const item = response?.data?.items?.[0];
@@ -49,7 +49,7 @@ async function resolveSelfChannel(youtube, config) {
             youtube,
             (params) => youtube.channels.list(params),
             { part: 'id,snippet', mine: true },
-            { costUnits: 1, budget: config.quotaBudgetPerDay }
+            { costUnits: 1, budget: config.quotaBudgetPerDay, method: 'channels.list' }
         );
         const selfId = response?.data?.items?.[0]?.id || null;
         if (!selfId) return null;

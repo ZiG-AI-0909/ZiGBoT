@@ -56,6 +56,7 @@ function fakeMongoClient() {
                 },
                 async updateOne(filter, update) {
                     let doc = docs.find((d) => Object.entries(filter).every(([k, v]) => d[k] === v));
+                    const inserted = !doc;
                     let upsertedId = null;
                     if (!doc) {
                         doc = { ...filter };
@@ -64,6 +65,21 @@ function fakeMongoClient() {
                     }
                     if (update.$set) {
                         for (const [k, v] of Object.entries(update.$set)) doc[k] = v;
+                    }
+                    if (update.$setOnInsert && inserted) {
+                        for (const [k, v] of Object.entries(update.$setOnInsert)) if (doc[k] === undefined) doc[k] = v;
+                    }
+                    if (update.$inc) {
+                        for (const [k, v] of Object.entries(update.$inc)) {
+                            const parts = k.split('.');
+                            let cursor = doc;
+                            for (const part of parts.slice(0, -1)) cursor = cursor[part] ||= {};
+                            const key = parts.at(-1);
+                            cursor[key] = (Number(cursor[key]) || 0) + v;
+                        }
+                    }
+                    if (update.$max) {
+                        for (const [k, v] of Object.entries(update.$max)) doc[k] = Math.max(Number(doc[k]) || 0, v);
                     }
                     return { matchedCount: 1, upsertedId };
                 },
@@ -184,6 +200,25 @@ test('YouTube no-roast viewers persist per stream with unique and 24-hour TTL in
     ]);
     await brain.deleteYtNoRoast('video-1', 'UC_viewer');
     assert.deepEqual(await brain.listYtNoRoast('video-1'), []);
+    brain._disconnectForTests();
+});
+
+test('YouTube quota ledger persists method usage and a Google exhaustion marker by Pacific date', async () => {
+    const fake = fakeMongoClient();
+    await brain.connectBrain('mongodb://fake', { client: fake });
+    await brain.recordYtQuotaCall('2026-10-10', 'liveChatMessages.list', 5);
+    await brain.recordYtQuotaCall('2026-10-10', 'liveChatMessages.list', 5);
+    await brain.recordYtQuotaCall('2026-10-10', 'videos.list', 1);
+    assert.deepEqual(await brain.getYtQuotaLedger('2026-10-10'), {
+        usedUnits: 11, exhausted: false,
+        methods: { liveChatMessages_list: { calls: 2, units: 10 }, videos_list: { calls: 1, units: 1 } }
+    });
+    await brain.markYtQuotaExhausted('2026-10-10', 10_000);
+    assert.equal((await brain.getYtQuotaLedger('2026-10-10')).exhausted, true);
+    assert.equal((await brain.getYtQuotaLedger('2026-10-10')).usedUnits, 10_000);
+    assert.deepEqual(fake.createdIndexes.filter((index) => index.name === 'ytQuota').map((index) => index.options), [
+        { unique: true }, { expireAfterSeconds: 0 }
+    ]);
     brain._disconnectForTests();
 });
 

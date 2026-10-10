@@ -14,9 +14,11 @@ function resetAll() {
 function makeMockYoutube() {
     let videosListCalls = 0;
     let chatListCalls = 0;
+    const chatLiveIds = [];
     return {
         videosListCalls: () => videosListCalls,
         chatListCalls: () => chatListCalls,
+        chatLiveIds: () => [...chatLiveIds],
         videos: {
             list: async ({ id, part }) => {
                 videosListCalls += 1;
@@ -31,8 +33,9 @@ function makeMockYoutube() {
             }
         },
         liveChatMessages: {
-            list: async () => {
+            list: async ({ liveChatId }) => {
                 chatListCalls += 1;
+                chatLiveIds.push(liveChatId);
                 return {
                     data: { items: [], pollingIntervalMillis: 50 }
                 };
@@ -113,10 +116,46 @@ test('watching the same video twice is idempotent, and unwatch stops it', async 
     resetAll();
 });
 
+test('concurrent auto/manual watch requests sharing a live chat install one watcher, and switching stops the old loop', async () => {
+    resetAll();
+    const mock = seedWithMock();
+    const [first, second] = await Promise.all([
+        orch.watch({ videoId: 'vidAUTO', liveChatId: 'chatSHARED', via: 'auto-detect' }),
+        orch.watch({ videoId: 'vidMANUAL', liveChatId: 'chatSHARED', via: 'manual' })
+    ]);
+    assert.equal(first.ok, true);
+    assert.equal(second.already, true);
+    assert.equal(orch.stateGetter().watcherLiveChatId, 'chatSHARED');
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.deepEqual(mock.chatLiveIds(), ['chatSHARED']);
+
+    const switched = await orch.watch({ videoId: 'vidNEXT', liveChatId: 'chatNEXT', via: 'manual' });
+    assert.equal(switched.ok, true);
+    assert.equal(orch.stateGetter().watcherLiveChatId, 'chatNEXT');
+    await orch.handleUnwatchCommand(true);
+    assert.equal(orch.stateGetter().watcher, null);
+    resetAll();
+});
+
 test('unwatch from a non-owner is silently ignored', async () => {
     resetAll();
     seedWithMock();
     const reply = await orch.handleUnwatchCommand(false);
     assert.equal(reply, null);
+    resetAll();
+});
+
+test('getYouTubeStatus exposes per-method quota usage for /ytstatus', async () => {
+    resetAll();
+    seedWithMock();
+    await orch.watch({ videoId: 'vidLIVE', via: 'manual' });
+    // Give the monitor's setImmediate a beat to issue its first chat poll.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const methods = orch.getYouTubeStatus().quotaMethods;
+    assert.equal(methods.videos_list.calls >= 1, true, 'videos.list call counted');
+    assert.equal(methods.videos_list.units >= 1, true, 'videos.list units counted');
+    assert.equal(methods.liveChatMessages_list.calls >= 1, true, 'liveChatMessages.list call counted');
+    assert.equal(methods.liveChatMessages_list.units >= 5, true, 'liveChatMessages.list units counted');
+    await orch.handleUnwatchCommand(true);
     resetAll();
 });

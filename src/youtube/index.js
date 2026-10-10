@@ -30,6 +30,8 @@ const state = {
     ownerId: null,
     selfId: null,
     watcher: null,       // active chat monitor
+    watcherLiveChatId: null,
+    watchTail: Promise.resolve(),
     detector: null,      // auto-detect loop
     lastWatchedVideoId: null,
     noticeLog: [],
@@ -57,6 +59,9 @@ function notice(message) {
  * Returns the enabled state so the caller knows whether to wire /watch.
  */
 async function initYouTube(youtubeConfigOverride = null, deps = {}) {
+    await stopWatcher('YouTube reinitialization');
+    if (state.detector) state.detector.stop();
+    state.detector = null;
     const config = youtubeConfigOverride || readYouTubeConfig();
 
     if (!config.enabled) {
@@ -80,6 +85,8 @@ async function initYouTube(youtubeConfigOverride = null, deps = {}) {
         });
     }
     YT_API.setQuotaBudget(config.quotaBudgetPerDay);
+    YT_API.configureQuotaLedger({ brain, onNotice: (message) => notice(message) });
+    await YT_API.hydrateQuotaLedger();
     state.enabled = true;
 
     try {
@@ -157,14 +164,17 @@ async function initYouTube(youtubeConfigOverride = null, deps = {}) {
  * Watch a specific video's chat. Manual /watch path and auto-detect path
  * both land here. Refuses if already watching this video.
  */
-async function watch({ videoId, liveChatId = null, title = '', via = 'manual' }) {
+function watch(options) {
+    const run = state.watchTail.then(() => watchInternal(options));
+    state.watchTail = run.catch(() => {});
+    return run;
+}
+
+async function watchInternal({ videoId, liveChatId = null, title = '', via = 'manual' }) {
     if (!state.enabled || !state.youtube) return { ok: false, error: 'YouTube support is disabled.' };
     if (state.watcher && state.lastWatchedVideoId === videoId) {
         return { ok: true, already: true };
     }
-
-    // Stop any previous watcher first — only one video at a time.
-    await stopWatcher(`switching to ${via} watch of ${videoId}`);
 
     if (!liveChatId) {
         // 1 unit: get the active live-chat ID for this video.
@@ -173,7 +183,7 @@ async function watch({ videoId, liveChatId = null, title = '', via = 'manual' })
                 state.youtube,
                 (params) => state.youtube.videos.list(params),
                 { part: 'liveStreamingDetails', id: videoId },
-                { costUnits: 1, budget: state.config.quotaBudgetPerDay }
+                { costUnits: 1, budget: state.config.quotaBudgetPerDay, method: 'videos.list' }
             );
             const details = videoRes?.data?.items?.[0]?.liveStreamingDetails;
             liveChatId = details?.activeLiveChatId || null;
@@ -189,7 +199,15 @@ async function watch({ videoId, liveChatId = null, title = '', via = 'manual' })
         }
     }
 
+    if (state.watcher && state.watcherLiveChatId === liveChatId) {
+        return { ok: true, already: true };
+    }
+
+    // A queued manual /watch and auto-detect callback can arrive together;
+    // this serialized path stops the old loop before installing the new one.
+    await stopWatcher(`switching to ${via} watch of ${videoId}`);
     state.lastWatchedVideoId = videoId;
+    state.watcherLiveChatId = liveChatId;
     state.greetingContext = { videoId, liveChatId };
     state.greetings = new Greetings({ youtube: state.youtube, liveChatId, videoId, config: state.config,
         selfId: state.selfId, ownerId: state.ownerId, botTitle: state.botTitle, brain,
@@ -236,7 +254,7 @@ async function watch({ videoId, liveChatId = null, title = '', via = 'manual' })
                                 }
                             }
                         },
-                        { costUnits: 200, budget: state.config.quotaBudgetPerDay }
+                        { costUnits: 200, budget: state.config.quotaBudgetPerDay, method: 'liveChatBans.insert' }
                     );
                     notice(`timed out YouTube chatter ${author.channelId} for 5 minutes (dirty language).`);
                 } catch (error) {
@@ -263,7 +281,7 @@ async function watch({ videoId, liveChatId = null, title = '', via = 'manual' })
                             }
                         }
                     },
-                    { costUnits: 20, budget: state.config.quotaBudgetPerDay }
+                    { costUnits: 20, budget: state.config.quotaBudgetPerDay, method: 'liveChatMessages.insert' }
                 );
             } catch (error) {
                 notice(`could not post YouTube chat roast: ${error.message}`);
@@ -284,6 +302,7 @@ async function stopWatcher(reason = 'unspecified') {
     if (!state.watcher) return { stopped: false };
     const watcher = state.watcher;
     state.watcher = null;
+    state.watcherLiveChatId = null;
     watcher.stop();
     const moderation = state.moderation;
     state.moderation = null;
@@ -379,6 +398,7 @@ function getYouTubeStatus() {
         quotaUsed: YT_API.quotaUsedToday(),
         quotaBudget: state.config?.quotaBudgetPerDay ?? null,
         quotaRemaining: YT_API.quotaRemaining(),
+        quotaMethods: YT_API.quotaMethodUsage(),
         greetings: state.greetings ? state.greetings.enabled : Boolean(state.config?.greetingsEnabled),
         repliesSent: state.greetings?.repliesSent || 0,
         messagesSent: state.greetings?.messagesSent || 0,
@@ -395,6 +415,8 @@ function getYouTubeStatus() {
 function _resetForTestHarness() {
     stopAll();
     state.moderation = null;
+    state.watcherLiveChatId = null;
+    state.watchTail = Promise.resolve();
     state.greetings?.stop();
     state.greetings = null;
     state.greetingContext = null;
@@ -415,6 +437,7 @@ function _seedStateForTests({ youtube = null, ownerId = null, selfId = null, con
     state.moderation = null;
     state.discordClient = null;
     state.discordSettings = null;
+    state.watcherLiveChatId = null;
 }
 
 function stopAll() {

@@ -7,6 +7,7 @@ const {
     uploadsPlaylistForChannel
 } = require('../src/youtube/liveDetector');
 const { startChatMonitor } = require('../src/youtube/chatMonitor');
+const { resolveSelfChannel, _resetForTests: resetOwnerResolver } = require('../src/youtube/ownerChannel');
 
 // ---- config gating ----
 
@@ -35,6 +36,18 @@ test('owner handle defaults to @YourBoyZiG and override channel ID short-circuit
     });
     assert.equal(config.ownerHandle, '@YourBoyZiG');
     assert.equal(config.ownerChannelIdOverride, 'UC_override');
+});
+
+test('configured bot channel ID skips channels.list(mine=true)', async () => {
+    YT_API._resetQuotaForTests();
+    YT_API.setQuotaBudget(10_000);
+    let called = false;
+    const self = await resolveSelfChannel({ channels: { list: async () => { called = true; return {}; } } }, {
+        botChannelId: 'UC_bot_config', quotaBudgetPerDay: 10_000
+    });
+    assert.deepEqual(self, { id: 'UC_bot_config', source: 'config' });
+    assert.equal(called, false);
+    resetOwnerResolver();
 });
 
 // ---- active hours ----
@@ -82,6 +95,45 @@ test('ytCall refuses calls once quota budget is exhausted and does NOT throw raw
         (error) => error?.yt?.kind === YT_API.KIND.QUOTA
     );
     assert.equal(networkTouched, false);
+    YT_API._resetQuotaForTests();
+});
+
+test('Google quotaExceeded is authoritative, persists exhaustion, and blocks later calls until the PT date changes', async () => {
+    YT_API._resetQuotaForTests();
+    YT_API.setQuotaBudget(10_000);
+    const notices = [];
+    const persisted = { calls: [], exhausted: 0 };
+    YT_API.configureQuotaLedger({
+        brain: {
+            getYtQuotaLedger: async () => null,
+            recordYtQuotaCall: async (...args) => persisted.calls.push(args),
+            markYtQuotaExhausted: async () => { persisted.exhausted += 1; }
+        }, onNotice: (message) => notices.push(message)
+    });
+    await assert.rejects(() => YT_API.ytCall(null, async () => {
+        throw { code: 403, response: { data: { error: { errors: [{ reason: 'quotaExceeded' }] } } } };
+    }, {}, { costUnits: 5, method: 'liveChatMessages.list' }), (error) => error.yt?.kind === YT_API.KIND.QUOTA);
+    let touched = false;
+    await assert.rejects(() => YT_API.ytCall(null, async () => { touched = true; return {}; }, {}, { method: 'videos.list' }),
+        (error) => error.yt?.kind === YT_API.KIND.QUOTA);
+    assert.equal(touched, false);
+    assert.equal(persisted.exhausted, 1);
+    assert.equal(notices.filter((message) => message.includes('quotaExceeded')).length, 1);
+    assert.deepEqual(YT_API.quotaMethodUsage().liveChatMessages_list, { calls: 1, units: 5 });
+    YT_API._resetQuotaForTests();
+});
+
+test('quota ledger hydrates a persisted exhausted PT day after a restart', async () => {
+    YT_API._resetQuotaForTests();
+    YT_API.setQuotaBudget(10_000);
+    YT_API.configureQuotaLedger({ brain: {
+        getYtQuotaLedger: async () => ({ usedUnits: 8500, exhausted: true, methods: { liveChatMessages_list: { calls: 1700, units: 8500 } } })
+    } });
+    let touched = false;
+    await assert.rejects(() => YT_API.ytCall(null, async () => { touched = true; return {}; }, {}, { method: 'videos.list' }),
+        (error) => error.yt?.kind === YT_API.KIND.QUOTA);
+    assert.equal(touched, false);
+    assert.equal(YT_API.quotaUsedToday(), 8500);
     YT_API._resetQuotaForTests();
 });
 
@@ -194,7 +246,7 @@ test('chatMonitor emits chat messages and honors pollingIntervalMillis', async (
         youtube: mockYoutube,
         videoId: 'vidA',
         liveChatId: 'chatX',
-        config: { quotaBudgetPerDay: 1000 },
+        config: { quotaBudgetPerDay: 1000, minPollMs: 100 },
         onMessage: async (message) => { received.push(message); },
         onEnded: async () => { noticeLog.push('ended'); },
         onNotice: (message) => { noticeLog.push(message); }
@@ -230,7 +282,7 @@ test('quota exhaustion stops chat monitoring without crashing the process', asyn
         youtube: mockYoutube,
         videoId: 'vidA',
         liveChatId: 'chatX',
-        config: { quotaBudgetPerDay: 5 },
+        config: { quotaBudgetPerDay: 5, minPollMs: 100 },
         onMessage: async () => {},
         onEnded: async () => {},
         onNotice: (message) => { notices.push(message); }
@@ -260,7 +312,7 @@ test('auth failure (invalid_grant) stops monitoring with a clear notice, no cras
         youtube: mockYoutube,
         videoId: 'vidA',
         liveChatId: 'chatX',
-        config: { quotaBudgetPerDay: 10000 },
+        config: { quotaBudgetPerDay: 10000, minPollMs: 100 },
         onMessage: async () => {},
         onEnded: async () => {},
         onNotice: (message) => { notices.push(message); }
@@ -290,7 +342,7 @@ test('transient errors back off exponentially but keep polling (no crash)', asyn
         youtube: mockYoutube,
         videoId: 'vidA',
         liveChatId: 'chatX',
-        config: { quotaBudgetPerDay: 10000 },
+        config: { quotaBudgetPerDay: 10000, minPollMs: 100 },
         baseBackoffMs: 100,
         onMessage: async () => {},
         onEnded: async () => {},
@@ -300,4 +352,46 @@ test('transient errors back off exponentially but keep polling (no crash)', asyn
     monitor.stop();
     assert.equal(listCalls >= 2, true, 'retried at least once after a transient failure');
     assert.equal(notices.some((n) => n.toLowerCase().includes('transient')), true);
+});
+
+test('chat monitor floors short API hints, backs off idle chat, and emits method quota summaries', async () => {
+    let now = 0;
+    const timers = [];
+    let summaryFn = null;
+    const notices = [];
+    let listCalls = 0;
+    const usage = {};
+    const api = {
+        KIND: YT_API.KIND,
+        classifyYouTubeError: YT_API.classifyYouTubeError,
+        async ytCall(_youtube, method, params, meta) {
+            const key = meta.method.replace(/[^A-Za-z0-9_]/g, '_');
+            usage[key] ||= { calls: 0, units: 0 };
+            usage[key].calls += 1; usage[key].units += meta.costUnits;
+            return method(params);
+        },
+        quotaMethodUsage: () => structuredClone(usage)
+    };
+    const monitor = startChatMonitor({
+        youtube: { liveChatMessages: { list: async () => {
+            listCalls += 1;
+            return chatResponse([], { pollingIntervalMillis: 5000 });
+        } } },
+        videoId: 'vidA', liveChatId: 'chatX', config: { quotaBudgetPerDay: 10_000, minPollMs: 8000 },
+        onMessage: async () => {}, onEnded: async () => {}, onNotice: (message) => notices.push(message),
+        api, clock: () => now,
+        setTimer: (fn, ms) => { const timer = { fn, ms, cleared: false }; timers.push(timer); return timer; },
+        clearTimer: (timer) => { timer.cleared = true; },
+        setIntervalFn: (fn) => { summaryFn = fn; return { fn }; }, clearIntervalFn: () => {}
+    });
+    await waitFor(20);
+    assert.equal(listCalls, 1);
+    assert.equal(monitor.getApiHintInterval(), 5000);
+    assert.equal(monitor.getPollingInterval(), 8000);
+    now = 3 * 60_000;
+    await timers.at(-1).fn();
+    assert.equal(monitor.getPollingInterval(), 16_000);
+    summaryFn();
+    assert.equal(notices.some((message) => message.includes('liveChatMessages_list: 2 calls, 10 units')), true);
+    monitor.stop();
 });

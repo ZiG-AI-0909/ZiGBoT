@@ -42,6 +42,7 @@ function readYouTubeConfig(env = process.env) {
         botChannelId: (env.YOUTUBE_BOT_CHANNEL_ID || '').trim() || null,
         autoDetect,
         autoDetectIntervalMs: Math.max(60_000, Number(env.YOUTUBE_DETECT_INTERVAL_MS) || 180_000),
+        minPollMs: number('YOUTUBE_MIN_POLL_MS', 8_000, 1),
         /** Optional "HH-HH" active-hours window (own server local time) for auto-detection. */
         activeHours: (env.YOUTUBE_ACTIVE_HOURS || '').trim() || null,
         /** Manual /watch override always allowed by default. */

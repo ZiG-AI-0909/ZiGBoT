@@ -41,7 +41,7 @@ async function pollForLiveStream(youtube, channelId, config) {
             youtube,
             (params) => youtube.playlistItems.list(params),
             { part: 'contentDetails', playlistId, maxResults: VIDEOS_TO_CHECK },
-            { costUnits: 1, budget: config.quotaBudgetPerDay }
+            { costUnits: 1, budget: config.quotaBudgetPerDay, method: 'playlistItems.list' }
         );
         const videoIds = (playlistRes?.data?.items || [])
             .map((item) => item?.contentDetails?.videoId)
@@ -53,7 +53,7 @@ async function pollForLiveStream(youtube, channelId, config) {
             youtube,
             (params) => youtube.videos.list(params),
             { part: 'snippet,liveStreamingDetails', id: videoIds.join(',') },
-            { costUnits: 1, budget: config.quotaBudgetPerDay }
+            { costUnits: 1, budget: config.quotaBudgetPerDay, method: 'videos.list' }
         );
 
         const videos = videosRes?.data?.items || [];

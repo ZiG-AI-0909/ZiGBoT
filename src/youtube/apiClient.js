@@ -46,6 +46,13 @@ function tagYtError(error) {
 let quotaUsed = 0;
 let quotaDayKey = null;
 let quotaBudget = 10_000;
+let quotaExhaustedByGoogle = false;
+let quotaMethods = {};
+let quotaBrain = null;
+let quotaNotice = () => {};
+let quotaPersistenceNoticeSent = false;
+let quotaExhaustionNoticeSent = false;
+let ledgerLoad = null;
 
 function startPtDayKey(now = new Date()) {
     // Quota resets at midnight Pacific Time regardless of server timezone.
@@ -57,19 +64,59 @@ function setQuotaBudget(units) {
     quotaBudget = Math.max(0, Number(units) || 0);
 }
 
-function recordQuota(units) {
+function resetForDay(key) {
+    quotaDayKey = key;
+    quotaUsed = 0;
+    quotaExhaustedByGoogle = false;
+    quotaMethods = {};
+    quotaExhaustionNoticeSent = false;
+}
+
+async function hydrateQuotaLedger(now = new Date()) {
+    const key = startPtDayKey(now);
+    if (key === quotaDayKey && !ledgerLoad) return;
+    if (key !== quotaDayKey) resetForDay(key);
+    if (!quotaBrain?.getYtQuotaLedger) return;
+    if (!ledgerLoad) {
+        ledgerLoad = Promise.resolve(quotaBrain.getYtQuotaLedger(key)).then((row) => {
+            if (quotaDayKey !== key || !row) return;
+            quotaUsed = Math.max(quotaUsed, Number(row.usedUnits) || 0);
+            quotaExhaustedByGoogle = quotaExhaustedByGoogle || Boolean(row.exhausted);
+            quotaMethods = row.methods && typeof row.methods === 'object' ? row.methods : quotaMethods;
+        }).catch((error) => {
+            if (!quotaPersistenceNoticeSent) {
+                quotaPersistenceNoticeSent = true;
+                quotaNotice(`quota ledger persistence unavailable; using in-memory accounting (${error?.message || 'MongoDB unavailable'}).`);
+            }
+        }).finally(() => { ledgerLoad = null; });
+    }
+    await ledgerLoad;
+}
+
+function configureQuotaLedger({ brain = null, onNotice = () => {} } = {}) {
+    quotaBrain = brain;
+    quotaNotice = typeof onNotice === 'function' ? onNotice : () => {};
+    quotaPersistenceNoticeSent = false;
+    quotaDayKey = null;
+}
+
+function recordQuota(units, method = 'unknown') {
     const key = startPtDayKey();
     if (key !== quotaDayKey) {
-        quotaDayKey = key;
-        quotaUsed = 0;
+        resetForDay(key);
     }
-    quotaUsed += Math.max(0, Number(units) || 0);
+    const cost = Math.max(0, Number(units) || 0);
+    const methodKey = String(method || 'unknown').replace(/[^A-Za-z0-9_]/g, '_').slice(0, 80) || 'unknown';
+    quotaUsed += cost;
+    const current = quotaMethods[methodKey] || { calls: 0, units: 0 };
+    quotaMethods[methodKey] = { calls: current.calls + 1, units: current.units + cost };
     return quotaUsed;
 }
 
 function quotaRemaining() {
     const key = startPtDayKey();
     if (key !== quotaDayKey) return quotaBudget;
+    if (quotaExhaustedByGoogle) return 0;
     return Math.max(0, quotaBudget - quotaUsed);
 }
 
@@ -80,12 +127,55 @@ function quotaUsedToday() {
 }
 
 function quotaExhausted() {
-    return quotaRemaining() <= 0;
+    return quotaExhaustedByGoogle || quotaRemaining() <= 0;
+}
+
+function quotaMethodUsage() {
+    return Object.fromEntries(Object.entries(quotaMethods).map(([method, usage]) => [method, {
+        calls: Number(usage.calls) || 0, units: Number(usage.units) || 0
+    }]));
+}
+
+async function persistQuotaCall(key, method, cost) {
+    if (!quotaBrain?.recordYtQuotaCall) return;
+    try { await quotaBrain.recordYtQuotaCall(key, method, cost); }
+    catch (error) {
+        if (!quotaPersistenceNoticeSent) {
+            quotaPersistenceNoticeSent = true;
+            quotaNotice(`quota ledger persistence unavailable; using in-memory accounting (${error?.message || 'MongoDB unavailable'}).`);
+        }
+    }
+}
+
+async function markQuotaExceeded() {
+    const key = startPtDayKey();
+    if (key !== quotaDayKey) resetForDay(key);
+    quotaExhaustedByGoogle = true;
+    quotaUsed = Math.max(quotaUsed, quotaBudget);
+    if (!quotaExhaustionNoticeSent) {
+        quotaExhaustionNoticeSent = true;
+        quotaNotice('Google reported quotaExceeded; all YouTube calls are paused until midnight Pacific.');
+    }
+    if (!quotaBrain?.markYtQuotaExhausted) return;
+    try { await quotaBrain.markYtQuotaExhausted(key, quotaBudget); }
+    catch (error) {
+        if (!quotaPersistenceNoticeSent) {
+            quotaPersistenceNoticeSent = true;
+            quotaNotice(`quota exhaustion could not be persisted; using in-memory accounting (${error?.message || 'MongoDB unavailable'}).`);
+        }
+    }
 }
 
 function _resetQuotaForTests() {
     quotaUsed = 0;
     quotaDayKey = null;
+    quotaExhaustedByGoogle = false;
+    quotaMethods = {};
+    quotaBrain = null;
+    quotaNotice = () => {};
+    quotaPersistenceNoticeSent = false;
+    quotaExhaustionNoticeSent = false;
+    ledgerLoad = null;
 }
 
 // ---- Client factory ----
@@ -115,7 +205,8 @@ function getYoutubeClient({ youtube = null, clientId = '', clientSecret = '', re
  * costUnits: quota units this call is expected to consume.
  * Returns the response, or throws (tagged) on failure.
  */
-async function ytCall(youtube, resourceMethod, params, { costUnits = 1, budget = 10_000 } = {}) {
+async function ytCall(youtube, resourceMethod, params, { costUnits = 1, budget = 10_000, method = 'unknown' } = {}) {
+    await hydrateQuotaLedger();
     const callCost = Math.max(1, Number(costUnits) || 1);
     const remaining = quotaRemaining();
     if (remaining < callCost) {
@@ -124,11 +215,15 @@ async function ytCall(youtube, resourceMethod, params, { costUnits = 1, budget =
         throw error;
     }
     try {
-        recordQuota(callCost);
+        const key = startPtDayKey();
+        recordQuota(callCost, method);
+        await persistQuotaCall(key, method, callCost);
         const response = await resourceMethod(params);
         return response;
     } catch (error) {
-        throw tagYtError(error);
+        const tagged = tagYtError(error);
+        if (tagged?.yt?.kind === KIND.QUOTA) await markQuotaExceeded();
+        throw tagged;
     }
 }
 
@@ -141,6 +236,10 @@ module.exports = {
     quotaRemaining,
     quotaUsedToday,
     quotaExhausted,
+    quotaMethodUsage,
+    hydrateQuotaLedger,
+    configureQuotaLedger,
+    markQuotaExceeded,
     startPtDayKey,
     getYoutubeClient,
     ytCall,

@@ -290,7 +290,7 @@ class YouTubeCommandRouter {
                 part: 'snippet', requestBody: { snippet: { liveChatId: this.liveChatId, type,
                     ...(durationSeconds ? { banDurationSeconds: durationSeconds } : {}),
                     bannedUserDetails: { channelId: target.channelId } } }
-            }, { costUnits: LIVE_CHAT_BAN_COST, budget: this.config.quotaBudgetPerDay });
+            }, { costUnits: LIVE_CHAT_BAN_COST, budget: this.config.quotaBudgetPerDay, method: 'liveChatBans.insert' });
             const banId = response?.data?.id;
             if (banId) await this.storeBan(target, banId);
             await this.audit(message, action, target, reason, 'SUCCESS', { banId: banId || 'not returned', durationSeconds: durationSeconds || 'permanent' });
@@ -317,7 +317,7 @@ class YouTubeCommandRouter {
         this.actionsUsed += 1;
         try {
             await this.api.ytCall(this.youtube, (params) => this.youtube.liveChatBans.delete(params), { id: banId },
-                { costUnits: LIVE_CHAT_BAN_COST, budget: this.config.quotaBudgetPerDay });
+                { costUnits: LIVE_CHAT_BAN_COST, budget: this.config.quotaBudgetPerDay, method: 'liveChatBans.delete' });
             this.banIds.delete(this.banKey(resolved.target.channelId));
             try { await this.brain?.deleteYtBan?.(this.videoId, resolved.target.channelId); }
             catch (error) { this.persistenceFailed(error); }
@@ -350,7 +350,7 @@ class YouTubeCommandRouter {
             this.actionsUsed += 1;
             try {
                 await this.api.ytCall(this.youtube, (params) => this.youtube.liveChatMessages.delete(params), { id },
-                    { costUnits: LIVE_CHAT_MESSAGE_DELETE_COST, budget: this.config.quotaBudgetPerDay });
+                    { costUnits: LIVE_CHAT_MESSAGE_DELETE_COST, budget: this.config.quotaBudgetPerDay, method: 'liveChatMessages.delete' });
                 deleted += 1;
             } catch (error) {
                 await this.actionFailure(message, 'delete', resolved.target, '', error);

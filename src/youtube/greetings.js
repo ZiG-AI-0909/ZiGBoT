@@ -185,7 +185,7 @@ class Greetings {
             }
             await this.api.ytCall(this.youtube, (params) => this.youtube.liveChatMessages.insert(params), {
                 part: 'snippet', requestBody: { snippet: { liveChatId: this.liveChatId, type: 'textMessageEvent', textMessageDetails: { messageText: reply.text } } }
-            }, { costUnits: 20, budget: this.config.quotaBudgetPerDay });
+            }, { costUnits: 20, budget: this.config.quotaBudgetPerDay, method: 'liveChatMessages.insert' });
             if (['greeting', 'mention'].includes(reply.type)) this.repliesSent += 1;
             this.messagesSent += 1;
             if (typeof reply.onSent === 'function') await reply.onSent();

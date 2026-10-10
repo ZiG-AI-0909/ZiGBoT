@@ -19,6 +19,7 @@ let behaviors = null;
 let ytGreeted = null;
 let ytBans = null;
 let ytNoRoast = null;
+let ytQuota = null;
 let lastMemoryError = null;
 let lastBehaviorError = null;
 
@@ -87,6 +88,7 @@ async function connectBrain(uri, { client: injectedClient = null } = {}) {
     const nextYtGreeted = db.collection('ytGreeted');
     const nextYtBans = db.collection('ytBans');
     const nextYtNoRoast = db.collection('ytNoRoast');
+    const nextYtQuota = db.collection('ytQuota');
 
     // Clean up records created before the TTL field was added, and enforce the
     // retention boundary immediately when the bot starts.
@@ -108,6 +110,8 @@ async function connectBrain(uri, { client: injectedClient = null } = {}) {
     await nextYtBans.createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 });
     await nextYtNoRoast.createIndex({ videoId: 1, channelId: 1 }, { unique: true });
     await nextYtNoRoast.createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 });
+    await nextYtQuota.createIndex({ pacificDate: 1 }, { unique: true });
+    await nextYtQuota.createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 });
 
     // Everything succeeded — swap the live state over in one go.
     client = newClient;
@@ -119,6 +123,7 @@ async function connectBrain(uri, { client: injectedClient = null } = {}) {
     ytGreeted = nextYtGreeted;
     ytBans = nextYtBans;
     ytNoRoast = nextYtNoRoast;
+    ytQuota = nextYtQuota;
     lastMemoryError = null;
     lastBehaviorError = null;
 
@@ -512,6 +517,39 @@ async function deleteYtNoRoast(videoId, channelId) {
     await ytNoRoast.deleteOne({ videoId: String(videoId), channelId: String(channelId) });
 }
 
+/** Shared daily YouTube quota state. Date is always America/Los_Angeles. */
+async function getYtQuotaLedger(pacificDate) {
+    if (!ytQuota) throw new Error('Brain is not connected.');
+    const row = await ytQuota.findOne({ pacificDate: String(pacificDate) });
+    return row ? {
+        usedUnits: Math.max(0, Number(row.usedUnits) || 0),
+        exhausted: Boolean(row.exhausted),
+        methods: row.methods && typeof row.methods === 'object' ? row.methods : {}
+    } : null;
+}
+
+async function recordYtQuotaCall(pacificDate, method, units) {
+    if (!ytQuota) throw new Error('Brain is not connected.');
+    const now = Date.now();
+    const safeMethod = String(method || 'unknown').replace(/[^A-Za-z0-9_]/g, '_').slice(0, 80) || 'unknown';
+    const cost = Math.max(0, Number(units) || 0);
+    await ytQuota.updateOne({ pacificDate: String(pacificDate) }, {
+        $inc: { usedUnits: cost, [`methods.${safeMethod}.calls`]: 1, [`methods.${safeMethod}.units`]: cost },
+        $set: { updated_at: now, expires_at: new Date(now + 3 * 24 * 60 * 60 * 1000) },
+        $setOnInsert: { exhausted: false, created_at: now }
+    }, { upsert: true });
+}
+
+async function markYtQuotaExhausted(pacificDate, budget) {
+    if (!ytQuota) throw new Error('Brain is not connected.');
+    const now = Date.now();
+    await ytQuota.updateOne({ pacificDate: String(pacificDate) }, {
+        $max: { usedUnits: Math.max(0, Number(budget) || 0) },
+        $set: { exhausted: true, updated_at: now, expires_at: new Date(now + 3 * 24 * 60 * 60 * 1000) },
+        $setOnInsert: { created_at: now, methods: {} }
+    }, { upsert: true });
+}
+
 // ---- Truthful runtime capability reporting ----
 // The AI prompt and diagnostic commands must derive their memory claims from
 // these values, never from hard-coded assumptions.
@@ -553,6 +591,7 @@ function _disconnectForTests() {
     ytGreeted = null;
     ytBans = null;
     ytNoRoast = null;
+    ytQuota = null;
     lastMemoryError = null;
     lastBehaviorError = null;
 }
@@ -587,6 +626,9 @@ module.exports = {
     listYtNoRoast,
     recordYtNoRoast,
     deleteYtNoRoast,
+    getYtQuotaLedger,
+    recordYtQuotaCall,
+    markYtQuotaExhausted,
     tierFromScore,
     scoreEvents,
     _disconnectForTests

@@ -161,6 +161,8 @@ async function runYouTubeInteraction(interaction, settings, client) {
         }
         if (interaction.commandName === 'ytstatus') {
             const status = getYouTubeStatus();
+            const quotaMethods = Object.entries(status.quotaMethods || {})
+                .map(([method, usage]) => `${method}: ${usage.calls} calls/${usage.units} units`).join(', ') || 'none';
             return [
                 `enabled: ${status.enabled}`,
                 `ownerId: ${status.ownerId || 'not resolved'}`,
@@ -174,7 +176,8 @@ async function runYouTubeInteraction(interaction, settings, client) {
                 `roast mode: ${status.roastMode ? 'on' : 'off'}`,
                 `roasts sent this stream: ${status.roastsSent}`,
                 `roast AI calls this stream: ${status.roastAiCalls}`,
-                `quota used today: ${status.quotaUsed}/${status.quotaBudget ?? 'unknown'}`
+                `quota used today: ${status.quotaUsed}/${status.quotaBudget ?? 'unknown'}`,
+                `quota methods: ${quotaMethods}`
             ].join(' | ');
         }
         if (interaction.commandName === 'ytgreet') {
