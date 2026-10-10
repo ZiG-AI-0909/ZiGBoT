@@ -272,8 +272,8 @@ test('buildDefinitions returns plain JSON payloads ready for the Discord API', (
     // the array, and the map then crashed the whole bot on startup.
     const definitions = buildDefinitions();
     // Original 6 (play, kick, ban, memory, reputation, help)
-    // + 3 YouTube commands (/watch, /unwatch, /ytstatus)
-    assert.equal(definitions.length, 9);
+    // + 4 YouTube commands (/watch, /unwatch, /ytstatus, /ytgreet)
+    assert.equal(definitions.length, 10);
     for (const definition of definitions) {
         assert.equal(typeof definition.toJSON, 'undefined');
         assert.equal(typeof definition.name, 'string');
@@ -281,7 +281,7 @@ test('buildDefinitions returns plain JSON payloads ready for the Discord API', (
     }
     assert.deepEqual(
         definitions.map(({ name }) => name),
-        ['play', 'kick', 'ban', 'memory', 'reputation', 'help', 'watch', 'unwatch', 'ytstatus']
+        ['play', 'kick', 'ban', 'memory', 'reputation', 'help', 'watch', 'unwatch', 'ytstatus', 'ytgreet']
     );
 });
 

@@ -17,6 +17,7 @@ const YT_API = require('./apiClient');
 
 const DEFAULT_FALLBACK_INTERVAL_MS = 5_000;
 const DEFAULT_ENGAGEMENT_INTERVAL_MS = 15 * 60_000;
+const DEFAULT_ENGAGEMENT_PROMPTS = false;
 const ENGAGEMENT_MESSAGES = [
     'Enjoying the stream? Please hit like and subscribe, and tell us in chat what you think! 💙',
     'Thanks for hanging out! If you’re enjoying it, leave a like, subscribe, and keep the chat going 😊',
@@ -39,6 +40,7 @@ function startChatMonitor({ youtube, videoId, liveChatId, config, onMessage, onE
     let pollIntervalMs = DEFAULT_FALLBACK_INTERVAL_MS;
     let pageToken = null;
     let consecutiveFailures = 0;
+    const watcherStartedAt = Date.now();
 
     async function postEngagementMessage() {
         if (stopped || engagementDisabled) return;
@@ -100,6 +102,7 @@ function startChatMonitor({ youtube, videoId, liveChatId, config, onMessage, onE
             for (const item of response?.data?.items || []) {
                 await onMessage({
                     id: item.id,
+                    eventType: item.snippet?.type,
                     text: item.snippet?.displayMessage || item.snippet?.textMessageDetails?.messageContent || '',
                     author: {
                         channelId: item.authorDetails?.channelId,
@@ -108,7 +111,8 @@ function startChatMonitor({ youtube, videoId, liveChatId, config, onMessage, onE
                         isChatModerator: Boolean(item.authorDetails?.isChatModerator),
                         isChatSponsor: Boolean(item.authorDetails?.isChatSponsor)
                     },
-                    publishedAt: item.snippet?.publishedAt
+                    publishedAt: item.snippet?.publishedAt,
+                    watcherStartedAt
                 });
             }
 
@@ -159,8 +163,10 @@ function startChatMonitor({ youtube, videoId, liveChatId, config, onMessage, onE
 
     // A welcome prompt starts the conversation; later reminders are spaced
     // out so the bot encourages engagement without dominating the chat.
-    postEngagementMessage();
-    scheduleEngagementMessage();
+    if (config.engagementPrompts ?? DEFAULT_ENGAGEMENT_PROMPTS) {
+        postEngagementMessage();
+        scheduleEngagementMessage();
+    }
 
     // Kick off the first poll immediately (async, never awaited by callers).
     setImmediate(() => { poll().catch((error) => {
@@ -175,4 +181,4 @@ function startChatMonitor({ youtube, videoId, liveChatId, config, onMessage, onE
     };
 }
 
-module.exports = { startChatMonitor, DEFAULT_FALLBACK_INTERVAL_MS, DEFAULT_ENGAGEMENT_INTERVAL_MS, FATAL_KINDS };
+module.exports = { startChatMonitor, DEFAULT_FALLBACK_INTERVAL_MS, DEFAULT_ENGAGEMENT_INTERVAL_MS, DEFAULT_ENGAGEMENT_PROMPTS, FATAL_KINDS };

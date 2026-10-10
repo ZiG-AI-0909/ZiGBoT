@@ -16,6 +16,7 @@ let warnings = null;
 let counters = null;
 let memories = null;
 let behaviors = null;
+let ytGreeted = null;
 let lastMemoryError = null;
 let lastBehaviorError = null;
 
@@ -81,6 +82,7 @@ async function connectBrain(uri, { client: injectedClient = null } = {}) {
     const nextCounters = db.collection('counters');
     const nextMemories = db.collection('memories');
     const nextBehaviors = db.collection('behaviors');
+    const nextYtGreeted = db.collection('ytGreeted');
 
     // Clean up records created before the TTL field was added, and enforce the
     // retention boundary immediately when the bot starts.
@@ -96,6 +98,8 @@ async function connectBrain(uri, { client: injectedClient = null } = {}) {
     await nextMemories.createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 });
     // Behavior accountability: per-member lookups + signal aggregation.
     await nextBehaviors.createIndex({ guildId: 1, userId: 1, created_at: -1 });
+    await nextYtGreeted.createIndex({ videoId: 1, channelId: 1 }, { unique: true });
+    await nextYtGreeted.createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 });
 
     // Everything succeeded — swap the live state over in one go.
     client = newClient;
@@ -104,6 +108,7 @@ async function connectBrain(uri, { client: injectedClient = null } = {}) {
     counters = nextCounters;
     memories = nextMemories;
     behaviors = nextBehaviors;
+    ytGreeted = nextYtGreeted;
     lastMemoryError = null;
     lastBehaviorError = null;
 
@@ -439,6 +444,22 @@ function isBehaviorAvailable() {
     return Boolean(behaviors);
 }
 
+async function listYtGreetedViewers(videoId) {
+    if (!ytGreeted) throw new Error('Brain is not connected.');
+    const rows = await ytGreeted.find({ videoId: String(videoId) }).toArray();
+    return rows.map((row) => String(row.channelId));
+}
+
+async function recordYtGreetedViewer(videoId, channelId) {
+    if (!ytGreeted) throw new Error('Brain is not connected.');
+    const now = Date.now();
+    await ytGreeted.updateOne(
+        { videoId: String(videoId), channelId: String(channelId) },
+        { $setOnInsert: { created_at: now, expires_at: new Date(now + 24 * 60 * 60 * 1000) } },
+        { upsert: true }
+    );
+}
+
 // ---- Truthful runtime capability reporting ----
 // The AI prompt and diagnostic commands must derive their memory claims from
 // these values, never from hard-coded assumptions.
@@ -477,6 +498,7 @@ function _disconnectForTests() {
     counters = null;
     memories = null;
     behaviors = null;
+    ytGreeted = null;
     lastMemoryError = null;
     lastBehaviorError = null;
 }
@@ -503,6 +525,8 @@ module.exports = {
     countBehaviors,
     deleteBehaviors,
     isBehaviorAvailable,
+    listYtGreetedViewers,
+    recordYtGreetedViewer,
     tierFromScore,
     scoreEvents,
     _disconnectForTests

@@ -18,6 +18,8 @@ const { resolveOwnerChannel, resolveSelfChannel, _resetForTests } = require('./o
 const YT_API = require('./apiClient');
 const { readYouTubeConfig, withinActiveHours } = require('./config');
 const { hasDirtyLanguage, getPlayfulRoast } = require('./chatModeration');
+const { Greetings } = require('./greetings');
+const brain = require('../db/brain');
 
 const state = {
     enabled: false,
@@ -28,7 +30,10 @@ const state = {
     watcher: null,       // active chat monitor
     detector: null,      // auto-detect loop
     lastWatchedVideoId: null,
-    noticeLog: []
+    noticeLog: [],
+    greetings: null,
+    greetingContext: null,
+    botTitle: null
 };
 
 function log(message) {
@@ -79,7 +84,9 @@ async function initYouTube(youtubeConfigOverride = null, deps = {}) {
         state.ownerId = owner.id;
         log(`owner channel resolved: ${owner.id} (${owner.title}) [${owner.source}]`);
 
-        state.selfId = (await resolveSelfChannel(state.youtube, config))?.id || null;
+        const self = await resolveSelfChannel(state.youtube, config);
+        state.selfId = self?.id || null;
+        state.botTitle = self?.title || config.botName || 'ZiGBoT';
         if (!state.selfId) log("could not resolve bot's own channel ID; relying on authorDetails.isChatOwner/isChatModerator for self-filtering.");
         else log(`self channel: ${state.selfId}`);
 
@@ -174,6 +181,10 @@ async function watch({ videoId, liveChatId = null, title = '', via = 'manual' })
     }
 
     state.lastWatchedVideoId = videoId;
+    state.greetingContext = { videoId, liveChatId };
+    state.greetings = new Greetings({ youtube: state.youtube, liveChatId, videoId, config: state.config,
+        selfId: state.selfId, ownerId: state.ownerId, botTitle: state.botTitle, brain,
+        onNotice: (message) => notice(`watch ${videoId}: ${message}`) });
     const timedOutUsers = new Set();
     const roastCooldowns = new Map();
     state.watcher = startChatMonitor({
@@ -182,10 +193,13 @@ async function watch({ videoId, liveChatId = null, title = '', via = 'manual' })
         liveChatId,
         config: state.config,
         onMessage: async (message) => {
-            log(`chat ← ${message.author.displayName}: ${message.text}`);
             const author = message.author;
             if (!author?.channelId || author.channelId === state.ownerId || author.channelId === state.selfId
                 || author.isChatOwner || author.isChatModerator) return;
+
+            if (state.greetings?.enabled) {
+                await state.greetings.handle(message);
+            }
 
             if (hasDirtyLanguage(message.text)) {
                 if (timedOutUsers.has(author.channelId)) return;
@@ -215,6 +229,7 @@ async function watch({ videoId, liveChatId = null, title = '', via = 'manual' })
             }
 
             const roast = getPlayfulRoast(message.text);
+            if (state.config.greetingsEnabled) return;
             if (!roast || Date.now() - (roastCooldowns.get(author.channelId) || 0) < 60_000) return;
             roastCooldowns.set(author.channelId, Date.now());
             try {
@@ -252,6 +267,9 @@ async function stopWatcher(reason = 'unspecified') {
     if (!state.watcher) return { stopped: false };
     const watcher = state.watcher;
     state.watcher = null;
+    state.greetings?.stop();
+    state.greetings = null;
+    state.greetingContext = null;
     state.lastWatchedVideoId = null;
     watcher.stop();
     log(`stopped watcher: ${reason}`);
@@ -280,6 +298,26 @@ async function handleUnwatchCommand(isOwnerDiscord) {
     return result.stopped ? '✅ Stopped watching YouTube chat.' : 'ℹ️ Nothing was being watched.';
 }
 
+async function handleYtGreetCommand(value, isOwnerDiscord) {
+    if (!state.enabled) return '❌ YouTube support is not enabled.';
+    if (!isOwnerDiscord) return null;
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!['on', 'off'].includes(normalized)) return '⚠️ Use `/ytgreet on` or `/ytgreet off`.';
+    if (normalized === 'on' && state.greetings?.disabledNotice) {
+        return '⚠️ Greetings were disabled after a YouTube send error; they can resume on the next stream.';
+    }
+    state.config.greetingsEnabled = normalized === 'on';
+    if (state.greetings) {
+        state.greetings.enabled = state.config.greetingsEnabled;
+        if (!state.greetings.enabled) state.greetings.stop();
+    } else if (state.config.greetingsEnabled && state.greetingContext) {
+        state.greetings = new Greetings({ youtube: state.youtube, ...state.greetingContext,
+            config: state.config, selfId: state.selfId, ownerId: state.ownerId,
+            botTitle: state.botTitle, brain, onNotice: (message) => notice(message) });
+    }
+    return `✅ YouTube greetings ${normalized === 'on' ? 'enabled' : 'disabled'}.`;
+}
+
 /** True if the Discord-side /watch /unwatch commands should even be registered. */
 function isYouTubeReady() {
     return state.enabled && Boolean(state.ownerId);
@@ -295,6 +333,8 @@ function getYouTubeStatus() {
         quotaUsed: YT_API.quotaUsedToday(),
         quotaBudget: state.config?.quotaBudgetPerDay ?? null,
         quotaRemaining: YT_API.quotaRemaining(),
+        greetings: state.greetings ? state.greetings.enabled : Boolean(state.config?.greetingsEnabled),
+        repliesSent: state.greetings?.repliesSent || 0,
         notices: state.noticeLog.slice(-20)
     };
 }
@@ -330,6 +370,7 @@ module.exports = {
     watch,
     handleWatchCommand,
     handleUnwatchCommand,
+    handleYtGreetCommand,
     isYouTubeReady,
     getYouTubeStatus,
     stopAll,

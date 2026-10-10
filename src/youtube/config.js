@@ -16,6 +16,11 @@ const DEFAULT_QUOTA_BUDGET_PER_DAY = 10000;
 
 function readYouTubeConfig(env = process.env) {
     const missing = REQUIRED_FOR_ENABLE.filter((name) => !env[name]);
+    const number = (name, fallback, minimum = 0) => {
+        if (env[name] === undefined || env[name] === null || env[name] === '') return fallback;
+        const parsed = Number(env[name]);
+        return Number.isFinite(parsed) ? Math.max(minimum, parsed) : fallback;
+    };
 
     const autoDetectEnv = env.YOUTUBE_AUTO_DETECT;
     // The user chose: auto-detection defaults ON (cheap uploads-playlist poll),
@@ -42,7 +47,18 @@ function readYouTubeConfig(env = process.env) {
         /** Manual /watch override always allowed by default. */
         allowManualWatch: env.YOUTUBE_ALLOW_MANUAL_WATCH !== 'false',
         /** Daily quota safety cap (units). The monitor refuses work past this. */
-        quotaBudgetPerDay: Math.max(0, Number(env.YOUTUBE_QUOTA_BUDGET) || DEFAULT_QUOTA_BUDGET_PER_DAY)
+        quotaBudgetPerDay: Math.max(0, Number(env.YOUTUBE_QUOTA_BUDGET) || DEFAULT_QUOTA_BUDGET_PER_DAY),
+        greetingsEnabled: env.YOUTUBE_GREETINGS !== 'false',
+        engagementPrompts: env.YOUTUBE_ENGAGEMENT_PROMPTS === 'true',
+        ignoredChannelIds: String(env.YOUTUBE_IGNORE_CHANNEL_IDS || '').split(',').map((id) => id.trim()).filter(Boolean),
+        botName: (env.YOUTUBE_BOT_NAME || 'ZiGBoT').trim(),
+        quotaReserve: number('YOUTUBE_QUOTA_RESERVE', 2500),
+        maxRepliesPerStream: number('YOUTUBE_MAX_REPLIES_PER_STREAM', 60),
+        greetingMaxWords: number('YOUTUBE_GREETING_MAX_WORDS', 6, 1),
+        backlogToleranceMs: number('YOUTUBE_BACKLOG_TOLERANCE_MS', 3000),
+        outgoingIntervalMs: number('YOUTUBE_REPLY_INTERVAL_MS', 5000),
+        maxPendingReplies: number('YOUTUBE_REPLY_QUEUE_MAX', 10, 1),
+        mentionCooldownMs: number('YOUTUBE_MENTION_COOLDOWN_MS', 60_000)
     };
 }
 

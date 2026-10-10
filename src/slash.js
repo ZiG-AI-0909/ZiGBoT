@@ -13,7 +13,8 @@ const {
     isYouTubeReady,
     getYouTubeStatus,
     handleWatchCommand,
-    handleUnwatchCommand
+    handleUnwatchCommand,
+    handleYtGreetCommand
 } = require('./youtube');
 
 // Only the highest-traffic actions get slash commands (per the roadmap);
@@ -84,6 +85,12 @@ function buildDefinitions() {
         new SlashCommandBuilder()
             .setName('ytstatus')
             .setDescription('Owner: inspect the YouTube live-chat watcher state')
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+        new SlashCommandBuilder()
+            .setName('ytgreet')
+            .setDescription('Owner: enable or disable YouTube greeting replies')
+            .addStringOption((option) => option.setName('state').setDescription('on or off').setRequired(true)
+                .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' }))
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     ].map((command) => command.toJSON());
 }
@@ -145,8 +152,13 @@ async function runYouTubeInteraction(interaction, settings, client) {
                 `ownerId: ${status.ownerId || 'not resolved'}`,
                 `watching: ${status.watching || 'none'}`,
                 `autoDetect: ${status.autoDetect ? 'on' : 'off'}`,
+                `greetings: ${status.greetings ? 'on' : 'off'}`,
+                `replies this stream: ${status.repliesSent}`,
                 `quota used today: ${status.quotaUsed}/${status.quotaBudget ?? 'unknown'}`
             ].join(' | ');
+        }
+        if (interaction.commandName === 'ytgreet') {
+            return await handleYtGreetCommand(interaction.options.getString('state', true), true);
         }
     } catch (error) {
         // YouTube problems must never fall through to a Discord crash.

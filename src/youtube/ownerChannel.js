@@ -48,12 +48,12 @@ async function resolveSelfChannel(youtube, config) {
         const response = await YT_API.ytCall(
             youtube,
             (params) => youtube.channels.list(params),
-            { part: 'id', mine: true },
+            { part: 'id,snippet', mine: true },
             { costUnits: 1, budget: config.quotaBudgetPerDay }
         );
         const selfId = response?.data?.items?.[0]?.id || null;
         if (!selfId) return null;
-        return { id: selfId, source: 'mine' };
+        return { id: selfId, title: response?.data?.items?.[0]?.snippet?.title || null, source: 'mine' };
     } catch (error) {
         // Non-fatal: without a self-ID the greeting filter relies on
         // authorDetails.isChatModerator and the owner-ID exclusion instead.

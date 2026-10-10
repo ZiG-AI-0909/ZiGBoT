@@ -390,6 +390,9 @@ re-run `scripts/youtube-auth.js`. Publish the consent screen to
 - `/watch <videoId>` — force the bot to watch a specific stream's chat.
 - `/unwatch` — stop.
 - `/ytstatus` — is YouTube enabled? which video? how much quota used today?
+- `/ytgreet on|off` — owner-only runtime switch for Phase 2 greetings and direct mentions.
+
+**Phase 2 greeting replies:** `YOUTUBE_GREETINGS=true` (default) enables short greeting and direct-mention replies. Greetings are limited to one per viewer per stream; mentions have a 60-second per-viewer cooldown. Replies are queued at least 5 seconds apart, capped at 60 per stream by default, and stop when daily quota reaches the 2,500-unit reserve. `YOUTUBE_ENGAGEMENT_PROMPTS=false` keeps the older unsolicited YouTube-chat prompts disabled; set it to `true` to restore them. The bot ignores its own/owner/moderator messages, configured channel IDs, common chat bots, old backlog, and commands.
 
 **Quota math** (live chat via `liveChatMessages.list`, 5 units per poll at the
 API's own `pollingIntervalMillis` pacing ~5s→10s+): roughly 1,800–3,600
