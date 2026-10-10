@@ -90,7 +90,7 @@ async function pollForLiveStream(youtube, channelId, config) {
  * disappears. intervalMs and activeHours come from the YouTube config.
  * The loop self-schedules with setTimeout so it never stacks on slow calls.
  */
-function startLiveDetector({ youtube, ownerId, config, onLive, onScheduled, onEnded, log }) {
+function startLiveDetector({ youtube, ownerId, config, onLive, onScheduled, onEnded, onQuotaExhausted, log }) {
     let consecutiveMisses = 0;
     let disabled = false;
     let timer = null;
@@ -112,7 +112,17 @@ function startLiveDetector({ youtube, ownerId, config, onLive, onScheduled, onEn
             if (result.failed) {
                 consecutiveMisses += 1;
                 if (log) log(`detection poll failed (${result.kind}): ${result.reason}`);
-                if (result.kind === YT_API.KIND.AUTH) {
+                if (result.kind === YT_API.KIND.QUOTA) {
+                    // Quota is temporary: pause polls here (calls would be refused
+                    // anyway) and let the orchestrator retry after the PT reset,
+                    // which re-creates this detector.
+                    disabled = true;
+                    if (log) log('quota exhausted - auto-detection paused until YouTube re-initializes after the Pacific reset.');
+                    if (onQuotaExhausted) {
+                        try { await onQuotaExhausted(result.reason); }
+                        catch (error) { if (log) log(`quota reset retry could not be scheduled: ${error.message}`); }
+                    }
+                } else if (result.kind === YT_API.KIND.AUTH) {
                     disabled = true;
                     if (log) log('auth failure - auto-detection disabled until restart.');
                 } else if (consecutiveMisses >= CONSECUTIVE_MISS_LIMIT) {

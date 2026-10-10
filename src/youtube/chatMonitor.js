@@ -34,7 +34,7 @@ const FATAL_KINDS = new Set([YT_API.KIND.QUOTA, YT_API.KIND.AUTH]);
  *   { id, text, author: { channelId, displayName, isChatOwner,
  *     isChatModerator, isChatSponsor }, publishedAt }
  */
-function startChatMonitor({ youtube, videoId, liveChatId, config, onMessage, onEnded, onNotice,
+function startChatMonitor({ youtube, videoId, liveChatId, config, onMessage, onEnded, onNotice, onQuotaExhausted,
     baseBackoffMs = null, engagementIntervalMs = DEFAULT_ENGAGEMENT_INTERVAL_MS,
     clock = () => Date.now(), setTimer = setTimeout, clearTimer = clearTimeout,
     setIntervalFn = setInterval, clearIntervalFn = clearInterval, summaryIntervalMs = QUOTA_SUMMARY_INTERVAL_MS,
@@ -149,7 +149,13 @@ function startChatMonitor({ youtube, videoId, liveChatId, config, onMessage, onE
             const detail = error?.message || String(error);
 
             if (kind === api.KIND.QUOTA) {
-                if (onNotice) onNotice(`quota exhausted, pausing YouTube chat for the rest of the PT day. ${detail}`);
+                if (onNotice) onNotice(`quota exhausted, pausing YouTube chat until the next Pacific quota reset. ${detail}`);
+                // Tell the orchestrator so it can schedule a post-reset retry
+                // instead of leaving YouTube dead for the process lifetime.
+                if (onQuotaExhausted) {
+                    try { await onQuotaExhausted(error); }
+                    catch (retryError) { if (onNotice) onNotice(`quota reset retry could not be scheduled: ${retryError.message}`); }
+                }
                 stop();
                 return;
             }

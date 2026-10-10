@@ -101,6 +101,8 @@ client.once(Events.ClientReady, async (c) => {
         if (ytState.enabled) {
             console.log('[ZiGBoT YT] YouTube live-chat support enabled.');
             if (!ytState.selfId) console.log('[ZiGBoT YT] NOTE: bot channel not resolved via channels.list(mine=true); rely on authorDetails.isChatOwner/isChatModerator for self-filtering.');
+        } else if (ytState.quotaWaiting) {
+            console.log(`[ZiGBoT YT] YouTube paused: daily quota spent. Retry scheduled${ytState.quotaRetryAt ? ` for ${ytState.quotaRetryAt.toISOString()}` : ''}; the Discord bot continues normally.`);
         } else {
             console.log(`[ZiGBoT YT] YouTube disabled (${(ytState.missingVars || []).join(', ') || 'init failure'}); continuing without it.`);
         }

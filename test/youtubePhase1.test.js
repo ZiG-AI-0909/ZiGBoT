@@ -137,6 +137,53 @@ test('quota ledger hydrates a persisted exhausted PT day after a restart', async
     YT_API._resetQuotaForTests();
 });
 
+test('quota ledger logs a per-method line once each time it crosses 50%, 75% and 90% of the budget', () => {
+    YT_API._resetQuotaForTests();
+    YT_API.setQuotaBudget(100);
+    const notices = [];
+    YT_API.configureQuotaLedger({ onNotice: (message) => notices.push(message) });
+
+    YT_API.recordQuota(49, 'liveChatMessages.list');
+    assert.equal(notices.length, 0, 'nothing logged below the first threshold');
+    YT_API.recordQuota(1, 'liveChatMessages.list');
+    assert.equal(notices.length, 1);
+    assert.match(notices[0], /crossed 50%/);
+    assert.match(notices[0], /liveChatMessages_list: 2 calls\/50 units/);
+    YT_API.recordQuota(25, 'videos.list');
+    assert.match(notices[1], /crossed 75%/);
+    assert.match(notices[1], /videos_list: 1 calls\/25 units/);
+    YT_API.recordQuota(15, 'liveChatMessages.list');
+    assert.match(notices[2], /crossed 90%/);
+    YT_API.recordQuota(40, 'liveChatMessages.list');
+    assert.equal(notices.length, 3, 'each threshold logs only once per PT day');
+
+    // A THRESHOLD-EXCEEDING JUMP (Google quotaExceeded) reports the highest
+    // crossed thresholds together instead of spamming one line per step.
+    YT_API._resetQuotaForTests();
+    YT_API.setQuotaBudget(100);
+    YT_API.configureQuotaLedger({ onNotice: (message) => notices.push(message) });
+    YT_API.recordQuota(100, 'liveChatMessages.list');
+    assert.match(notices.at(-1), /crossed 50%\/75%\/90%/);
+    YT_API._resetQuotaForTests();
+});
+
+test('nextQuotaResetAt returns the next midnight Pacific plus margin', () => {
+    const now = new Date('2026-10-11T05:00:00Z'); // 22:00 PDT on Oct 10
+    const reset = YT_API.nextQuotaResetAt(now, { marginMs: 2 * 60_000, jitterMs: 0 });
+    assert.equal(reset.toISOString(), '2026-10-11T07:02:00.000Z');
+
+    const withJitter = YT_API.nextQuotaResetAt(now, { marginMs: 2 * 60_000, jitterMs: 60_000 });
+    assert.equal(withJitter.toISOString(), '2026-10-11T07:03:00.000Z');
+
+    // The PT day key rolls over exactly at that reset.
+    YT_API._resetQuotaForTests();
+    YT_API._setQuotaClock(() => now);
+    assert.equal(YT_API.startPtDayKey(), '2026-10-10');
+    YT_API._setQuotaClock(() => reset);
+    assert.equal(YT_API.startPtDayKey(), '2026-10-11');
+    YT_API._resetQuotaForTests();
+});
+
 // ---- liveDetector (uploads-playlist path) ----
 
 test('uploads playlist derives UC.. -> UU..', () => {
@@ -293,6 +340,41 @@ test('quota exhaustion stops chat monitoring without crashing the process', asyn
     monitor.stop();
     assert.equal(listCalls >= 1, true);
     assert.equal(notices.some((n) => n.toLowerCase().includes('quota')), true, 'notice mentions quota');
+    assert.equal(monitor.isStopped(), true);
+});
+
+test('a mid-stream quota error tells the orchestrator to retry, then stops polling cleanly', async () => {
+    let listCalls = 0;
+    const notices = [];
+    const quotaErrors = [];
+    YT_API._resetQuotaForTests();
+    YT_API.setQuotaBudget(5);
+
+    const mockYoutube = {
+        liveChatMessages: {
+            list: async () => {
+                listCalls += 1;
+                throw { code: 403, response: { data: { error: { errors: [{ reason: 'quotaExceeded' }] } } } };
+            }
+        }
+    };
+
+    const monitor = startChatMonitor({
+        youtube: mockYoutube,
+        videoId: 'vidA',
+        liveChatId: 'chatX',
+        config: { quotaBudgetPerDay: 5, minPollMs: 100 },
+        onMessage: async () => {},
+        onEnded: async () => {},
+        onNotice: (message) => { notices.push(message); },
+        onQuotaExhausted: async (error) => { quotaErrors.push(error?.yt?.kind || null); }
+    });
+
+    await waitFor(400);
+    monitor.stop();
+    assert.equal(quotaErrors.length, 1, 'orchestrator notified exactly once so it can schedule the reset retry');
+    assert.equal(quotaErrors[0], YT_API.KIND.QUOTA);
+    assert.equal(notices.some((n) => n.includes('Pacific quota reset')), true);
     assert.equal(monitor.isStopped(), true);
 });
 

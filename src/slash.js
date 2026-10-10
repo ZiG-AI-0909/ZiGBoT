@@ -16,7 +16,8 @@ const {
     handleUnwatchCommand,
     handleYtGreetCommand,
     handleYtModCommand,
-    handleYtRoastCommand
+    handleYtRoastCommand,
+    handleYtRetryCommand
 } = require('./youtube');
 
 // Only the highest-traffic actions get slash commands (per the roadmap);
@@ -105,6 +106,10 @@ function buildDefinitions() {
             .setDescription('Owner: control YouTube roast mode')
             .addStringOption((option) => option.setName('state').setDescription('on, off, or status').setRequired(true)
                 .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' }, { name: 'status', value: 'status' }))
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+        new SlashCommandBuilder()
+            .setName('ytretry')
+            .setDescription('Owner: re-run YouTube initialization now (e.g. after a quota reset)')
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     ].map((command) => command.toJSON());
 }
@@ -163,8 +168,12 @@ async function runYouTubeInteraction(interaction, settings, client) {
             const status = getYouTubeStatus();
             const quotaMethods = Object.entries(status.quotaMethods || {})
                 .map(([method, usage]) => `${method}: ${usage.calls} calls/${usage.units} units`).join(', ') || 'none';
+            const quotaState = status.quotaWaiting
+                ? `waiting for quota reset (retry ${status.quotaRetryAt || 'scheduled'})`
+                : 'ok';
             return [
                 `enabled: ${status.enabled}`,
+                `quota state: ${quotaState}`,
                 `ownerId: ${status.ownerId || 'not resolved'}`,
                 `watching: ${status.watching || 'none'}`,
                 `autoDetect: ${status.autoDetect ? 'on' : 'off'}`,
@@ -188,6 +197,9 @@ async function runYouTubeInteraction(interaction, settings, client) {
         }
         if (interaction.commandName === 'ytroast') {
             return await handleYtRoastCommand(interaction.options.getString('state', true), true);
+        }
+        if (interaction.commandName === 'ytretry') {
+            return await handleYtRetryCommand(true);
         }
     } catch (error) {
         // YouTube problems must never fall through to a Discord crash.

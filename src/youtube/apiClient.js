@@ -43,6 +43,10 @@ function tagYtError(error) {
 
 // ---- Daily quota ledger (safety budget below the real 10,000) ----
 
+const PT_TIME_ZONE = 'America/Los_Angeles';
+/** Usage fractions that trigger a one-line per-method log when crossed. */
+const QUOTA_LOG_THRESHOLDS = [0.5, 0.75, 0.9];
+
 let quotaUsed = 0;
 let quotaDayKey = null;
 let quotaBudget = 10_000;
@@ -52,12 +56,36 @@ let quotaBrain = null;
 let quotaNotice = () => {};
 let quotaPersistenceNoticeSent = false;
 let quotaExhaustionNoticeSent = false;
+let quotaThresholdsLogged = new Set();
 let ledgerLoad = null;
+// Wall clock used for the PT day boundary. Overridable in tests only.
+let quotaClock = () => new Date();
 
-function startPtDayKey(now = new Date()) {
+/** `now` expressed as Pacific wall-clock fields (local Date object). */
+function pacificWallClock(now = quotaClock()) {
+    return new Date(now.toLocaleString('en-US', { timeZone: PT_TIME_ZONE }));
+}
+
+function startPtDayKey(now = quotaClock()) {
     // Quota resets at midnight Pacific Time regardless of server timezone.
-    const pt = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+    const pt = pacificWallClock(now);
     return `${pt.getFullYear()}-${String(pt.getMonth() + 1).padStart(2, '0')}-${String(pt.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * The moment the daily quota window next resets: the following midnight in
+ * Pacific Time, plus an optional margin and jitter so several restarts/deploys
+ * do not all retry at the same instant.
+ */
+function nextQuotaResetAt(now = quotaClock(), { marginMs = 0, jitterMs = 0 } = {}) {
+    const pt = pacificWallClock(now);
+    const nextPtMidnight = new Date(pt);
+    nextPtMidnight.setDate(nextPtMidnight.getDate() + 1);
+    nextPtMidnight.setHours(0, 0, 0, 0);
+    const offsetMs = pt.getTime() - now.getTime();
+    const margin = Math.max(0, Number(marginMs) || 0);
+    const jitter = Math.max(0, Number(jitterMs) || 0);
+    return new Date(nextPtMidnight.getTime() - offsetMs + margin + jitter);
 }
 
 function setQuotaBudget(units) {
@@ -70,9 +98,10 @@ function resetForDay(key) {
     quotaExhaustedByGoogle = false;
     quotaMethods = {};
     quotaExhaustionNoticeSent = false;
+    quotaThresholdsLogged = new Set();
 }
 
-async function hydrateQuotaLedger(now = new Date()) {
+async function hydrateQuotaLedger(now = quotaClock()) {
     const key = startPtDayKey(now);
     if (key === quotaDayKey && !ledgerLoad) return;
     if (key !== quotaDayKey) resetForDay(key);
@@ -110,7 +139,34 @@ function recordQuota(units, method = 'unknown') {
     quotaUsed += cost;
     const current = quotaMethods[methodKey] || { calls: 0, units: 0 };
     quotaMethods[methodKey] = { calls: current.calls + 1, units: current.units + cost };
+    checkQuotaThresholds();
     return quotaUsed;
+}
+
+/** One-line per-method breakdown, e.g. `liveChatMessages.list: 12 calls/60 units`. */
+function quotaMethodLine(methods = quotaMethods) {
+    return Object.entries(methods)
+        .map(([method, usage]) => `${method}: ${Number(usage.calls) || 0} calls/${Number(usage.units) || 0} units`)
+        .join('; ') || 'no calls recorded';
+}
+
+/**
+ * Log once per day when the ledger crosses 50%, 75% and 90% of the budget, so
+ * the method responsible for heavy usage is visible before the quota dies.
+ */
+function checkQuotaThresholds() {
+    if (quotaBudget <= 0) return;
+    const crossed = [];
+    for (const fraction of QUOTA_LOG_THRESHOLDS) {
+        const label = `${Math.round(fraction * 100)}%`;
+        if (quotaThresholdsLogged.has(label)) continue;
+        if (quotaUsed >= quotaBudget * fraction) {
+            quotaThresholdsLogged.add(label);
+            crossed.push(label);
+        }
+    }
+    if (!crossed.length) return;
+    quotaNotice(`YouTube quota crossed ${crossed.join('/')} (${quotaUsed}/${quotaBudget} units): ${quotaMethodLine()}`);
 }
 
 function quotaRemaining() {
@@ -152,6 +208,7 @@ async function markQuotaExceeded() {
     if (key !== quotaDayKey) resetForDay(key);
     quotaExhaustedByGoogle = true;
     quotaUsed = Math.max(quotaUsed, quotaBudget);
+    checkQuotaThresholds();
     if (!quotaExhaustionNoticeSent) {
         quotaExhaustionNoticeSent = true;
         quotaNotice('Google reported quotaExceeded; all YouTube calls are paused until midnight Pacific.');
@@ -175,7 +232,19 @@ function _resetQuotaForTests() {
     quotaNotice = () => {};
     quotaPersistenceNoticeSent = false;
     quotaExhaustionNoticeSent = false;
+    quotaThresholdsLogged = new Set();
     ledgerLoad = null;
+    quotaClock = () => new Date();
+}
+
+/** Test-only: control the wall clock used for the PT day boundary. */
+function _setQuotaClock(clock) {
+    quotaClock = typeof clock === 'function' ? clock : () => new Date();
+}
+
+/** Test-only: the PT day boundary the ledger is currently keyed to. */
+function _quotaDayKey() {
+    return quotaDayKey;
 }
 
 // ---- Client factory ----
@@ -237,11 +306,17 @@ module.exports = {
     quotaUsedToday,
     quotaExhausted,
     quotaMethodUsage,
+    quotaMethodLine,
     hydrateQuotaLedger,
     configureQuotaLedger,
     markQuotaExceeded,
     startPtDayKey,
+    nextQuotaResetAt,
     getYoutubeClient,
     ytCall,
-    _resetQuotaForTests
+    _resetQuotaForTests,
+    _setQuotaClock,
+    _quotaDayKey,
+    QUOTA_LOG_THRESHOLDS,
+    PT_TIME_ZONE
 };

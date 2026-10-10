@@ -23,6 +23,12 @@ const { YouTubeCommandRouter } = require('./commands');
 const { RateLimiter } = require('../ai/rateLimiter');
 const brain = require('../db/brain');
 
+// Quota exhaustion is temporary, so init is retried just after the next
+// Pacific reset instead of leaving YouTube dead for the process lifetime.
+const QUOTA_RETRY_MARGIN_MS = 2 * 60_000;
+const QUOTA_RETRY_JITTER_MS = 60_000;
+const MIN_QUOTA_RETRY_DELAY_MS = 1_000;
+
 const state = {
     enabled: false,
     config: null,
@@ -41,7 +47,13 @@ const state = {
     moderation: null,
     discordClient: null,
     discordSettings: null,
-    ai: null
+    ai: null,
+    quotaWaiting: false, // paused because the daily quota is spent
+    quotaRetryAt: null,  // Date of the scheduled post-reset retry
+    quotaRetryTimer: null,
+    quotaRetryAttempts: 0,
+    lastInitError: null, // { kind, message, at } of the last failed init
+    runtime: null        // deps captured at init so retries can reuse them
 };
 
 function log(message) {
@@ -54,6 +66,83 @@ function notice(message) {
 }
 
 /**
+ * Cancel a pending post-quota-reset retry (manual /ytretry, shutdown, or a
+ * fresh init that is about to schedule its own).
+ */
+function clearQuotaRetry() {
+    if (state.quotaRetryTimer) {
+        const clear = state.runtime?.clearTimer || clearTimeout;
+        try { clear(state.quotaRetryTimer); } catch { /* timer already gone */ }
+    }
+    state.quotaRetryTimer = null;
+    state.quotaRetryAt = null;
+}
+
+/**
+ * Schedule one init retry just after the next midnight-Pacific reset (2 minute
+ * margin plus jitter). Only one retry is ever pending, so a burst of quota
+ * errors cannot stack timers or loop.
+ */
+function scheduleQuotaRetry(reason) {
+    const runtime = state.runtime || {};
+    const now = typeof runtime.now === 'function' ? runtime.now : () => new Date();
+    if (state.quotaRetryTimer) return state.quotaRetryAt;
+    const random = typeof runtime.random === 'function' ? runtime.random : Math.random;
+    const jitterMs = Math.round(Math.max(0, Math.min(1, Number(random()) || 0)) * QUOTA_RETRY_JITTER_MS);
+    const retryAt = YT_API.nextQuotaResetAt(now(), { marginMs: QUOTA_RETRY_MARGIN_MS, jitterMs });
+    const delayMs = Math.max(MIN_QUOTA_RETRY_DELAY_MS, retryAt.getTime() - now().getTime());
+    const setTimer = typeof runtime.setTimer === 'function' ? runtime.setTimer : setTimeout;
+    state.quotaRetryAt = retryAt;
+    const timer = setTimer(() => {
+        state.quotaRetryTimer = null;
+        return retryInitAfterQuotaReset();
+    }, delayMs);
+    // The Discord client keeps the process alive; a retry timer must not.
+    if (timer && typeof timer.unref === 'function') timer.unref();
+    state.quotaRetryTimer = timer;
+    notice(`YouTube quota unavailable (${reason}); calls paused, retrying initialization at ${retryAt.toISOString()} (Pacific reset + ${QUOTA_RETRY_MARGIN_MS / 60_000}min).`);
+    return retryAt;
+}
+
+/**
+ * Pause YouTube because the daily quota is spent, and schedule the retry.
+ * Unlike an auth/forbidden failure this is NOT permanent, so YouTube is left
+ * "waiting for quota reset" rather than disabled for the process lifetime.
+ */
+function enterQuotaWait(reason) {
+    state.enabled = false;
+    state.quotaWaiting = true;
+    scheduleQuotaRetry(reason);
+    return state;
+}
+
+/** The scheduled retry: re-runs init so the new PT day hydrates at zero. */
+async function retryInitAfterQuotaReset() {
+    state.quotaRetryTimer = null;
+    state.quotaRetryAttempts += 1;
+    log(`retrying YouTube initialization after the Pacific quota reset (attempt ${state.quotaRetryAttempts}).`);
+    try {
+        await initYouTube(state.runtime?.config || null, state.runtime || {});
+    } catch (error) {
+        // initYouTube never throws, but a retry must never take the process down.
+        notice(`quota-reset retry failed: ${error.message}`);
+        enterQuotaWait(`retry error: ${error.message}`);
+        return state;
+    }
+    if (state.quotaWaiting) log('quota still exhausted after the retry; YouTube stays paused until the next reset.');
+    else log('quota reset retry re-enabled YouTube support.');
+    return state;
+}
+
+/** Friendly "why can't I /watch" line; distinguishes waiting-for-quota. */
+function notEnabledReply() {
+    if (state.quotaWaiting) {
+        return `⏳ YouTube calls are paused until the daily quota resets${state.quotaRetryAt ? ` (retry scheduled for ${state.quotaRetryAt.toISOString()})` : ''}.`;
+    }
+    return '❌ YouTube support is not enabled.';
+}
+
+/**
  * Initialize YouTube support.
  * deps.youtube: pre-built youtube client for tests.
  * Returns the enabled state so the caller knows whether to wire /watch.
@@ -62,7 +151,11 @@ async function initYouTube(youtubeConfigOverride = null, deps = {}) {
     await stopWatcher('YouTube reinitialization');
     if (state.detector) state.detector.stop();
     state.detector = null;
-    const config = youtubeConfigOverride || readYouTubeConfig();
+    clearQuotaRetry();
+    state.quotaWaiting = false;
+    // `deps.config` carries the original override through a scheduled retry so
+    // the re-init uses exactly the config the first attempt was given.
+    const config = youtubeConfigOverride || deps.config || readYouTubeConfig();
 
     if (!config.enabled) {
         state.enabled = false;
@@ -71,12 +164,27 @@ async function initYouTube(youtubeConfigOverride = null, deps = {}) {
         return state;
     }
 
+    // Capture the dependencies so the post-quota-reset retry and /ytretry can
+    // re-run init without the caller passing them again.
+    state.runtime = {
+        youtube: deps.youtube || null,
+        discordClient: deps.discordClient || null,
+        settings: deps.settings || { logChannelId: process.env.LOG_CHANNEL_ID || '' },
+        ai: deps.ai || null,
+        brain: deps.brain || null,
+        config: youtubeConfigOverride || deps.config || null,
+        setTimer: typeof deps.setTimer === 'function' ? deps.setTimer : setTimeout,
+        clearTimer: typeof deps.clearTimer === 'function' ? deps.clearTimer : clearTimeout,
+        now: typeof deps.now === 'function' ? deps.now : () => new Date(),
+        random: typeof deps.random === 'function' ? deps.random : Math.random
+    };
+
     state.config = config;
-    state.discordClient = deps.discordClient || null;
-    state.discordSettings = deps.settings || { logChannelId: process.env.LOG_CHANNEL_ID || '' };
-    state.ai = deps.ai || null;
-    if (deps.youtube) {
-        state.youtube = deps.youtube;
+    state.discordClient = state.runtime.discordClient;
+    state.discordSettings = state.runtime.settings;
+    state.ai = state.runtime.ai;
+    if (state.runtime.youtube) {
+        state.youtube = state.runtime.youtube;
     } else {
         state.youtube = YT_API.getYoutubeClient({
             clientId: process.env.YOUTUBE_CLIENT_ID,
@@ -84,10 +192,22 @@ async function initYouTube(youtubeConfigOverride = null, deps = {}) {
             refreshToken: process.env.YOUTUBE_REFRESH_TOKEN
         });
     }
+    // `deps.brain` is a test seam; production always uses the Mongo-backed one.
+    const quotaBrain = state.runtime.brain || brain;
     YT_API.setQuotaBudget(config.quotaBudgetPerDay);
-    YT_API.configureQuotaLedger({ brain, onNotice: (message) => notice(message) });
+    YT_API.configureQuotaLedger({ brain: quotaBrain, onNotice: (message) => notice(message) });
     await YT_API.hydrateQuotaLedger();
+
+    // An already-spent ledger (persisted by an earlier run of this PT day) must
+    // not disable YouTube forever: wait for the reset instead.
+    if (YT_API.quotaExhausted()) {
+        enterQuotaWait(`daily quota already spent (${YT_API.quotaUsedToday()}/${config.quotaBudgetPerDay} units)`);
+        return state;
+    }
     state.enabled = true;
+    state.quotaWaiting = false;
+    state.quotaRetryAttempts = 0;
+    state.lastInitError = null;
 
     try {
         const owner = await resolveOwnerChannel(state.youtube, config);
@@ -147,13 +267,27 @@ async function initYouTube(youtubeConfigOverride = null, deps = {}) {
                     await postDiscordNotice(`${label} is scheduled for **${when}**. https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`);
                 },
                 onEnded: async () => { await stopWatcher('auto-detected stream ended'); },
+                onQuotaExhausted: async (reason) => {
+                    await stopWatcher('quota exhausted during auto-detection');
+                    enterQuotaWait(`auto-detection hit the quota limit: ${reason}`);
+                },
                 log
             });
         }
     } catch (error) {
         const kind = error?.yt?.kind || YT_API.classifyYouTubeError(error);
+        state.lastInitError = { kind, message: error.message, at: new Date().toISOString() };
+        if (kind === YT_API.KIND.QUOTA) {
+            // Temporary by definition: keep the process alive and retry right
+            // after the Pacific reset. Auth/forbidden failures still disable
+            // YouTube for good and are never retried in a loop.
+            enterQuotaWait(`init hit the quota limit: ${error.message}`);
+            return state;
+        }
         notice(`startup failed (${kind}): ${error.message}. Disabling YouTube support; the Discord bot continues normally.`);
         state.enabled = false;
+        state.quotaWaiting = false;
+        clearQuotaRetry();
         return state;
     }
 
@@ -210,11 +344,11 @@ async function watchInternal({ videoId, liveChatId = null, title = '', via = 'ma
     state.watcherLiveChatId = liveChatId;
     state.greetingContext = { videoId, liveChatId };
     state.greetings = new Greetings({ youtube: state.youtube, liveChatId, videoId, config: state.config,
-        selfId: state.selfId, ownerId: state.ownerId, botTitle: state.botTitle, brain,
+        selfId: state.selfId, ownerId: state.ownerId, botTitle: state.botTitle, brain: state.runtime?.brain || brain,
         onNotice: (message) => notice(`watch ${videoId}: ${message}`) });
     state.moderation = new YouTubeCommandRouter({ youtube: state.youtube, videoId, liveChatId,
         ownerId: state.ownerId, selfId: state.selfId, botTitle: state.botTitle, config: state.config, greetings: state.greetings,
-        brain, discordClient: state.discordClient, settings: state.discordSettings, ai: state.ai,
+        brain: state.runtime?.brain || brain, discordClient: state.discordClient, settings: state.discordSettings, ai: state.ai,
         roastRateLimiter: new RateLimiter({ max: state.config.roastAiRateLimitMax || 2,
             windowMs: state.config.roastAiRateLimitWindowMs || 60_000 }),
         onNotice: (message) => notice(`watch ${videoId}: ${message}`) });
@@ -287,6 +421,12 @@ async function watchInternal({ videoId, liveChatId = null, title = '', via = 'ma
                 notice(`could not post YouTube chat roast: ${error.message}`);
             }
         },
+        onQuotaExhausted: async () => {
+            // Quota ran out mid-stream: stop the calls, keep the process alive,
+            // and re-initialize right after the Pacific reset.
+            await stopWatcher('quota exhausted mid-stream');
+            enterQuotaWait('daily quota exhausted while watching live chat');
+        },
         onEnded: async () => {
             notice('stream ended (chat went offline).');
             stopWatcher('chat offline');
@@ -318,7 +458,7 @@ async function stopWatcher(reason = 'unspecified') {
 /** Manual /watch handler (owner-only gating is done by the Discord slash layer). */
 async function handleWatchCommand(videoId, isOwnerDiscord) {
     if (!state.enabled) {
-        return '❌ YouTube support is not enabled.';
+        return notEnabledReply();
     }
     if (!isOwnerDiscord) {
         return null; // non-owners: silently ignored, nobody learns the command exists
@@ -331,14 +471,14 @@ async function handleWatchCommand(videoId, isOwnerDiscord) {
 }
 
 async function handleUnwatchCommand(isOwnerDiscord) {
-    if (!state.enabled) return '❌ YouTube support is not enabled.';
+    if (!state.enabled) return notEnabledReply();
     if (!isOwnerDiscord) return null; // silent non-owner ignore
     const result = await stopWatcher('owner /unwatch');
     return result.stopped ? '✅ Stopped watching YouTube chat.' : 'ℹ️ Nothing was being watched.';
 }
 
 async function handleYtGreetCommand(value, isOwnerDiscord) {
-    if (!state.enabled) return '❌ YouTube support is not enabled.';
+    if (!state.enabled) return notEnabledReply();
     if (!isOwnerDiscord) return null;
     const normalized = String(value || '').trim().toLowerCase();
     if (!['on', 'off'].includes(normalized)) return '⚠️ Use `/ytgreet on` or `/ytgreet off`.';
@@ -351,13 +491,13 @@ async function handleYtGreetCommand(value, isOwnerDiscord) {
     } else if (state.config.greetingsEnabled && state.greetingContext) {
         state.greetings = new Greetings({ youtube: state.youtube, ...state.greetingContext,
             config: state.config, selfId: state.selfId, ownerId: state.ownerId,
-            botTitle: state.botTitle, brain, onNotice: (message) => notice(message) });
+            botTitle: state.botTitle, brain: state.runtime?.brain || brain, onNotice: (message) => notice(message) });
     }
     return `✅ YouTube greetings ${normalized === 'on' ? 'enabled' : 'disabled'}.`;
 }
 
 async function handleYtModCommand(value, isOwnerDiscord) {
-    if (!state.enabled) return '❌ YouTube support is not enabled.';
+    if (!state.enabled) return notEnabledReply();
     if (!isOwnerDiscord) return null;
     const normalized = String(value || '').trim().toLowerCase();
     if (!['on', 'off'].includes(normalized)) return '⚠️ Use `/ytmod on` or `/ytmod off`.';
@@ -369,7 +509,7 @@ async function handleYtModCommand(value, isOwnerDiscord) {
 }
 
 async function handleYtRoastCommand(value, isOwnerDiscord) {
-    if (!state.enabled) return '❌ YouTube support is not enabled.';
+    if (!state.enabled) return notEnabledReply();
     if (!isOwnerDiscord) return null;
     if (state.config?.roastEnabled === false) return '⚠️ YouTube roast commands are disabled by YOUTUBE_ROAST.';
     const normalized = String(value || '').trim().toLowerCase();
@@ -383,6 +523,24 @@ async function handleYtRoastCommand(value, isOwnerDiscord) {
     return `✅ YouTube roast mode ${normalized} for this stream.`;
 }
 
+/**
+ * Manual /ytretry: re-run initialization on demand (owner-only, gated by the
+ * slash layer the same way as every other YouTube command).
+ */
+async function handleYtRetryCommand(isOwnerDiscord) {
+    if (!isOwnerDiscord) return null; // silent non-owner ignore
+    clearQuotaRetry();
+    state.quotaWaiting = false;
+    const result = await initYouTube(state.runtime?.config || null, state.runtime || {});
+    if (result.quotaWaiting) {
+        return `⏳ YouTube is still out of quota; next automatic retry at ${result.quotaRetryAt ? result.quotaRetryAt.toISOString() : 'the Pacific reset'}.`;
+    }
+    if (!result.enabled) {
+        return `❌ YouTube re-initialization failed (${result.lastInitError?.kind || 'not configured'}); check the server logs.`;
+    }
+    return `✅ YouTube re-initialized (auto-detect ${result.detector ? 'on' : 'off'}).`;
+}
+
 /** True if the Discord-side /watch /unwatch commands should even be registered. */
 function isYouTubeReady() {
     return state.enabled && Boolean(state.ownerId);
@@ -391,6 +549,10 @@ function isYouTubeReady() {
 function getYouTubeStatus() {
     return {
         enabled: state.enabled,
+        quotaWaiting: Boolean(state.quotaWaiting),
+        quotaRetryAt: state.quotaRetryAt ? state.quotaRetryAt.toISOString() : null,
+        quotaRetryAttempts: state.quotaRetryAttempts,
+        lastInitError: state.lastInitError,
         ownerId: state.ownerId,
         selfId: state.selfId,
         watching: state.watcher ? state.lastWatchedVideoId : null,
@@ -421,6 +583,10 @@ function _resetForTestHarness() {
     state.greetings = null;
     state.greetingContext = null;
     state.noticeLog = [];
+    state.quotaWaiting = false;
+    state.quotaRetryAttempts = 0;
+    state.lastInitError = null;
+    state.runtime = null;
 }
 
 /**
@@ -441,6 +607,7 @@ function _seedStateForTests({ youtube = null, ownerId = null, selfId = null, con
 }
 
 function stopAll() {
+    clearQuotaRetry();
     if (state.watcher) stopWatcher('shutdown');
     else if (state.moderation) {
         void state.moderation.stop();
@@ -461,6 +628,8 @@ module.exports = {
     handleYtGreetCommand,
     handleYtModCommand,
     handleYtRoastCommand,
+    handleYtRetryCommand,
+    retryInitAfterQuotaReset,
     isYouTubeReady,
     getYouTubeStatus,
     stopAll,
