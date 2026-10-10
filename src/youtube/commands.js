@@ -1,6 +1,7 @@
 const { ChatterCache, normalizeDisplayName } = require('./chatterCache');
 const YT_API = require('./apiClient');
 const { auditLog: defaultAuditLog } = require('../logging/auditLog');
+const { YouTubeRoast } = require('./roast');
 
 // Official YouTube Data API quota costs (Quota Calculator, checked 2026-10-10).
 const LIVE_CHAT_BAN_COST = 200; // liveChatBans.insert/delete
@@ -50,7 +51,8 @@ class YouTubeCommandRouter {
     constructor({ youtube, videoId, liveChatId, ownerId, selfId, botTitle = null, config = {}, greetings,
         brain = null, discordClient = null, settings = null, auditLog = defaultAuditLog,
         clock = () => Date.now(), setTimer = setTimeout, clearTimer = clearTimeout,
-        api = YT_API, onNotice = () => {}, chatterCache = null } = {}) {
+        api = YT_API, onNotice = () => {}, chatterCache = null, ai = null, roastRateLimiter = null,
+        roastService = null, random = Math.random } = {}) {
         this.youtube = youtube; this.videoId = videoId; this.liveChatId = liveChatId;
         this.ownerId = ownerId; this.selfId = selfId; this.botTitle = botTitle || config.botName || 'ZiGBoT'; this.config = config; this.greetings = greetings;
         this.brain = brain; this.discordClient = discordClient; this.settings = settings || { logChannelId: process.env.LOG_CHANNEL_ID || '' };
@@ -63,6 +65,9 @@ class YouTubeCommandRouter {
         this.reserve = Number.isFinite(config.moderationQuotaReserve) ? config.moderationQuotaReserve : DEFAULT_MOD_QUOTA_RESERVE;
         this.maxActions = Number.isFinite(config.maxModerationActionsPerStream) ? config.maxModerationActionsPerStream : DEFAULT_MAX_MOD_ACTIONS_PER_STREAM;
         this.actionCooldown = Number.isFinite(config.moderationActionCooldownMs) ? config.moderationActionCooldownMs : DEFAULT_MOD_ACTION_COOLDOWN_MS;
+        this.roast = roastService || new YouTubeRoast({ ai, rateLimiter: roastRateLimiter, config: { ...config, ownerId, selfId },
+            greetings, cache: this.cache, brain, videoId, api, clock, setTimer, clearTimer, random,
+            audit: (entry) => this.auditRoast(entry) });
     }
 
     get active() { return this.enabled && !this.quotaStopped && !this.authBlocked && !this.forbiddenBlocked; }
@@ -89,12 +94,13 @@ class YouTubeCommandRouter {
             await this.audit(message, command, target, '', 'DENIED', { failureReason: 'not the verified stream owner', userChannelId: author.channelId || 'unknown' });
             return true;
         }
-        if (!['timeout', 'ban', 'unban', 'delete', 'confirm', 'cancel'].includes(command)) {
+        if (!['timeout', 'ban', 'unban', 'delete', 'confirm', 'cancel', 'roast', 'roastmode', 'noroast', 'yesroast'].includes(command)) {
             await this.audit(message, command, null, '', 'FAILED', { failureReason: 'unknown command' });
             return true;
         }
         try {
-            if (command === 'confirm' || command === 'cancel') await this.confirmationCommand(message, command);
+            if (['roast', 'roastmode', 'noroast', 'yesroast'].includes(command)) await this.executeRoast(message, command, args.trim());
+            else if (command === 'confirm' || command === 'cancel') await this.confirmationCommand(message, command);
             else await this.execute(message, command, args.trim());
         } catch (error) {
             await this.audit(message, command, null, '', 'FAILED', { failureReason: error?.message || 'unexpected failure' });
@@ -114,6 +120,49 @@ class YouTubeCommandRouter {
         } catch (error) {
             this.onNotice('YouTube moderation audit could not be delivered to Discord.');
         }
+    }
+
+    async auditRoast({ message, target, trigger, result, filtered, preview, reason }) {
+        const syntheticMessage = { author: { id: message?.author?.channelId || 'unknown' }, client: this.discordClient };
+        const details = Object.fromEntries(Object.entries({ channelId: target?.channelId || 'none', videoId: this.videoId,
+            trigger, filtered, preview, reason }).map(([key, value]) => [key, auditValue(value, key === 'preview' ? 60 : 160)]));
+        try {
+            await this.auditLog({ message: syntheticMessage, settings: this.settings, event: 'YOUTUBE ROAST',
+                action: 'roast', target: auditValue(target?.displayName || 'unknown', 100), result, details });
+        } catch { this.onNotice('YouTube roast audit could not be delivered to Discord.'); }
+    }
+
+    async executeRoast(message, command, args) {
+        if (this.config.roastEnabled === false || !this.roast.enabled) {
+            await this.auditRoast({ message, target: null, trigger: command, result: 'DISABLED', filtered: false, preview: '', reason: 'roast feature disabled' });
+            this.reply('YouTube roasts are disabled.'); return;
+        }
+        if (command === 'roastmode') {
+            const value = args.toLowerCase();
+            const prefix = this.config.commandPrefix || '!';
+            if (!['on', 'off'].includes(value)) { this.reply(`use ${prefix}roastmode on or ${prefix}roastmode off.`); return; }
+            this.roast.mode = value === 'on';
+            await this.auditRoast({ message, target: null, trigger: command, result: this.roast.mode ? 'ON' : 'OFF', filtered: false, preview: '', reason: 'owner setting' });
+            this.reply(`roast mode ${this.roast.mode ? 'on' : 'off'} for this stream.`); return;
+        }
+        const parsed = parseTargetAndTail(args, this.cache);
+        if (parsed.error || parsed.candidates?.length !== 1) {
+            await this.auditRoast({ message, target: { displayName: parsed.requested || 'unknown' }, trigger: command, result: 'FAILED', filtered: false, preview: '', reason: parsed.candidates?.length > 1 ? 'ambiguous target' : 'target not found' });
+            this.reply(`couldn't find a single match for ${String(parsed.requested || 'that name').slice(0, 70)}.`); return;
+        }
+        const target = parsed.candidates[0];
+        if (command === 'noroast' || command === 'yesroast') {
+            if (target.channelId === this.ownerId || target.channelId === this.selfId || target.protected || target.isBot) {
+                this.reply('that account is protected.'); return;
+            }
+            await this.roast.setNoRoast(target.channelId, command === 'noroast');
+            await this.auditRoast({ message, target, trigger: command, result: command === 'noroast' ? 'ADDED' : 'REMOVED', filtered: false, preview: '', reason: 'owner setting' });
+            this.reply(`${target.displayName} ${command === 'noroast' ? 'added to' : 'removed from'} the no-roast list.`); return;
+        }
+        const result = await this.roast.roast(target, 'command', message);
+        if (result.ok) return;
+        const lines = { 'off-limits': 'that viewer is on the no-roast list.', crisis: 'that viewer was skipped because their recent message may indicate distress.', protected: 'that viewer is protected.', member: 'paying members are off-limits.', quota: 'not enough YouTube quota remains for a roast.', 'ai-failure': 'I could not generate that roast right now.', cap: 'the stream roast limit has been reached.', interval: 'wait a few seconds before another roast.', cooldown: 'that viewer is still on cooldown.', 'rate-limit': 'YouTube roast AI is rate-limited right now.', disabled: 'YouTube roasts are disabled.', queue: 'the YouTube chat reply queue is full.' };
+        if (result.blocked !== 'filtered') this.reply(lines[result.blocked] || 'that roast was skipped.');
     }
 
     reply(text, emergency = false) {

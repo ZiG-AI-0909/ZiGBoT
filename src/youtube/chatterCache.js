@@ -27,7 +27,7 @@ class ChatterCache {
         let chatter = this.chatters.get(channelId);
         if (!chatter) {
             chatter = { channelId, displayName: String(author.displayName || channelId), normalizedName: normalizeDisplayName(author.displayName),
-                protected: false, isBot: false, lastSeen: 0, messages: [] };
+                protected: false, isBot: false, isChatSponsor: false, lastSeen: 0, messages: [] };
             this.chatters.set(channelId, chatter);
         }
         if (author.displayName) {
@@ -36,9 +36,11 @@ class ChatterCache {
         }
         chatter.protected = chatter.protected || Boolean(author.isChatOwner || author.isChatModerator);
         chatter.isBot = chatter.isBot || Boolean(author.isBot);
+        chatter.isChatSponsor = chatter.isChatSponsor || Boolean(author.isChatSponsor);
         chatter.lastSeen = this.clock();
         if (!chatter.messages.some((entry) => entry.id === String(message.id))) {
-            chatter.messages.push({ id: String(message.id), at: chatter.lastSeen });
+            chatter.messages.push({ id: String(message.id), at: chatter.lastSeen,
+                text: String(message.rawText ?? message.text ?? '').slice(0, 1000) });
         }
         return chatter;
     }
@@ -57,6 +59,16 @@ class ChatterCache {
     recentMessageIds(channelId, count = 1) {
         const chatter = this.byChannelId(channelId);
         return chatter ? chatter.messages.slice(-count).reverse().map(({ id }) => id) : [];
+    }
+
+    recentText(channelId) {
+        const chatter = this.byChannelId(channelId);
+        return chatter?.messages.at(-1)?.text || '';
+    }
+
+    recentTexts(channelId) {
+        const chatter = this.byChannelId(channelId);
+        return chatter ? chatter.messages.map(({ text }) => text).filter(Boolean) : [];
     }
 }
 

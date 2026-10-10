@@ -15,7 +15,8 @@ const {
     handleWatchCommand,
     handleUnwatchCommand,
     handleYtGreetCommand,
-    handleYtModCommand
+    handleYtModCommand,
+    handleYtRoastCommand
 } = require('./youtube');
 
 // Only the highest-traffic actions get slash commands (per the roadmap);
@@ -98,6 +99,12 @@ function buildDefinitions() {
             .setDescription('Owner: enable or disable YouTube live-chat moderation')
             .addStringOption((option) => option.setName('state').setDescription('on or off').setRequired(true)
                 .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' }))
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+        new SlashCommandBuilder()
+            .setName('ytroast')
+            .setDescription('Owner: control YouTube roast mode')
+            .addStringOption((option) => option.setName('state').setDescription('on, off, or status').setRequired(true)
+                .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' }, { name: 'status', value: 'status' }))
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     ].map((command) => command.toJSON());
 }
@@ -161,8 +168,12 @@ async function runYouTubeInteraction(interaction, settings, client) {
                 `autoDetect: ${status.autoDetect ? 'on' : 'off'}`,
                 `greetings: ${status.greetings ? 'on' : 'off'}`,
                 `replies this stream: ${status.repliesSent}`,
+                `total bot chat messages this stream: ${status.messagesSent}`,
                 `moderation: ${status.moderation ? 'on' : 'off'}`,
                 `moderation actions this stream: ${status.moderationActions}`,
+                `roast mode: ${status.roastMode ? 'on' : 'off'}`,
+                `roasts sent this stream: ${status.roastsSent}`,
+                `roast AI calls this stream: ${status.roastAiCalls}`,
                 `quota used today: ${status.quotaUsed}/${status.quotaBudget ?? 'unknown'}`
             ].join(' | ');
         }
@@ -171,6 +182,9 @@ async function runYouTubeInteraction(interaction, settings, client) {
         }
         if (interaction.commandName === 'ytmod') {
             return await handleYtModCommand(interaction.options.getString('state', true), true);
+        }
+        if (interaction.commandName === 'ytroast') {
+            return await handleYtRoastCommand(interaction.options.getString('state', true), true);
         }
     } catch (error) {
         // YouTube problems must never fall through to a Discord crash.

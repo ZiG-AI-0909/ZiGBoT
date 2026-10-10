@@ -173,6 +173,20 @@ test('YouTube ban ids persist per stream/viewer with unique and 24-hour TTL inde
     brain._disconnectForTests();
 });
 
+test('YouTube no-roast viewers persist per stream with unique and 24-hour TTL indexes', async () => {
+    const fake = fakeMongoClient();
+    await brain.connectBrain('mongodb://fake', { client: fake });
+    await brain.recordYtNoRoast('video-1', 'UC_viewer');
+    assert.deepEqual(await brain.listYtNoRoast('video-1'), ['UC_viewer']);
+    assert.deepEqual(await brain.listYtNoRoast('video-2'), []);
+    assert.deepEqual(fake.createdIndexes.filter((index) => index.name === 'ytNoRoast').map((index) => index.options), [
+        { unique: true }, { expireAfterSeconds: 0 }
+    ]);
+    await brain.deleteYtNoRoast('video-1', 'UC_viewer');
+    assert.deepEqual(await brain.listYtNoRoast('video-1'), []);
+    brain._disconnectForTests();
+});
+
 test('brain user profile defaults match the documented shape', async () => {
     await brain.connectBrain('mongodb://fake', { client: fakeMongoClient() });
 
@@ -292,8 +306,8 @@ test('buildDefinitions returns plain JSON payloads ready for the Discord API', (
     // the array, and the map then crashed the whole bot on startup.
     const definitions = buildDefinitions();
     // Original 6 (play, kick, ban, memory, reputation, help)
-    // + 5 YouTube commands (/watch, /unwatch, /ytstatus, /ytgreet, /ytmod)
-    assert.equal(definitions.length, 11);
+    // + 6 YouTube commands (/watch, /unwatch, /ytstatus, /ytgreet, /ytmod, /ytroast)
+    assert.equal(definitions.length, 12);
     for (const definition of definitions) {
         assert.equal(typeof definition.toJSON, 'undefined');
         assert.equal(typeof definition.name, 'string');
@@ -301,7 +315,7 @@ test('buildDefinitions returns plain JSON payloads ready for the Discord API', (
     }
     assert.deepEqual(
         definitions.map(({ name }) => name),
-        ['play', 'kick', 'ban', 'memory', 'reputation', 'help', 'watch', 'unwatch', 'ytstatus', 'ytgreet', 'ytmod']
+        ['play', 'kick', 'ban', 'memory', 'reputation', 'help', 'watch', 'unwatch', 'ytstatus', 'ytgreet', 'ytmod', 'ytroast']
     );
 });
 

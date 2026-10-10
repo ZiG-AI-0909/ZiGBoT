@@ -63,7 +63,15 @@ function readYouTubeConfig(env = process.env) {
         moderationEnabled: env.YOUTUBE_MODERATION !== 'false',
         moderationQuotaReserve: number('YOUTUBE_MOD_QUOTA_RESERVE', 400),
         maxModerationActionsPerStream: number('YOUTUBE_MAX_MOD_ACTIONS_PER_STREAM', 25),
-        moderationActionCooldownMs: number('YOUTUBE_MOD_ACTION_COOLDOWN_MS', 2000)
+        moderationActionCooldownMs: number('YOUTUBE_MOD_ACTION_COOLDOWN_MS', 2000),
+        roastEnabled: env.YOUTUBE_ROAST !== 'false',
+        roastMembers: env.YOUTUBE_ROAST_MEMBERS === 'true',
+        maxRoastsPerStream: number('YOUTUBE_MAX_ROASTS_PER_STREAM', 25),
+        roastIntervalMs: number('YOUTUBE_ROAST_INTERVAL_MS', 10_000),
+        roastViewerCooldownMs: number('YOUTUBE_ROAST_VIEWER_COOLDOWN_MS', 120_000),
+        roastAiTimeoutMs: number('YOUTUBE_ROAST_AI_TIMEOUT_MS', 8_000),
+        roastAiRateLimitMax: number('YOUTUBE_ROAST_AI_RATE_LIMIT_MAX', 2, 1),
+        roastAiRateLimitWindowMs: number('YOUTUBE_ROAST_AI_RATE_LIMIT_WINDOW_MS', 60_000, 1)
     };
 }
 

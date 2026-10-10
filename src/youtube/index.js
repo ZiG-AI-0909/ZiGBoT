@@ -20,6 +20,7 @@ const { readYouTubeConfig, withinActiveHours } = require('./config');
 const { hasDirtyLanguage, getPlayfulRoast } = require('./chatModeration');
 const { Greetings } = require('./greetings');
 const { YouTubeCommandRouter } = require('./commands');
+const { RateLimiter } = require('../ai/rateLimiter');
 const brain = require('../db/brain');
 
 const state = {
@@ -37,7 +38,8 @@ const state = {
     botTitle: null,
     moderation: null,
     discordClient: null,
-    discordSettings: null
+    discordSettings: null,
+    ai: null
 };
 
 function log(message) {
@@ -67,6 +69,7 @@ async function initYouTube(youtubeConfigOverride = null, deps = {}) {
     state.config = config;
     state.discordClient = deps.discordClient || null;
     state.discordSettings = deps.settings || { logChannelId: process.env.LOG_CHANNEL_ID || '' };
+    state.ai = deps.ai || null;
     if (deps.youtube) {
         state.youtube = deps.youtube;
     } else {
@@ -193,8 +196,11 @@ async function watch({ videoId, liveChatId = null, title = '', via = 'manual' })
         onNotice: (message) => notice(`watch ${videoId}: ${message}`) });
     state.moderation = new YouTubeCommandRouter({ youtube: state.youtube, videoId, liveChatId,
         ownerId: state.ownerId, selfId: state.selfId, botTitle: state.botTitle, config: state.config, greetings: state.greetings,
-        brain, discordClient: state.discordClient, settings: state.discordSettings,
+        brain, discordClient: state.discordClient, settings: state.discordSettings, ai: state.ai,
+        roastRateLimiter: new RateLimiter({ max: state.config.roastAiRateLimitMax || 2,
+            windowMs: state.config.roastAiRateLimitWindowMs || 60_000 }),
         onNotice: (message) => notice(`watch ${videoId}: ${message}`) });
+    state.greetings.roastMode = state.moderation.roast;
     const timedOutUsers = new Set();
     const roastCooldowns = new Map();
     state.watcher = startChatMonitor({
@@ -343,6 +349,21 @@ async function handleYtModCommand(value, isOwnerDiscord) {
     return `✅ YouTube moderation ${normalized === 'on' ? 'enabled' : 'disabled'}.`;
 }
 
+async function handleYtRoastCommand(value, isOwnerDiscord) {
+    if (!state.enabled) return '❌ YouTube support is not enabled.';
+    if (!isOwnerDiscord) return null;
+    if (state.config?.roastEnabled === false) return '⚠️ YouTube roast commands are disabled by YOUTUBE_ROAST.';
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!['on', 'off', 'status'].includes(normalized)) return '⚠️ Use `/ytroast on`, `/ytroast off`, or `/ytroast status`.';
+    if (normalized === 'status') {
+        const roast = state.moderation?.roast;
+        return `✅ YouTube roast mode ${roast?.mode ? 'on' : 'off'}; ${roast?.roastsSent || 0} roasts sent and ${roast?.aiCalls || 0} AI calls this stream.`;
+    }
+    if (!state.moderation?.roast) return '⚠️ Start watching a stream before changing roast mode.';
+    state.moderation.roast.mode = normalized === 'on';
+    return `✅ YouTube roast mode ${normalized} for this stream.`;
+}
+
 /** True if the Discord-side /watch /unwatch commands should even be registered. */
 function isYouTubeReady() {
     return state.enabled && Boolean(state.ownerId);
@@ -360,8 +381,12 @@ function getYouTubeStatus() {
         quotaRemaining: YT_API.quotaRemaining(),
         greetings: state.greetings ? state.greetings.enabled : Boolean(state.config?.greetingsEnabled),
         repliesSent: state.greetings?.repliesSent || 0,
+        messagesSent: state.greetings?.messagesSent || 0,
         moderation: state.moderation ? state.moderation.active : Boolean(state.config?.moderationEnabled),
         moderationActions: state.moderation?.actionsUsed || 0,
+        roastMode: Boolean(state.moderation?.roast?.mode),
+        roastsSent: state.moderation?.roast?.roastsSent || 0,
+        roastAiCalls: state.moderation?.roast?.aiCalls || 0,
         notices: state.noticeLog.slice(-20)
     };
 }
@@ -412,6 +437,7 @@ module.exports = {
     handleUnwatchCommand,
     handleYtGreetCommand,
     handleYtModCommand,
+    handleYtRoastCommand,
     isYouTubeReady,
     getYouTubeStatus,
     stopAll,

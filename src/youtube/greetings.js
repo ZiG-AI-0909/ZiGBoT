@@ -62,7 +62,7 @@ class Greetings {
         this.clock = clock; this.random = random; this.setTimer = setTimer; this.clearTimer = clearTimer;
         this.onNotice = onNotice; this.api = api; this.enabled = Boolean(config.greetingsEnabled);
         this.greeted = new Set(); this.seen = new Set(); this.mentionAt = new Map();
-        this.queue = []; this.sending = false; this.lastSentAt = null; this.repliesSent = 0;
+        this.queue = []; this.sending = false; this.lastSentAt = null; this.repliesSent = 0; this.messagesSent = 0;
         this.previousTemplate = null; this.disabledNotice = false; this.reserveNotice = false;
         this.capNotice = false; this.persistenceNotice = false; this.timer = null;
         this.maxReplies = Number.isFinite(config.maxRepliesPerStream) ? config.maxRepliesPerStream : DEFAULT_MAX_REPLIES_PER_STREAM;
@@ -109,6 +109,13 @@ class Greetings {
         if (mention && now - (this.mentionAt.get(author.channelId) ?? -Infinity) < this.mentionCooldown) return false;
         if (this.queue.length + Number(this.sending) >= this.maxPending) return false;
         const type = mention ? 'mention' : 'greeting';
+        if (greeting && !mention && this.roastMode?.mode) {
+            this.greeted.add(author.channelId);
+            const result = await this.roastMode.roast({ ...author, channelId: author.channelId }, 'roast-mode greeting', message);
+            if (result.ok) return true;
+            // A failed or filtered roast falls back to a friendly template. A crisis
+            // still receives only a friendly greeting; it is never sent to the model.
+        }
         const text = this.makeReply(type, safeName(author.displayName));
         this.queue.push({ type, channelId: author.channelId, text });
         if (type === 'mention') this.mentionAt.set(author.channelId, now);
@@ -126,9 +133,13 @@ class Greetings {
     }
 
     enqueueText(text, { quotaReserve = this.reserve } = {}) {
+        return this.enqueueChatText(text, { quotaReserve, type: 'moderation' });
+    }
+
+    enqueueChatText(text, { quotaReserve = this.reserve, type = 'moderation', onSent = null, onFailed = null } = {}) {
         const messageText = String(text || '').replace(/[\p{Cc}\p{Cf}\r\n]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 199);
         if (!messageText || this.queue.length + Number(this.sending) >= this.maxPending) return false;
-        this.queue.push({ type: 'moderation', channelId: null, text: messageText, quotaReserve });
+        this.queue.push({ type, channelId: null, text: messageText, quotaReserve, onSent, onFailed });
         this.pump();
         return true;
     }
@@ -136,7 +147,7 @@ class Greetings {
     setGreetingsEnabled(enabled) {
         this.enabled = Boolean(enabled);
         if (!this.enabled) {
-            this.queue = this.queue.filter((item) => item.type === 'moderation');
+            this.queue = this.queue.filter((item) => ['moderation', 'roast'].includes(item.type));
             if (this.timer) this.clearTimer(this.timer);
             this.timer = null;
         }
@@ -145,7 +156,7 @@ class Greetings {
 
     async pump() {
         if (this.sending || !this.queue.length) return;
-        if (!this.enabled && this.queue[0].type !== 'moderation') return;
+        if (!this.enabled && !['moderation', 'roast'].includes(this.queue[0].type)) return;
         const wait = this.lastSentAt === null ? 0 : this.outgoingInterval - (this.clock() - this.lastSentAt);
         if (wait > 0) {
             this.timer = this.setTimer(() => { this.timer = null; this.pump(); }, wait);
@@ -155,13 +166,20 @@ class Greetings {
         const reply = this.queue.shift();
         try {
             if (['greeting', 'mention'].includes(reply.type) && this.repliesSent >= this.maxReplies) {
-                this.queue = this.queue.filter((item) => item.type === 'moderation');
+                this.queue = this.queue.filter((item) => ['moderation', 'roast'].includes(item.type));
+                if (typeof reply.onFailed === 'function') await reply.onFailed('greeting reply cap reached');
                 if (!this.capNotice) { this.capNotice = true; this.onNotice('YouTube reply cap reached for this stream; replies paused until the next stream.'); }
                 return;
             }
             if (this.api.quotaRemaining() - 20 < (reply.quotaReserve ?? this.reserve)) {
                 const minimumReserve = reply.quotaReserve ?? this.reserve;
-                this.queue = this.queue.filter((item) => item.type === 'moderation' && (item.quotaReserve ?? this.reserve) < minimumReserve);
+                const retained = [];
+                for (const item of this.queue) {
+                    if (['moderation', 'roast'].includes(item.type) && (item.quotaReserve ?? this.reserve) < minimumReserve) retained.push(item);
+                    else await this.failQueuedItem(item, 'quota reserve reached before send');
+                }
+                this.queue = retained;
+                if (typeof reply.onFailed === 'function') await reply.onFailed('quota reserve reached before send');
                 if (!this.reserveNotice) { this.reserveNotice = true; this.onNotice('YouTube replies paused to preserve the configured API quota reserve.'); }
                 return;
             }
@@ -169,6 +187,8 @@ class Greetings {
                 part: 'snippet', requestBody: { snippet: { liveChatId: this.liveChatId, type: 'textMessageEvent', textMessageDetails: { messageText: reply.text } } }
             }, { costUnits: 20, budget: this.config.quotaBudgetPerDay });
             if (['greeting', 'mention'].includes(reply.type)) this.repliesSent += 1;
+            this.messagesSent += 1;
+            if (typeof reply.onSent === 'function') await reply.onSent();
             this.lastSentAt = this.clock();
             if (reply.type === 'greeting') {
                 try { await this.brain?.recordYtGreetedViewer?.(this.videoId, reply.channelId); }
@@ -176,24 +196,40 @@ class Greetings {
             }
         } catch (error) {
             const kind = error?.yt?.kind || this.api.classifyYouTubeError(error);
+            if (typeof reply.onFailed === 'function') await reply.onFailed(`YouTube send failed (${kind})`);
             if ([this.api.KIND.FORBIDDEN, this.api.KIND.AUTH].includes(kind)) {
-                this.enabled = false; this.queue.length = 0;
+                this.enabled = false;
+                await this.failQueued('YouTube sending is disabled for this stream');
                 if (!this.disabledNotice) {
                     this.disabledNotice = true;
                     this.onNotice(`YouTube greeting replies disabled for this stream (${kind}); the bot channel may not be allowed to post in this chat.`);
                 }
             } else if (kind === this.api.KIND.QUOTA) {
-                this.queue.length = 0;
+                await this.failQueued('YouTube quota exhausted');
                 if (!this.reserveNotice) { this.reserveNotice = true; this.onNotice('YouTube greeting replies paused because the API quota is exhausted.'); }
             }
             // Transient send failures drop this reply; the chat reader continues.
         } finally {
             this.sending = false;
-            if (this.queue.length && (this.enabled || this.queue[0].type === 'moderation')) this.pump();
+            if (this.queue.length && (this.enabled || ['moderation', 'roast'].includes(this.queue[0].type))) this.pump();
         }
     }
 
-    stop() { if (this.timer) this.clearTimer(this.timer); this.timer = null; this.queue.length = 0; }
+    async failQueuedItem(item, reason) {
+        if (typeof item?.onFailed !== 'function') return;
+        try { await item.onFailed(reason); } catch { /* queue cleanup must stay safe */ }
+    }
+
+    async failQueued(reason) {
+        const pending = this.queue.splice(0);
+        await Promise.all(pending.map((item) => this.failQueuedItem(item, reason)));
+    }
+
+    stop() {
+        if (this.timer) this.clearTimer(this.timer);
+        this.timer = null;
+        void this.failQueued('YouTube watcher stopped');
+    }
 }
 
 module.exports = {
