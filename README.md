@@ -1,5 +1,7 @@
 # ZiGBoT — Complete Project Documentation
 
+> **Multi-server + web dashboard:** ZiGBoT can now be used in any server, with per-server AI behaviour, role mappings and channels configured from a Next.js dashboard (Vercel) backed by Supabase. See **[MULTI_SERVER.md](MULTI_SERVER.md)** for architecture, security model and deployment steps.
+
 **ZiGBoT** (v1.0.0) is a witty, stress-relieving Discord chat companion and auto-reply bot. It mingles with server members, lightens the mood with dry Gen-Z / Hinglish humor, and offers fun conversation to de-stress. Built on **Node.js** with **discord.js** and LLM integrations (**NVIDIA NIM** / OpenAI-compatible APIs).
 
 - **Personality:** Savage roast mode by default; gentle/wholesome mode for members with specific roles; JARVIS-like respect for the verified server owner.

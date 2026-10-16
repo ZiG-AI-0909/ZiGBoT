@@ -83,6 +83,12 @@ function loadSettings() {
         discordToken: process.env.DISCORD_TOKEN,
         nvidiaApiKey: process.env.NVIDIA_API_KEY,
         serverOwnerId: process.env.SERVER_OWNER_ID || '',
+        // Multi-server dashboard (optional). The service-role key is a
+        // server-side secret: only this worker and the dashboard's server
+        // routes may hold it.
+        homeGuildIds: parseList(process.env.HOME_GUILD_IDS),
+        supabaseUrl: process.env.SUPABASE_URL || '',
+        supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
         guildOwnerIds: guildConfig.owners,
         guildAdminRoleNames: guildConfig.adminRoles,
         aiRateLimitMax: Number(process.env.AI_RATE_LIMIT_MAX || 8),

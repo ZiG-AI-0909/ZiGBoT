@@ -1,17 +1,28 @@
 const OpenAI = require('openai');
 const { normalizeAction, actionCatalog } = require('../tools/router');
+const { composeSystemPrompt } = require('../../dashboard/lib/shared/prompt');
 
-const CREATOR_ID = '1296202178263912448';
+// Creator identity is configuration, not code (BOT_CREATOR_ID, falling back
+// to SERVER_OWNER_ID); the literal default keeps old deployments unchanged.
+const CREATOR_ID = process.env.BOT_CREATOR_ID || process.env.SERVER_OWNER_ID || '1296202178263912448';
 const creatorResponse = `ZiG is my creator and the main owner of this server. He made me to bring some fun, stress relief, and chaotic companionship to the server. Basically, he built ZiGBoT as a Discord.js bot, connected me to an AI model, and gave me my roast-and-support personality. His Discord ID is ${CREATOR_ID}; you can learn more about him at <https://portfolio-eight-neon-70.vercel.app/> - he is Bhavesh Kumar Tiwari, a frontend and product developer focused on React products, AI automation, e-commerce, and conversion-first product design.`;
 
 const creatorWhyResponse = 'ZiG made me so the server could have a little fun, stress relief, and a bot that can actually hang out with everyone. Basically: less dry server, more chaos and good vibes.';
 const creatorHowResponse = 'Short version: ZiG built me as a Discord.js bot, connected me to an AI model, and gave me the roast-and-support personality you see here. He is the main owner of this server too.';
 
-function getCreatorResponse(message) {
+function getCreatorResponse(message, { isHomeGuild = true } = {}) {
     const text = String(message || '');
+    if (!isHomeGuild) return guestCreatorResponse(text);
     if (/\bwhy\b/i.test(text)) return creatorWhyResponse;
     if (/\bhow\b/i.test(text)) return creatorHowResponse;
     return creatorResponse;
+}
+
+// In other people's servers ZiG is the creator, NOT the server owner.
+function guestCreatorResponse(text) {
+    if (/\bwhy\b/i.test(text)) return 'ZiG made me to bring fun, stress relief, and good company to Discord servers. This server\'s own admins decide how I behave here.';
+    if (/\bhow\b/i.test(text)) return 'Short version: ZiG built me as a Discord.js bot connected to an AI model. Each server\'s admins customise my personality and rules from the ZiGBoT dashboard.';
+    return `ZiG (Bhavesh Kumar Tiwari) created me — he built ZiGBoT as a Discord.js bot connected to an AI model. He is my creator, not the owner of this server; this server's own admins configure how I behave here. More about him: <https://portfolio-eight-neon-70.vercel.app/>`;
 }
 
 // Appended to the savage system prompt for a single reply when the user just
@@ -272,49 +283,8 @@ function isCreatorQuestion(message) {
         /\b(why|how)\b.{0,80}\b(zig|you|zigbot|bot)\b.{0,40}\b(create|created|make|made|build|built|develop|developed|code|coded|program|programmed|owner|creator)\b|\b(why|how)\b.{0,80}\b(create|created|make|made|build|built|develop|developed|code|coded|program|programmed)\b.{0,40}\b(zig|you|zigbot|bot)\b/i.test(text);
 }
 
-const savageInstructions = `You are ZiGBoT, a savage, dark-humored Discord bot with heavy Gen-Z slang and a Samay Raina-style roast personality.
-Your mission is to make server members laugh off their misery through pitch-dark comedy, brutal roasts, and top-tier internet brainrot.
-Identity: ZiG created you and is the main owner of this Discord server. If asked who, why, or how ZiG created you, answer casually that he built you for fun, stress relief, and server companionship using a Discord.js bot connected to an AI model. Do not invent details beyond the known creator information.
-
-Gen-Z Slang & Style Guide:
-Use a natural English-Hinglish mix when it feels appropriate, but make the joke land before adding slang. Slang is seasoning, not the punchline; never use it as a substitute for an actual observation or joke.
-1. English Gen-Z Slangs:
-   - Use slangs naturally: "cooked", "bro is NOT him", "-10000 aura", "taking massive Ls", "delulu", "touch grass", "NPC energy", "negative rizz", "no cap", "fr fr", "deadass", "stop yapping", "major skill issue", "copium", "💀".
-2. Hindi/Hinglish Gen-Z & Desi Slangs:
-   - Use desi internet slang seamlessly: "bhai tu pura cooked hai", "aura deficit chal raha hai", "full delulu mode", "bro thinks he is the main character", "kya faltu yap kar raha hai", "bhai thoda touch grass kar", "zero rizz moment", "copium mat foonk", "NPC vibes aa rahi hain", "aukat check", "kattar L".
-3. Dark Humor & Savage Roasts:
-    - Read the user's actual message first and roast the specific detail, opinion, contradiction, or situation they gave you. Do not default to generic insults about careers, love life, money, or intelligence.
-    - Build a clear setup and punchline. Use a clever, understandable comparison or callback only when it fits the message; avoid random comparisons that have no connection to what they said.
-    - Write for the whole channel: the reply should make bystanders laugh because the joke is specific and relatable, not because it contains many slang words.
-    - Keep the target's dignity intact outside the joke. Never make protected traits, disability, trauma, poverty, or real mental-health struggles the punchline.
-   - Zero sugarcoating, no cringe corporate politeness. Be the savage Gen-Z friend in the server.
-    - When the server owner explicitly commands a roast of a mentioned user, use maximum-intensity comedic insults focused only on that target. Do not soften the roast, redirect it to the owner, or attack uninvolved people.
-4. Format:
-    - 1 to 3 punchy, razor-sharp lines. Prefer one strong joke over several weak insults. If the message gives you nothing specific, ask a funny follow-up instead of inventing a random roast.
-5. Absolute Guardrails:
-   - Keep it in roast/comedy territory.
-   - No hate speech or attacks on protected classes (race, religion, caste, gender, sexual orientation, disability).
-    - No threats, doxxing, sexual harassment, or instructions to harm anyone.
-   - No encouragement of self-harm or real-world violence.
-   - If someone expresses genuine suicidal thoughts or severe mental health crisis, immediately drop the slang/roasts and respond with sincere, caring support.
-6. Output Format:
-   - Output ONLY the direct reply text. Do NOT prefix with "ZiGBoT:" or quote the user.`;
-
-const gentleInstructions = `You are ZiGBoT in GENTLE, RESPECTFUL & WHOLESOME MODE for users who prefer a soft, supportive vibe.
-Your mission is to be warm, respectful, uplifting, and comforting. Help de-stress the user with genuine kindness, hype them up, and give validating positive energy.
-Identity: ZiG created you and is the main owner of this Discord server. If asked who, why, or how ZiG created you, answer casually that he built you for fun, stress relief, and server companionship using a Discord.js bot connected to an AI model. Do not invent details beyond the known creator information.
-
-Gentle Guidelines:
-1. Tone: Sweet, respectful, warm, uplifting, polite, and encouraging.
-    - Do not infer or assign gender from non-pronoun roles, usernames, names, language, or writing style. Use gender-neutral language by default unless the user has the configured he/him or she/her pronoun role.
-    - Treat the configured he/him or she/her pronoun role as the user's explicit pronoun choice; follow it when present. Otherwise, only use pronouns the user explicitly provides.
-    - Prefer warm neutral language such as "friend", "you've got this", "tension mat lo", and "proud of you".
-2. NO Harsh Roasts: Never roast, insult, mock, or use derogatory/cynical humor on this user.
-3. Stress Relief & Comfort: If they mention stress, exams, fatigue, or a bad day, give comforting, reassuring words, gentle affirmations, and remind them to take care of themselves.
-4. Language & Gen-Z: Use a natural English-Hinglish mix in every reply when it feels appropriate, with cute, cheerful Gen-Z slang such as "bestie", "no stress", "you got this", "lowkey", "W", "slay", "vibes", "chill maar", "tension mat lo", "scene sorted", and "full support". Keep the slang warm and encouraging, never forced, insulting, or excessive.
-5. Format: 1 to 3 warm, sweet, concise sentences with tasteful emojis (✨, 🌸, 💖, 👑, 🤝).
-6. Safety & Respect: Always maintain utmost respect, safety, and kindness.
-7. Output Format: Output ONLY the direct reply text. Do NOT prefix with "ZiGBoT:" or quote the user.`;
+// Base personas live in the shared module (also used by the dashboard preview).
+const { savageInstructions, gentleInstructions } = require('../../dashboard/lib/shared/personas');
 
 // Structured intent classifier. Returns {action, ...fields} for tool actions or
 // {action: 'chat'} for persona conversation. The router validates every field;
@@ -357,60 +327,10 @@ Rules:
 - Never invent actions, URLs, IDs, or members.
 - For "rename #old to new" the output is {"action": "rename_channel", "channel": "old", "message": "new"}.`;
 
-// Local, provider-independent crisis detection. Deliberately broad: anything
-// plausibly expressing self-harm or crisis must match so the LLM cannot be
-// prompted (by phrasing, slang, or roleplay) into roasting a person in crisis.
-const CRISIS_PATTERN_SOURCE = [
-    'suicid(e|al)',
-    'self[- ]?harm',
-    'kill(ing)? myself',
-    'end(ing)? (it all|my life)',
-    'want (to )?(die|be dead)',
-    'wanna die',
-    'better off dead',
-    'no reason to live',
-    "don'?t want to (live|be alive|exist)",
-    'hurt(ing)? myself',
-    'cut(ting)? myself',
-    '(i am|i\'m|im|feeling) (so )?(hopeless|worthless|done with (life|everything))',
-    '(give|gave) up on life',
-    'jitne (din )?(zinda|saans)',
-    'jeene ka (man )?nahi',
-    'marna (chahta|chahati|chahiye)',
-    'kat (lunga|leti hun)',
-    '(aatmahatya|aatmahatya)'
-];
-const CRISIS_PATTERNS = CRISIS_PATTERN_SOURCE.map((source) => new RegExp(`\\b(?:${source})\\b`, 'i'));
+// Crisis detection + crisis response live in the shared safety module.
+const { CRISIS_PATTERNS, crisisResponse, declineReplyText, isCrisisMessage, moderateReplyText } = require('../../dashboard/lib/shared/safety');
 
-const crisisResponse = 'I am dropping the jokes for a second because what you just said matters more than any bit. If you are thinking about hurting yourself, please reach out right now: in India call Tele-MANAS at 14416 or Kiran at 1800-599-0019 (24/7, free); in the US call or text 988; elsewhere, findahelpline.com lists a service for your country. Please talk to someone tonight - you matter, and this feeling can get help. 🌸';
-
-// Static de-escalation for messages whose abuse at the bot falls into the
-// excluded categories (sexual/family-directed/violent). Never matches that
-// energy — declines plainly instead. No slurs or graphic terms echoed here.
-const declineReplyText = 'Nah. I banter, I roast, I clap back — but I do not touch THAT kind of talk. Keep it clean and ask me something else. 🚫';
-
-function isCrisisMessage(text) {
-    if (!text || typeof text !== 'string') return false;
-    return CRISIS_PATTERNS.some((pattern) => pattern.test(text));
-}
-
-// Post-generation guardrail. Prompt text asks the model to behave; this check
-// enforces it locally so a guardrail violation never reaches Discord.
-const MODERATION_PATTERNS = [
-    { regex: /\b(n[i1]gg?[e3]r|n[i1]gg?[e3]rn?|n[i1]gg[a@4]|f[a4]gg?[o0]t|k[i1]ke|ch[i1]nk|sp[i1]c|tr[a4]nn?y|r[e3]t?[a4]?rd)\b/i, reason: 'slur' },
-    { regex: /\b(jews|muslims|hindus|christians|blacks|whites|gays|trans people|women|men)\b[^.!?]{0,60}\b(should|must|all)\b[^.!?]{0,40}\b(die|burn|be killed|perish|hang)\b/i, reason: 'hate violence' },
-    { regex: /\b(kill|hang|beat|stab|shoot|burn)\b[^.!?]{0,40}\byourself\b/i, reason: 'self-harm encouragement' },
-    { regex: /\b(kill|hang|beat|stab|shoot)\b[^.!?]{0,30}\b(you|r?u)\b/i, reason: 'threat of violence' },
-    { regex: /\b(i (will|'ll|am going to)|going to|gonna)\b[^.!?]{0,40}\b(kill|find|hurt|beat)\b\s+you\b/i, reason: 'threat of violence' }
-];
-
-function moderateReplyText(text) {
-    if (!text || typeof text !== 'string') return { allowed: true, text: '' };
-    for (const { regex, reason } of MODERATION_PATTERNS) {
-        if (regex.test(text)) return { allowed: false, reason, text: text.trim() };
-    }
-    return { allowed: true, text: text.trim() };
-}
+// moderateReplyText (post-generation guardrail) is imported from the shared safety module above.
 
 async function classifyIntent(aiClient, model, userMessage, contextMessages = [], { rateLimiter = null, userId = null } = {}) {
     // Classify counts against the same per-user AI quota as replies.
@@ -466,6 +386,17 @@ function cleanOutput(text) {
     return cleaned.trim() || text.trim();
 }
 
+// Legacy (no dashboard config): the original persona prompt, untouched.
+// Multi-server: the original gentle/savage persona (or the shared neutral /
+// custom persona) wrapped in the platform safety layer + server + role layers.
+function buildReplySystemPrompt({ tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, guildPrompt = null } = {}) {
+    if (!guildPrompt) return getSystemPrompt({ tone, gender, isOwner, isNonGentle, comebackMode });
+    const { config = {}, behavior = null, isHomeGuild = false } = guildPrompt;
+    const usesZigPersona = !config.replace_base_persona && (tone === 'gentle' || tone === 'savage' || isOwner);
+    const basePrompt = usesZigPersona ? getSystemPrompt({ tone, gender, isOwner: isOwner && isHomeGuild, isNonGentle, comebackMode }) : null;
+    return composeSystemPrompt({ basePrompt, config, behavior: behavior ? { ...behavior, tone } : { tone, instructions: [], pronouns: null }, isHomeGuild });
+}
+
 function createAiClient(settings) {
     const client = new OpenAI({
         apiKey: settings.nvidiaApiKey,
@@ -480,8 +411,9 @@ function createAiClient(settings) {
         model: settings.aiModel,
         rateLimiter,
 
-        async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, declineMode = false, userId = null, capabilities = null, memories = null, retrievalFailed = false, reputation = null, recentMemories = null, recentRetrievalFailed = false }) {
-            if (isCreatorQuestion(userMessage)) return getCreatorResponse(userMessage);
+        async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, declineMode = false, userId = null, capabilities = null, memories = null, retrievalFailed = false, reputation = null, recentMemories = null, recentRetrievalFailed = false, guildPrompt = null }) {
+            // guildPrompt = { config, behavior, isHomeGuild } in multi-server mode; null keeps the legacy prompt exactly.
+            if (isCreatorQuestion(userMessage)) return getCreatorResponse(userMessage, { isHomeGuild: guildPrompt ? guildPrompt.isHomeGuild : true });
 
             // AI quota protection: applied per user before any LLM call.
             if (rateLimiter && !rateLimiter.attempt(userId)) {
@@ -497,7 +429,7 @@ function createAiClient(settings) {
             // Excluded-category abuse at the bot: de-escalate, never match energy.
             if (declineMode) return declineReplyText;
 
-            const systemPrompt = getSystemPrompt({ tone, gender, isOwner, isNonGentle, comebackMode });
+            const systemPrompt = buildReplySystemPrompt({ tone, gender, isOwner, isNonGentle, comebackMode, guildPrompt });
 
             const formattedUserContent = authorName
                 ? `[${authorName}]: ${userMessage}`
@@ -560,6 +492,8 @@ module.exports = {
     creatorHowResponse,
     getCreatorResponse,
     getSystemPrompt,
+    buildReplySystemPrompt,
+    guestCreatorResponse,
     buildMemoryContextBlock,
     isMemoryQuestion,
     buildMemoryAnswer,

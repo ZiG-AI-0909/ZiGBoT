@@ -2,10 +2,10 @@ const crypto = require('node:crypto');
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { auditLog } = require('../logging/auditLog');
 
-function isConfirmationActor(message, settings, userId) {
+function isConfirmationActor(message, settings, userId, action = null) {
     if (!userId || userId !== message.author?.id) return false;
     const { isAuthorizedActor } = require('../tools/router');
-    return isAuthorizedActor({ author: { id: userId }, member: message.member, guild: message.guild }, settings).allowed;
+    return isAuthorizedActor({ author: { id: userId }, member: message.member, guild: message.guild }, settings, { action }).allowed;
 }
 
 function requestConfirmation(message, settings, intent, execute) {
@@ -25,7 +25,7 @@ function requestConfirmation(message, settings, intent, execute) {
         collector.on('collect', async (interaction) => {
             // Clicker must be the original requester AND an authorized actor
             // (verified owner, per-guild owner, or configured admin role).
-            if (!isConfirmationActor(message, settings, interaction.user.id)) {
+            if (!isConfirmationActor(message, settings, interaction.user.id, intent.action)) {
                 await interaction.reply({ content: '❌ Only the requesting owner or an authorized admin may confirm this action.', ephemeral: true });
                 return;
             }

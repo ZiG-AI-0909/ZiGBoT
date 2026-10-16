@@ -39,6 +39,16 @@ const { registerSlashCommands, interactionToIntent, runYouTubeInteraction } = re
 const { initYouTube } = require('./youtube');
 const brain = require('./db/brain');
 const { startHealthServer } = require('./health');
+const { GuildConfigStore } = require('./guildConfig/store');
+const {
+    behaviorForMember,
+    channelAllowed,
+    isChatChannel,
+    buildGuildSettings,
+    pronounsToGender,
+    hasFeature
+} = require('./guildConfig/context');
+const { version: BOT_VERSION } = require('../package.json');
 
 function logAiError(error) {
     if (error?.rateLimited) {
@@ -70,6 +80,54 @@ const ai = createAiClient({
     })
 });
 
+// Per-server configuration (Supabase). Without SUPABASE_URL +
+// SUPABASE_SERVICE_ROLE_KEY the store runs in legacy mode: every server
+// behaves exactly like the original env-configured single-server bot.
+const guildStore = new GuildConfigStore({
+    settings,
+    supabaseUrl: settings.supabaseUrl,
+    serviceRoleKey: settings.supabaseServiceRoleKey
+});
+console.log(`[ZiGBoT CONFIG] Per-server config mode: ${guildStore.mode}${guildStore.mode === 'legacy' ? ' (set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to enable the dashboard)' : ''}`);
+
+// Resolve everything the handlers need for one guild event. Never throws.
+async function guildRuntime(guild, member) {
+    if (!guild) return { ctx: null, gSettings: settings, behavior: null };
+    const ctx = await guildStore.getGuildContext(guild);
+    return { ctx, gSettings: buildGuildSettings(settings, ctx), behavior: behaviorForMember(ctx, member) };
+}
+
+// Legacy env role rules (the original gentle/savage/pronoun behaviour) apply
+// when there is no dashboard config, or when a server opted into them.
+function usesLegacyRoleRules(ctx) {
+    return !ctx || ctx.mode === 'legacy' || Boolean(ctx.config?.legacy_role_rules);
+}
+
+// Tone + pronoun resolution for one member. Role mappings set by the
+// dashboard win over legacy env rules; the verified owner is always gentle.
+function resolveToneAndGender(ctx, behavior, member, { isOwner = false } = {}) {
+    const legacy = usesLegacyRoleRules(ctx);
+    const isNonGentle = legacy && isNonGentleMember(member, settings.nonGentleRoleNames);
+    const legacyGentle = legacy && !isOwner && !isNonGentle && isGentleMember(member, settings.gentleRoleNames, member?.guild?.id, settings.nonGentleRoleNames);
+    const mappedTone = behavior?.primary && (behavior.matchedRoleIds || []).length > 0 && behavior.tone;
+    let tone;
+    if (isOwner) tone = 'gentle';
+    else if (legacy && !mappedTone) tone = legacyGentle ? 'gentle' : 'savage';
+    else tone = behavior?.tone || 'gentle';
+    if (tone === 'savage' && behavior && !hasFeature(behavior, 'roast')) tone = 'gentle';
+    const gender = behavior?.pronouns
+        ? pronounsToGender(behavior.pronouns)
+        : legacy
+            ? getMemberGender(member, settings.femaleRoleNames, settings.maleRoleNames, settings.femaleRoleIds, settings.maleRoleIds)
+            : null;
+    return { tone, gender, isNonGentle };
+}
+
+function guildPromptFor(ctx, behavior) {
+    if (!ctx || ctx.mode !== 'multi') return null; // legacy prompt, unchanged
+    return { config: ctx.config, behavior, isHomeGuild: ctx.isHomeGuild };
+}
+
 // Core persistence: MongoDB Atlas (native driver). Warn features depend on
 // it, so warnStore is only set after a successful connectBrain() below.
 let warnStore = null;
@@ -85,7 +143,18 @@ const client = new Client({
 });
 
 client.once(Events.ClientReady, async (c) => {
-    console.log(`✅ ${c.user.tag} is online and ready! (Mention-driven mode with role-based personas active)`);
+    console.log(`✅ ${c.user.tag} is online and ready in ${c.guilds.cache.size} server(s)! (Mention-driven mode with role-based personas active)`);
+    // Make sure every server the bot is in has a config row (safe defaults
+    // for new servers). Failures are logged; the bot keeps running.
+    if (guildStore.enabled) {
+        for (const guild of c.guilds.cache.values()) {
+            await guildStore.ensureGuild(guild).catch((error) => console.error(`[ZiGBoT CONFIG] Seed failed for ${guild.id}: ${error.message}`));
+        }
+        const beat = () => guildStore.heartbeat({ guildCount: c.guilds.cache.size, version: BOT_VERSION })
+            .catch((error) => console.error(`[ZiGBoT CONFIG] Heartbeat failed: ${error.message}`));
+        await beat();
+        setInterval(beat, 60_000).unref();
+    }
     // Slash commands are a secondary interface: a registration failure must
     // never take down the whole bot — keep running in mention-driven mode.
     try {
@@ -111,6 +180,17 @@ client.once(Events.ClientReady, async (c) => {
     }
 });
 
+// New server: register it with safe default settings.
+client.on(Events.GuildCreate, async (guild) => {
+    console.log(`[ZiGBoT CONFIG] Added to server ${guild.id} (${guild.name}).`);
+    await guildStore.ensureGuild(guild).catch((error) => console.error(`[ZiGBoT CONFIG] Seed failed for ${guild.id}: ${error.message}`));
+});
+
+client.on(Events.GuildDelete, async (guild) => {
+    console.log(`[ZiGBoT CONFIG] Removed from server ${guild.id}.`);
+    await guildStore.markRemoved(guild.id).catch((error) => console.error(`[ZiGBoT CONFIG] Uninstall mark failed for ${guild.id}: ${error.message}`));
+});
+
 client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
     try {
@@ -123,9 +203,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
             channel: interaction.channel,
             reply: (payload) => interaction.editReply(payload)
         };
+        const { ctx: interactionCtx, gSettings: interactionSettings } = await guildRuntime(interaction.guild, interaction.member);
+        if (interactionCtx && interactionCtx.config.enabled === false) {
+            await interaction.editReply('ZiGBoT is switched off in this server by its admins.');
+            return;
+        }
 
         if (interaction.commandName === 'help') {
-            const result = await executeTool(fakeMessage, settings, { action: 'bot_help' });
+            const result = await executeTool(fakeMessage, interactionSettings, { action: 'bot_help' });
             await interaction.editReply(result);
             return;
         }
@@ -145,7 +230,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             return;
         }
 
-        const toolResult = await runIntent(fakeMessage, settings, intent, { warnStore });
+        const toolResult = await runIntent(fakeMessage, interactionSettings, intent, { warnStore });
         if (toolResult) {
             await interaction.editReply(toolResult);
             return;
@@ -210,6 +295,13 @@ client.on(Events.MessageCreate, async (message) => {
     // Ignore all bots
     if (message.author.bot || !client.user) return;
 
+    // Per-server context: config is loaded for THIS message's guild only.
+    const { ctx: guildCtx, gSettings, behavior } = await guildRuntime(message.guild, message.member);
+    if (guildCtx && guildCtx.config.enabled === false) return;
+    if (guildCtx && !channelAllowed(guildCtx.config, message.channel)) return;
+    const memoryAllowed = !guildCtx || (guildCtx.config.memory_enabled !== false && hasFeature(behavior, 'memory'));
+    const reputationAllowed = !guildCtx || guildCtx.config.reputation_enabled !== false;
+
     // Check if the bot is directly mentioned (@ZiGBoT) by any user or owner
     const isMentioned = message.mentions.users.has(client.user.id) ||
         message.content.includes(`<@${client.user.id}>`) ||
@@ -228,8 +320,10 @@ client.on(Events.MessageCreate, async (message) => {
         }
     }
 
-    const inChatChannel = settings.chatChannelIds.includes(message.channel.id);
-    const trigger = settings.autoReplyKeywords
+    const inChatChannel = guildCtx
+        ? isChatChannel(guildCtx.config, message.channel)
+        : settings.chatChannelIds.includes(message.channel.id);
+    const trigger = gSettings.autoReplyKeywords
         ? detectTrigger(message.content)
         : { matched: false };
 
@@ -240,7 +334,7 @@ client.on(Events.MessageCreate, async (message) => {
     // a server, whether or not ZiGBoT is configured to reply in that channel.
     // This is selective memory, not a transcript: ordinary chat and crisis
     // content are skipped, and brain.remember refuses credentials.
-    if (message.guild && userMessage && !isCrisisMessage(userMessage)) {
+    if (message.guild && memoryAllowed && userMessage && !isCrisisMessage(userMessage)) {
         try {
             const passive = extractPassiveMemory(userMessage);
             const selective = shouldRemember(userMessage);
@@ -259,35 +353,25 @@ client.on(Events.MessageCreate, async (message) => {
 
     const ownerMemoryTarget = getOwnerMemoryTarget(message, client.user.id, settings);
     // Reply to explicit interactions, configured chat channels, or enabled keywords.
-    const shouldReply = isMentioned || isReplyToBot || inChatChannel || settings.respondToAllMessages || trigger.matched || ownerMemoryTarget;
+    const shouldReply = isMentioned || isReplyToBot || inChatChannel || gSettings.respondToAllMessages || trigger.matched || ownerMemoryTarget;
     if (!shouldReply) return;
+    // A role mapping can switch the AI off for some members (deny "chat").
+    if (!ownerMemoryTarget && !hasFeature(behavior, 'chat')) return;
 
     // The keyword detector is the ONLY reason we are replying — no mention,
     // no direct reply, not an always-on chat channel. This is the sole gate
     // for the occasional-skip / emoji-reaction behaviors further down.
-    const keywordOnlyTrigger = trigger.matched && !isMentioned && !isReplyToBot && !inChatChannel && !settings.respondToAllMessages;
+    const keywordOnlyTrigger = trigger.matched && !isMentioned && !isReplyToBot && !inChatChannel && !gSettings.respondToAllMessages;
 
     if (trigger.matched) {
-        if (!defaultTracker.canTrigger(message.channel.id, message.author.id, settings.cooldownSeconds)) return;
+        if (!defaultTracker.canTrigger(message.channel.id, message.author.id, gSettings.cooldownSeconds)) return;
         defaultTracker.recordTrigger(message.channel.id, message.author.id);
     }
 
     const isOwner = isServerOwner(message, settings);
-    const isNonGentle = isNonGentleMember(message.member, settings.nonGentleRoleNames);
-    const isGentle = !isOwner && !isNonGentle && isGentleMember(
-        message.member,
-        settings.gentleRoleNames,
-        message.guild?.id,
-        settings.nonGentleRoleNames
-    );
-    const tone = isOwner || isGentle ? 'gentle' : 'savage';
-    const gender = getMemberGender(
-        message.member,
-        settings.femaleRoleNames,
-        settings.maleRoleNames,
-        settings.femaleRoleIds,
-        settings.maleRoleIds
-    );
+    const { tone, gender, isNonGentle } = resolveToneAndGender(guildCtx, behavior, message.member, { isOwner });
+    const isGentle = !isOwner && tone !== 'savage';
+    const guildPrompt = guildPromptFor(guildCtx, behavior);
 
     // If a user just mentions @ZiGBoT without any text
     if (!userMessage) {
@@ -369,6 +453,10 @@ client.on(Events.MessageCreate, async (message) => {
     // fabricate memories or deny real ones. Imperative save requests
     // ("remember that...") fall through to the normal chat + save path.
     if (isMemoryQuestion(userMessage) && message.guild) {
+        if (!memoryAllowed) {
+            await message.reply('Long-term memory is turned off for you in this server, so I am not storing or recalling anything about you here.');
+            return;
+        }
         const capabilities = brain.getMemoryCapabilities();
         if (!capabilities.persistentMemory) {
             await message.reply(buildMemoryAnswer({ capabilities }));
@@ -386,7 +474,7 @@ client.on(Events.MessageCreate, async (message) => {
 
     // Reputation transparency: same truth policy as memory — the answer comes
     // from the REAL behavior ledger, or honestly reports unavailability.
-    if (isReputationQuestion(userMessage) && message.guild) {
+    if (isReputationQuestion(userMessage) && message.guild && reputationAllowed) {
         if (!brain.isBehaviorAvailable()) {
             await message.reply(buildReputationAnswer({ available: false }));
             return;
@@ -421,7 +509,7 @@ client.on(Events.MessageCreate, async (message) => {
     }
 
     try {
-        const toolResult = await runIntent(message, settings, intent, {
+        const toolResult = await runIntent(message, gSettings, intent, {
             onVoiceTranscript: handleVoiceTranscript,
             isVoiceListening: isListening,
             warnStore
@@ -452,6 +540,7 @@ client.on(Events.MessageCreate, async (message) => {
     const comebackMode = profanityAtBot.matched
         && profanityAtBot.category === 'profanity'
         && tone === 'savage'
+        && hasFeature(behavior, 'roast')
         && !isOwner;
     const declineMode = profanityAtBot.matched
         && profanityAtBot.category === 'excluded'
@@ -496,7 +585,7 @@ client.on(Events.MessageCreate, async (message) => {
         const capabilities = brain.getMemoryCapabilities();
         let userMemories = null;
         let retrievalFailed = false;
-        if (capabilities.persistentMemory && message.guild) {
+        if (capabilities.persistentMemory && message.guild && memoryAllowed) {
             try {
                 userMemories = await brain.recall(message.guild.id, message.author.id, 5);
             } catch (memoryError) {
@@ -508,7 +597,7 @@ client.on(Events.MessageCreate, async (message) => {
         // Behavior accountability: the AI's treatment adapts to the member's
         // RECORDED standing. Lookup failure must never block the reply.
         let reputation = null;
-        if (brain.isBehaviorAvailable() && message.guild) {
+        if (brain.isBehaviorAvailable() && message.guild && reputationAllowed) {
             try {
                 reputation = await brain.getBehaviorSummary(message.guild.id, message.author.id);
             } catch (behaviorError) {
@@ -522,7 +611,7 @@ client.on(Events.MessageCreate, async (message) => {
         // already in the personal block). Failure degrades silently.
         let recentMemories = null;
         let recentRetrievalFailed = false;
-        if (brain.isMemoryAvailable() && message.guild) {
+        if (brain.isMemoryAvailable() && message.guild && (!guildCtx || guildCtx.config.memory_enabled !== false)) {
             try {
                 recentMemories = await brain.recallRecent(message.guild.id, {
                     limit: 15,
@@ -550,7 +639,8 @@ client.on(Events.MessageCreate, async (message) => {
             retrievalFailed,
             reputation,
             recentMemories,
-            recentRetrievalFailed
+            recentRetrievalFailed,
+            guildPrompt
         });
 
         await deliverAiReply(message, replyText, { log: logReplyPacing });
@@ -560,7 +650,7 @@ client.on(Events.MessageCreate, async (message) => {
         defaultMemory.addMessage(message.channel.id, 'assistant', replyText);
 
         // ---- Behavior recording (best-effort, never blocks the reply) ----
-        if (message.guild) {
+        if (message.guild && reputationAllowed) {
             const { negative, positive } = detectBehaviorSignals(userMessage);
             // Structural spam check: repeated identical content >= 3 in 10s.
             // Profanity aimed AT the bot in roast territory is the bot's job,
@@ -590,7 +680,12 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
         guild,
         member: guild.members.cache.get(userId)
     };
-    const intent = buildVoiceTranscriptRoute(routeContext, transcript, settings, client.user.id);
+    const { ctx: voiceCtx, gSettings: voiceSettings, behavior: voiceBehavior } = await guildRuntime(guild, routeContext.member);
+    if (voiceCtx && voiceCtx.config.enabled === false) return;
+    if (voiceBehavior && !hasFeature(voiceBehavior, 'chat')) return;
+    const voiceMemoryAllowed = !voiceCtx || (voiceCtx.config.memory_enabled !== false && hasFeature(voiceBehavior, 'memory'));
+    const voiceReputationAllowed = !voiceCtx || voiceCtx.config.reputation_enabled !== false;
+    const intent = buildVoiceTranscriptRoute(routeContext, transcript, voiceSettings, client.user.id);
 
     if (intent.voiceNotice) {
         await channel.send(intent.voiceNotice).catch(() => {});
@@ -598,7 +693,7 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
     }
 
     try {
-        const toolResult = await runIntent({ author: { id: userId }, channel, guild, member: routeContext.member }, settings, intent, { viaVoice: true, warnStore });
+        const toolResult = await runIntent({ author: { id: userId }, channel, guild, member: routeContext.member }, voiceSettings, intent, { viaVoice: true, warnStore });
         if (toolResult) {
             await channel.send(toolResult).catch(() => {});
             return;
@@ -615,13 +710,7 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
     try {
         const member = guild.members.cache.get(userId);
         const authorName = member?.displayName || member?.user?.username || 'Someone';
-        const isNonGentle = isNonGentleMember(member, settings.nonGentleRoleNames);
-        const isGentle = !isNonGentle && isGentleMember(
-            member,
-            settings.gentleRoleNames,
-            guild.id,
-            settings.nonGentleRoleNames
-        );
+        const { tone: voiceTone, gender: voiceGender, isNonGentle } = resolveToneAndGender(voiceCtx, voiceBehavior, member);
         const memoryKey = `voice:${guild.id}`;
         const history = defaultMemory.getHistory(memoryKey);
 
@@ -629,7 +718,7 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
         const capabilities = brain.getMemoryCapabilities();
         let userMemories = null;
         let retrievalFailed = false;
-        if (capabilities.persistentMemory) {
+        if (capabilities.persistentMemory && voiceMemoryAllowed) {
             try {
                 userMemories = await brain.recall(guild.id, userId, 5);
             } catch {
@@ -637,7 +726,7 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
             }
         }
         let reputation = null;
-        if (brain.isBehaviorAvailable()) {
+        if (brain.isBehaviorAvailable() && voiceReputationAllowed) {
             try {
                 reputation = await brain.getBehaviorSummary(guild.id, userId);
             } catch {
@@ -649,34 +738,31 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
             userMessage: transcript,
             authorName,
             contextMessages: history,
-            tone: isGentle ? 'gentle' : 'savage',
-            gender: getMemberGender(
-                member,
-                settings.femaleRoleNames,
-                settings.maleRoleNames,
-                settings.femaleRoleIds,
-                settings.maleRoleIds
-            ),
+            tone: voiceTone,
+            gender: voiceGender,
             isNonGentle,
             userId,
             capabilities,
             memories: userMemories,
             retrievalFailed,
-            reputation
+            reputation,
+            guildPrompt: guildPromptFor(voiceCtx, voiceBehavior)
         });
 
         defaultMemory.addMessage(memoryKey, 'user', transcript, authorName);
         defaultMemory.addMessage(memoryKey, 'assistant', replyText);
 
         // Voice transcripts feed the same accountability ledger as text.
-        const voiceSignals = detectBehaviorSignals(transcript);
-        await recordBehaviorSignals(guild.id, userId, voiceSignals.negative, 'voice-scan');
-        await recordBehaviorSignals(guild.id, userId, voiceSignals.positive, 'voice-scan');
+        if (voiceReputationAllowed) {
+            const voiceSignals = detectBehaviorSignals(transcript);
+            await recordBehaviorSignals(guild.id, userId, voiceSignals.negative, 'voice-scan');
+            await recordBehaviorSignals(guild.id, userId, voiceSignals.positive, 'voice-scan');
+        }
 
         // Selective long-term save from voice, same rules as text.
         try {
             const candidate = shouldRemember(transcript);
-            if (candidate.should && brain.isMemoryAvailable()) {
+            if (candidate.should && voiceMemoryAllowed && brain.isMemoryAvailable()) {
                 await brain.remember(guild.id, userId, candidate.content, candidate.type, {
                     authorName,
                     keyword: extractTopicKeyword(candidate.content)

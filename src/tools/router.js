@@ -8,6 +8,9 @@ const { joinMemberVoiceChannel, leaveGuildVoice, isInGuildVoice } = require('../
 const music = require('../music/player');
 const { startListening, stopListening } = require('../voice/voiceConversation');
 const brain = require('../db/brain');
+const { ACTION_FEATURES } = require('../../dashboard/lib/shared/constants');
+const { hasFeature } = require('../../dashboard/lib/shared/resolve');
+const { behaviorForMember } = require('../guildConfig/context');
 const BEHAVIOR_SIGNALS = {
     POSITIVE: { HELPFUL: 'helpful', SUPPORTIVE: 'supportive', KIND: 'kind', DEESCALATION: 'deescalation' },
     NEGATIVE: { TOXIC: 'toxic', SLURS: 'slurs', HARASSMENT: 'harassment', SPAM: 'spam', WARNING: 'warning' }
@@ -139,14 +142,28 @@ async function denied(message, settings, intent, reason) {
 //      actual guild owner), kept intact as a fallback, extended per guild by
 //      GUILD_OWNER_IDS and ADMIN_ROLE_NAMES.
 //   2. botPermission() — the bot's own Discord permissions (unchanged).
-function isAuthorizedActor(message, settings) {
+//   3. Multi-server (dashboard-configured guilds): the REAL Discord guild
+//      owner or a member with the Administrator permission is allowed.
+//      Anyone else needs BOTH the role-mapped feature for the action
+//      (moderation / admin_tools) AND the actual Discord permission the
+//      action requires (e.g. Kick Members for kick). Role mappings can only
+//      narrow access; they never grant a permission the member lacks.
+function memberHasPermission(member, permission) {
+    try {
+        return Boolean(member?.permissions?.has?.(permission));
+    } catch {
+        return false;
+    }
+}
+
+function isAuthorizedActor(message, settings, { action = null } = {}) {
     const strictOwner = ownerAuthorization(message, settings);
     if (strictOwner.allowed) return { allowed: true };
 
     const authorId = message.author?.id;
     if (!authorId || !message.guild) return { allowed: false, reason: strictOwner.reason };
 
-    // Per-guild configured owner IDs (multi-server support).
+    // Per-guild configured owner IDs (legacy GUILD_CONFIG env support).
     if (settings.guildOwnerIds instanceof Map && settings.guildOwnerIds.get(message.guild.id) === authorId) {
         return { allowed: true };
     }
@@ -159,11 +176,31 @@ function isAuthorizedActor(message, settings) {
         if (hasAdminRole) return { allowed: true };
     }
 
-    return { allowed: false, reason: strictOwner.reason };
+    const ctx = settings.guildContext;
+    if (!ctx || ctx.mode !== 'multi' || String(ctx.guildId) !== String(message.guild.id)) {
+        return { allowed: false, reason: strictOwner.reason };
+    }
+
+    // Trusted gateway data only: guild.ownerId and member.permissions.
+    if (message.guild.ownerId && message.guild.ownerId === authorId) return { allowed: true };
+    const member = message.member;
+    if (!member) return { allowed: false, reason: 'I could not verify your server membership.' };
+    if (memberHasPermission(member, PermissionFlagsBits.Administrator)) return { allowed: true };
+
+    const feature = ACTION_FEATURES[action] || 'admin_tools';
+    const behavior = behaviorForMember(ctx, member);
+    if (!hasFeature(behavior, feature)) {
+        return { allowed: false, reason: `Your roles are not allowed to use ${feature === 'moderation' ? 'moderation' : 'admin'} tools in this server. A server admin can change this in the ZiGBoT dashboard.` };
+    }
+    const required = (action && actionCatalog.get(action)?.permission) || PermissionFlagsBits.ManageGuild;
+    if (!memberHasPermission(member, required)) {
+        return { allowed: false, reason: 'You do not have the Discord permission this action needs.' };
+    }
+    return { allowed: true };
 }
 
 async function authorize(message, settings, intent, permission) {
-    const owner = isAuthorizedActor(message, settings);
+    const owner = isAuthorizedActor(message, settings, { action: intent.action });
     if (!owner.allowed) return denied(message, settings, intent, owner.reason);
     // null permission = no Discord-level permission needed (e.g. memory_status);
     // the owner/admin identity gate above is the whole check for those.
@@ -181,6 +218,12 @@ async function executeTool(message, settings, intent, context = {}) {
     if (adminActions.has(intent.action)) {
         const failure = await authorize(message, settings, intent, actionCatalog.get(intent.action).permission);
         if (failure) return failure;
+    } else if (ACTION_FEATURES[intent.action] && settings.guildContext?.mode === 'multi') {
+        // Member-level features (music, voice) can be switched off per server or per role.
+        const behavior = behaviorForMember(settings.guildContext, message.member);
+        if (!hasFeature(behavior, ACTION_FEATURES[intent.action])) {
+            return `❌ ${ACTION_FEATURES[intent.action] === 'music' ? 'Music' : 'Voice'} commands are turned off for you in this server.`;
+        }
     }
 
     // Warn storage is optional: warns are no-ops until the database is wired.
@@ -243,7 +286,7 @@ async function executeTool(message, settings, intent, context = {}) {
                 const words = text(intent.message, 'Words', 500);
                 const guard = moderateReplyText(words);
                 if (!guard.allowed) {
-                    auditLog(message, settings, 'say', 'Blocked inappropriate words via voice guardrail.');
+                    await auditLog({ message, settings, event: 'SECURITY', action: 'say', target: 'voice', result: 'BLOCKED', details: { reason: guard.reason } });
                     result = '❌ I am not saying that.';
                     break;
                 }

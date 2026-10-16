@@ -174,12 +174,21 @@ function pickReactionEmoji({ isKeywordTriggered = false, triggerType = null, rng
 // window), then optionally split into 2-3 messages with short gaps between
 // them. Returns the number of messages sent. `deps` lets tests inject a
 // fake rng/sleep so runs are deterministic.
-async function deliverAiReply(message, replyText, {
+// AI-written text must never mass-ping a server: break @everyone/@here and
+// role mentions with a zero-width space (user mentions stay intact).
+function neutralizeMassMentions(text) {
+    return String(text ?? '')
+        .replace(/@(everyone|here)\b/gi, '@\u200b$1')
+        .replace(/<@&(\d+)>/g, '<@\u200b&$1>');
+}
+
+async function deliverAiReply(message, rawReplyText, {
     isToolResult = false,
     rng = DEFAULT_RNG,
     sleep = DEFAULT_SLEEP,
     log = () => {}
 } = {}) {
+    const replyText = neutralizeMassMentions(rawReplyText);
     // Roll the split chance first so the rng call order stays deterministic
     // for tests: split decision -> (split tie-breaks) -> typing delay.
     const shouldAttemptSplit = !isToolResult && rng() < MULTI_MESSAGE_SPLIT_CHANCE;
@@ -235,6 +244,7 @@ module.exports = {
     MULTI_MESSAGE_MIN_WORDS,
     MULTI_MESSAGE_MAX_PARTS,
     // functions
+    neutralizeMassMentions,
     computeTypingDelay,
     canSplit,
     splitReply,

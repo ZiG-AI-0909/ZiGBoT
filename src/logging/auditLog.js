@@ -14,6 +14,9 @@ async function auditLog({ message, settings, event, action, target, result, deta
     // action that is being audited — just skip the channel mirror.
     if (!message.client?.channels) return;
     const channel = await message.client.channels.fetch(settings.logChannelId).catch(() => null);
+    // Multi-server isolation: never mirror one server's audit events into a
+    // log channel that belongs to a different server.
+    if (channel?.guildId && message.guild?.id && channel.guildId !== message.guild.id) return;
     if (channel?.isTextBased()) {
         await channel.send(`\`${entry.slice(0, 1900)}\``).catch(() => {});
     }
