@@ -3,8 +3,9 @@ import { handler, json, readJson, HttpError } from '@/lib/http';
 import { requireGuildAdmin } from '@/lib/auth';
 import { assignableRoles } from '@/lib/discord';
 import { loadMappings } from '@/lib/guildData';
+import { loadPlan } from '@/lib/billing';
 
-const { validateRoleMappings } = shared;
+const { validateRoleMappings, mappingsPremiumError } = shared;
 
 export const dynamic = 'force-dynamic';
 
@@ -30,6 +31,12 @@ export const PUT = handler(async (request, { params }) => {
     if (!result.ok) throw new HttpError(422, 'Some role mappings need fixing.', { mappingErrors: result.errors });
 
     const gid = String(guild.id);
+    // Free servers are capped; a lapsed server may keep (not grow) what it saved while Premium.
+    const plan = await loadPlan(guild);
+    if (!plan.premium && mappingsPremiumError(result.value)) {
+        const { count } = await supabase.from('zb_role_mappings').select('role_id', { count: 'exact', head: true }).eq('guild_id', gid);
+        if (result.value.length > (count || 0)) throw new HttpError(403, mappingsPremiumError(result.value), { mappingErrors: [{ _: mappingsPremiumError(result.value) }] });
+    }
     const rows = result.value.map((m) => ({ ...m, guild_id: gid }));
     if (rows.length > 0) {
         const { error } = await supabase.from('zb_role_mappings').upsert(rows, { onConflict: 'guild_id,role_id' });

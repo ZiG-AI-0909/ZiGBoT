@@ -20,6 +20,9 @@ const {
     defaultGuildConfig,
     sanitizeStoredConfig,
     sanitizeStoredMappings,
+    isPremiumActive,
+    applyPlanToConfig,
+    applyPlanToMappings,
     CONFIG_CACHE_TTL_MS
 } = require('../../dashboard/lib/shared');
 
@@ -39,7 +42,8 @@ function legacyContext(guild, settings) {
         source: 'env',
         guildId: String(guild?.id || ''),
         isHomeGuild: home,
-        // Legacy mode = pre-multi-server behaviour for every server.
+        // Legacy mode = pre-multi-server behaviour for every server (no plans).
+        premium: true,
         config: defaultGuildConfig({ guildId: guild?.id, legacy: true, legacySettings: settings }),
         mappings: []
     };
@@ -129,6 +133,8 @@ class GuildConfigStore {
             source,
             guildId: String(guild.id),
             isHomeGuild: home,
+            // The owner's home server is always Premium.
+            premium: home,
             config: defaultGuildConfig({ guildId: guild.id, legacy: home, legacySettings: this.settings }),
             mappings: []
         };
@@ -138,9 +144,10 @@ class GuildConfigStore {
         const guildId = String(guild.id);
         if (!SNOWFLAKE.test(guildId)) return this.defaultContext(guild);
         const id = encodeURIComponent(guildId);
-        const [configs, mappings] = await Promise.all([
+        const [configs, mappings, subscription] = await Promise.all([
             this.request(`zb_guild_configs?guild_id=eq.${id}&select=*`),
-            this.request(`zb_role_mappings?guild_id=eq.${id}&select=*&order=priority.desc`)
+            this.request(`zb_role_mappings?guild_id=eq.${id}&select=*&order=priority.desc`),
+            this.loadSubscription(guildId)
         ]);
         const row = Array.isArray(configs) ? configs[0] : null;
         if (!row) {
@@ -152,14 +159,35 @@ class GuildConfigStore {
         }
         // Defence in depth: a row for another guild must never be used.
         if (String(row.guild_id) !== guildId) throw new Error('Config row guild mismatch');
+        const home = isHomeGuild(guild, this.settings);
+        const premium = home || isPremiumActive(subscription, this.now());
+        // Free servers: Premium-only settings are ignored here, even if they
+        // were saved while the server was Premium.
         return {
             mode: 'multi',
             source: 'db',
             guildId,
-            isHomeGuild: isHomeGuild(guild, this.settings),
-            config: sanitizeStoredConfig(row, { guildId }),
-            mappings: sanitizeStoredMappings((mappings || []).filter((m) => String(m.guild_id) === guildId))
+            isHomeGuild: home,
+            premium,
+            config: applyPlanToConfig(sanitizeStoredConfig(row, { guildId }), premium),
+            mappings: applyPlanToMappings(sanitizeStoredMappings((mappings || []).filter((m) => String(m.guild_id) === guildId)), premium)
         };
+    }
+
+    /**
+     * The server's subscription row, or null. A failure here (e.g. the
+     * Premium migration not applied yet) must not break config loading: the
+     * server is then treated as free until the next load.
+     */
+    async loadSubscription(guildId) {
+        try {
+            const rows = await this.request(`zb_guild_subscriptions?guild_id=eq.${encodeURIComponent(guildId)}&select=guild_id,status,current_period_end,plan_period`);
+            const row = Array.isArray(rows) ? rows[0] : null;
+            return row && String(row.guild_id) === guildId ? row : null;
+        } catch (error) {
+            this.logger.error?.(`[ZiGBoT CONFIG] Subscription lookup failed for guild ${guildId}: ${error.message}`);
+            return null;
+        }
     }
 
     /** Upsert guild metadata and create a default config if none exists. */

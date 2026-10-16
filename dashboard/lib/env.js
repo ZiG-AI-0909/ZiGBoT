@@ -27,5 +27,24 @@ export const env = {
     get aiModel() { return process.env.AI_MODEL || 'openai/gpt-oss-20b'; },
     get siteUrl() { return (process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/+$/, ''); },
     get homeGuildIds() { return (process.env.HOME_GUILD_IDS || '').split(',').map((s) => s.trim()).filter(Boolean); },
-    get botCreatorId() { return process.env.BOT_CREATOR_ID || ''; }
+    get botCreatorId() { return process.env.BOT_CREATOR_ID || ''; },
+
+    // ZiGBoT Premium via Razorpay Subscriptions (optional; all of these enable billing).
+    // Test-mode keys (rzp_test_…) and live keys (rzp_live_…) work the same way.
+    get razorpayKeyId() { return required('RAZORPAY_KEY_ID'); },
+    get razorpayKeySecret() { return required('RAZORPAY_KEY_SECRET'); },
+    get razorpayWebhookSecret() { return required('RAZORPAY_WEBHOOK_SECRET'); },
+    get razorpayPlans() { return { monthly: process.env.RAZORPAY_PLAN_MONTHLY || '', yearly: process.env.RAZORPAY_PLAN_YEARLY || '' }; },
+    // Display-only labels shown on the upgrade buttons (the real price lives in the Razorpay plan).
+    get premiumPriceLabels() { return { monthly: process.env.PREMIUM_PRICE_MONTHLY || '', yearly: process.env.PREMIUM_PRICE_YEARLY || '' }; },
+    // Checkout needs the API keys and both plans. The webhook secret is only
+    // needed by the webhook route (Checkout's verify step + sync work without it,
+    // e.g. on localhost where Razorpay cannot reach a webhook).
+    get billingEnabled() {
+        return Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET
+            && process.env.RAZORPAY_PLAN_MONTHLY && process.env.RAZORPAY_PLAN_YEARLY);
+    },
+    get webhookEnabled() {
+        return this.billingEnabled && Boolean(process.env.RAZORPAY_WEBHOOK_SECRET);
+    }
 };

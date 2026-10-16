@@ -66,7 +66,12 @@ test('store: each server gets its own config; changing A never affects B', async
             { guild_id: GA, custom_system_prompt: 'Pirate mode', default_tone: 'neutral' },
             { guild_id: GB, custom_system_prompt: 'Shakespeare mode', default_tone: 'gentle' }
         ],
-        zb_role_mappings: [{ guild_id: GA, role_id: R_MOD, tier: 'moderator', allowed_features: ['moderation'] }]
+        zb_role_mappings: [{ guild_id: GA, role_id: R_MOD, tier: 'moderator', allowed_features: ['moderation'] }],
+        // Custom personas are Premium-only, so both test servers are Premium.
+        zb_guild_subscriptions: [
+            { guild_id: GA, status: 'active', plan_period: 'monthly' },
+            { guild_id: GB, status: 'active', plan_period: 'yearly' }
+        ]
     };
     const { fetchImpl, calls } = fakeSupabase(tables);
     let now = 0;
@@ -108,7 +113,11 @@ test('store: a new server is seeded with safe defaults; the home server with leg
 });
 
 test('store: Supabase outages never crash the bot (stale cache, then defaults)', async () => {
-    const tables = { zb_guild_configs: [{ guild_id: GA, custom_system_prompt: 'Cached' }], zb_role_mappings: [] };
+    const tables = {
+        zb_guild_configs: [{ guild_id: GA, custom_system_prompt: 'Cached' }],
+        zb_role_mappings: [],
+        zb_guild_subscriptions: [{ guild_id: GA, status: 'active', plan_period: 'monthly' }]
+    };
     const { fetchImpl } = fakeSupabase(tables);
     let now = 0;
     const errors = [];

@@ -1,4 +1,5 @@
 import 'server-only';
+import { cache } from 'react';
 import shared from './shared';
 import { createUserClient, createServiceClient } from './supabase/server';
 import { getGuild, getMember } from './discord';
@@ -6,13 +7,17 @@ import { HttpError } from './http';
 
 const { discordIdFromUser, decideGuildAccess, SNOWFLAKE } = shared;
 
-/** The logged-in user, validated by Supabase Auth (getUser() checks the JWT server-side). */
-export async function getCurrentUser() {
+/**
+ * The logged-in user, validated by Supabase Auth (getUser() checks the JWT server-side).
+ * Memoized per request with React cache(), so a page that calls it and then
+ * requireGuildAdmin() makes one auth round trip, not two.
+ */
+export const getCurrentUser = cache(async () => {
     const supabase = await createUserClient();
     const { data, error } = await supabase.auth.getUser();
     if (error || !data?.user) return null;
     return { user: data.user, discordId: discordIdFromUser(data.user), supabase };
-}
+});
 
 export async function requireUser() {
     const current = await getCurrentUser();
@@ -27,13 +32,23 @@ export async function requireUser() {
  *   the member -> computed permissions (owner / Administrator / Manage Server).
  * Runs on every privileged request. On success it refreshes the short-lived
  * zb_guild_admins row that the RLS policies require; on failure it deletes it.
+ *
+ * `onVerified(guild)` (optional) starts extra bot-token reads the moment
+ * access is granted, so they overlap the two verification writes below. Its
+ * promise is returned as `early`; nothing from it reaches the caller unless
+ * the decision allowed access.
  */
-export async function requireGuildAdmin(guildId) {
+export async function requireGuildAdmin(guildId, { onVerified = null } = {}) {
     const current = await requireUser();
     if (!SNOWFLAKE.test(String(guildId || ''))) throw new HttpError(400, 'Invalid server id.');
 
-    const guild = await getGuild(guildId);
-    const member = guild ? await getMember(guildId, current.discordId) : null;
+    // Guild and member are independent reads: fetch them together. A member
+    // lookup for a server the bot is not in just returns null.
+    const [guild, fetchedMember] = await Promise.all([
+        getGuild(guildId),
+        getMember(guildId, current.discordId)
+    ]);
+    const member = guild ? fetchedMember : null;
     const decision = decideGuildAccess({ guild, member, discordUserId: current.discordId });
     const service = createServiceClient();
 
@@ -41,6 +56,10 @@ export async function requireGuildAdmin(guildId) {
         await service.from('zb_guild_admins').delete().match({ user_id: current.user.id, guild_id: String(guildId) });
         throw new HttpError(decision.status, decision.reason, { code: decision.code });
     }
+
+    const early = onVerified ? onVerified(guild) : null;
+    // If a write below throws, the early reads must not surface as an unhandled rejection.
+    early?.catch(() => {});
 
     const nowIso = new Date().toISOString();
     const { error: guildError } = await service.from('zb_guilds').upsert({
@@ -62,5 +81,5 @@ export async function requireGuildAdmin(guildId) {
     }, { onConflict: 'user_id,guild_id' });
     if (adminError) throw new Error(`zb_guild_admins upsert failed: ${adminError.message}`);
 
-    return { ...current, guild, member, decision };
+    return { ...current, guild, member, decision, early };
 }

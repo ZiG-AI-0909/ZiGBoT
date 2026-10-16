@@ -3,6 +3,7 @@ import shared from './shared';
 import { createServiceClient } from './supabase/server';
 import { getChannels, textChannels, assignableRoles, guildIconUrl } from './discord';
 import { env } from './env';
+import { loadPlan } from './billing';
 
 const { defaultGuildConfig, sanitizeStoredConfig, sanitizeStoredMappings } = shared;
 
@@ -44,13 +45,21 @@ export async function loadBotStatus() {
     return { online, lastSeen: lastSeen?.toISOString() || null, guildCount: data?.guild_count ?? null, version: data?.version || null };
 }
 
+/**
+ * Reads that need no RLS row (bot-token channels, heartbeat). Pass as
+ * requireGuildAdmin's onVerified so they run alongside its verification writes.
+ */
+export function prefetchGuildExtras(guild) {
+    return Promise.all([getChannels(guild.id), loadBotStatus()]);
+}
+
 /** Everything the editor needs, all scoped to one verified guild. */
-export async function loadGuildBundle({ supabase, guild, decision }) {
-    const [config, mappings, channels, botStatus] = await Promise.all([
+export async function loadGuildBundle({ supabase, guild, decision, early = null }) {
+    const [config, mappings, [channels, botStatus], plan] = await Promise.all([
         loadConfig(supabase, guild),
         loadMappings(supabase, guild.id),
-        getChannels(guild.id),
-        loadBotStatus()
+        early || prefetchGuildExtras(guild),
+        loadPlan(guild)
     ]);
     return {
         guild: {
@@ -64,6 +73,7 @@ export async function loadGuildBundle({ supabase, guild, decision }) {
         mappings,
         roles: assignableRoles(guild),
         channels: textChannels(channels),
-        botStatus: { installed: true, ...botStatus }
+        botStatus: { installed: true, ...botStatus },
+        plan
     };
 }

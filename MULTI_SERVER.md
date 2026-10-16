@@ -120,6 +120,44 @@ Crisis detection and the output moderation filter are also enforced in code, so 
 ### Database (`zb_*` tables)
 `zb_profiles`, `zb_guilds`, `zb_user_guilds` (OAuth server list), `zb_guild_admins` (verification proofs), `zb_guild_configs`, `zb_role_mappings`, `zb_config_audit_log`, `zb_bot_heartbeat`, `zb_preview_usage`. All have RLS enabled and anon has no grants. Browser users can only read and write servers they were verified for in the last 15 minutes.
 
+## ZiGBoT Premium (Razorpay)
+
+Premium is **per server**, sold as a Razorpay subscription (monthly or yearly). Buyers pay on Razorpay's hosted page with UPI Autopay, cards (Indian and international) or netbanking. It unlocks:
+
+| Perk | Free server | Premium server |
+|---|---|---|
+| AI reply limit per member | `AI_RATE_LIMIT_MAX` (8/min) | `AI_RATE_LIMIT_PREMIUM_MAX` (30/min) |
+| Custom persona / replace persona | locked | yes |
+| Role mappings | 3 (highest priority) | up to 50 |
+| Voice chat and music | off | yes |
+
+**Servers you own are always Premium, for free.** Any server whose Discord owner is you (`SERVER_OWNER_ID` on the bot, `BOT_CREATOR_ID` on the dashboard) or that is listed in `HOME_GUILD_IDS` gets every Premium feature without paying. Legacy mode (no Supabase) has no plans, so everything works as before.
+
+### How it works
+1. An admin clicks **Monthly** or **Yearly** in the dashboard's **Premium** tab. `POST /api/guilds/<id>/billing/checkout` creates a Razorpay subscription with `notes.guild_id = <server id>` from the plan configured on the server (the browser never sends a price), stores its ID, and returns the public key ID and subscription ID.
+2. The dashboard loads Razorpay **Standard Checkout** (`checkout.razorpay.com/v1/checkout.js`, only when someone pays) and opens the payment modal. On success Razorpay returns `razorpay_payment_id`, `razorpay_subscription_id` and `razorpay_signature`, which go to `POST /api/guilds/<id>/billing/verify`. That endpoint:
+   - requires all three fields (400 otherwise),
+   - accepts only a subscription this server started,
+   - checks `HMAC-SHA256(payment_id + "|" + subscription_id, RAZORPAY_KEY_SECRET)` in constant time (400 on mismatch; nothing is activated),
+   - then re-fetches the subscription from Razorpay and stores it. Premium switches on when Razorpay reports it `active`; until then the tab re-checks every 5 seconds.
+   If the Checkout script is blocked (for example by an ad-blocker), the buyer is sent to Razorpay's hosted page (`short_url`) instead.
+   The Content-Security-Policy allows only what Checkout needs: scripts from `checkout.razorpay.com`, frames from `api.razorpay.com`/`checkout.razorpay.com`, and Razorpay's API/telemetry hosts.
+3. Razorpay also calls `/api/billing/razorpay/webhook` for activation, renewals, failed charges, halts, cancellations and completion. Every delivery must carry a valid `X-Razorpay-Signature` (HMAC-SHA256 of the raw body with our webhook secret). The subscription is then re-fetched from Razorpay; the event body itself is never trusted.
+4. Rows live in `zb_guild_subscriptions`. Only the service role can write it; admins can read their own server's row (RLS). An unpaid checkout never replaces a running Premium: it waits in `pending_subscription_id`.
+5. The bot reads the plan with the server's config (30 s cache) and enforces it at runtime. When a member of a **free** server hits the AI limit, ZiGBoT replies that the free version is exhausted and points to Premium via the website link in its Discord profile (set that link in the Developer Portal: **General Information → Description**). A lapsed server loses Premium features even if Premium settings are still saved. Those settings are kept, unused, until the server re-subscribes.
+
+**Statuses:** `active` = Premium. `pending` (a renewal failed and Razorpay is retrying) and `cancelled` = Premium until the paid period ends. `created`, `authenticated`, `halted`, `completed`, `expired` and `paused` = free. Cancelling from the dashboard uses `cancel_at_cycle_end`, so Premium stays until the end of the paid period.
+
+### Setup
+1. Run `supabase/migrations/20261017000000_zigbot_premium.sql` in the Supabase SQL Editor (or `supabase db push`). It is safe to run again, and upgrades the earlier PayPal draft of the table if you ran that.
+2. **dashboard.razorpay.com → Account & Settings → API Keys:** generate keys in **Test Mode** first. Copy the Key ID and Key Secret.
+3. **Subscriptions → Plans:** create two plans (monthly and yearly, in INR). Copy the plan IDs (`plan_…`).
+4. **Account & Settings → Webhooks → Add new webhook:** URL `https://<dashboard>/api/billing/razorpay/webhook`, a secret you choose, and these events: `subscription.authenticated`, `subscription.activated`, `subscription.charged`, `subscription.pending`, `subscription.halted`, `subscription.cancelled`, `subscription.completed`, `subscription.updated`, `subscription.paused`, `subscription.resumed`.
+5. **International payments:** request activation under **Account & Settings → International Payments**. Razorpay reviews this separately. Until it is approved only Indian payment methods work. International cards are charged in INR and converted by the buyer's bank. Ask Razorpay support whether recurring (subscription) charges on international cards are enabled for your account.
+6. **Vercel env:** `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` (**secret**), `RAZORPAY_PLAN_MONTHLY`, `RAZORPAY_PLAN_YEARLY`, `RAZORPAY_WEBHOOK_SECRET` (**secret**), plus the display labels `PREMIUM_PRICE_MONTHLY` / `PREMIUM_PRICE_YEARLY`. Checkout appears once the keys and both plans are set. The webhook (renewals, failures, cancellations) needs `RAZORPAY_WEBHOOK_SECRET`; without it `/api/billing/razorpay/webhook` answers 503. Never give the key secret a `NEXT_PUBLIC_` prefix: the public key ID reaches the browser through the checkout response.
+7. **Render env (bot):** optionally `AI_RATE_LIMIT_PREMIUM_MAX`.
+8. Test the whole flow in Test Mode with Razorpay's test cards and UPI IDs. Then switch to Live keys, recreate the plans and webhook in Live mode, and update the env vars.
+
 ## Known limitations
 * Config changes reach the bot within about 30 s (cache TTL).
 * The server list refreshes at login (Discord's OAuth token is used once and never stored). Every action is still verified live.

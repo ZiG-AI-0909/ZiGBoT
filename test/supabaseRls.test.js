@@ -10,7 +10,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const MIGRATION = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261016000000_zigbot_multiserver.sql'), 'utf8');
+// Every migration, in filename (timestamp) order, exactly as Supabase applies them.
+const MIGRATIONS_DIR = path.join(__dirname, '..', 'supabase', 'migrations');
+const MIGRATION = fs.readdirSync(MIGRATIONS_DIR)
+    .filter((name) => name.endsWith('.sql'))
+    .sort()
+    .map((name) => fs.readFileSync(path.join(MIGRATIONS_DIR, name), 'utf8'))
+    .join('\n');
 
 const A = '00000000-0000-4000-8000-00000000000a'; // admin of G1
 const B = '00000000-0000-4000-8000-00000000000b'; // admin of G2
@@ -75,6 +81,9 @@ test.before(async () => {
         insert into public.zb_profiles (user_id, discord_user_id, username) values
             ('${A}', '100000000000000001', 'alice'), ('${B}', '100000000000000002', 'bob');
         insert into public.zb_user_guilds (user_id, guild_id, can_manage) values ('${A}', '${G1}', true), ('${B}', '${G2}', true);
+        insert into public.zb_guild_subscriptions (guild_id, subscription_id, plan_period, status) values
+            ('${G1}', 'sub_G1Subscription01', 'monthly', 'active'),
+            ('${G2}', 'sub_G2Subscription02', 'yearly', 'active');
     `);
 });
 
@@ -164,4 +173,27 @@ test('service role (bot worker / server routes) bypasses RLS', async () => {
     await asService();
     const all = await db.query('select guild_id from public.zb_guild_configs order by guild_id');
     assert.deepEqual(all.rows.map((r) => r.guild_id), [G1, G2]);
+});
+
+test('premium: admins read only their own server subscription and can never write one', async () => {
+    await as(A);
+    const own = await db.query('select guild_id, status from public.zb_guild_subscriptions');
+    assert.deepEqual(own.rows.map((r) => r.guild_id), [G1], 'only the verified server is visible');
+    await rejects("update public.zb_guild_subscriptions set status = 'active' where guild_id = $1", [G1], /permission denied/);
+    await rejects("insert into public.zb_guild_subscriptions (guild_id, subscription_id, plan_period, status) values ($1, 'sub_FakePremium001', 'yearly', 'active')", [G2], /permission denied/);
+    await rejects('delete from public.zb_guild_subscriptions', [], /permission denied/);
+
+    await as(C); // verification expired
+    assert.equal((await db.query('select * from public.zb_guild_subscriptions')).rows.length, 0);
+    await as(null);
+    await rejects('select * from public.zb_guild_subscriptions', [], /permission denied/);
+});
+
+test('premium: the database rejects malformed subscription rows even from the service role', async () => {
+    await asService();
+    await rejects("update public.zb_guild_subscriptions set subscription_id = 'not-an-id' where guild_id = $1", [G1], /check constraint/);
+    await rejects("update public.zb_guild_subscriptions set plan_period = 'lifetime' where guild_id = $1", [G1], /check constraint/);
+    await rejects("update public.zb_guild_subscriptions set provider = 'paypal' where guild_id = $1", [G1], /check constraint/);
+    await rejects("update public.zb_guild_subscriptions set pending_subscription_id = 'I-PAYPAL0001' where guild_id = $1", [G1], /check constraint/);
+    await rejects("update public.zb_guild_subscriptions set status = 'paid' where guild_id = $1", [G1], /check constraint/);
 });

@@ -22,11 +22,13 @@ export default async function DashboardHome() {
     let profile = null;
     let loadError = null;
     try {
-        const [{ data: rows, error }, { data: prof }] = await Promise.all([
+        const [{ data: rows, error }, { data: prof }, status] = await Promise.all([
             // RLS: only this user's own rows.
             current.supabase.from('zb_user_guilds').select('guild_id, name, icon, fetched_at').eq('can_manage', true).order('name'),
-            current.supabase.from('zb_profiles').select('username, avatar_url').eq('user_id', current.user.id).maybeSingle()
+            current.supabase.from('zb_profiles').select('username, avatar_url').eq('user_id', current.user.id).maybeSingle(),
+            loadBotStatus()
         ]);
+        botStatus = status;
         if (error) throw error;
         guilds = rows || [];
         profile = prof || { username: current.user.user_metadata?.full_name || '' };
@@ -35,7 +37,6 @@ export default async function DashboardHome() {
             const { data: flags } = await createServiceClient().from('zb_guilds').select('guild_id, bot_installed').in('guild_id', guilds.map((g) => g.guild_id));
             installed = new Map((flags || []).map((f) => [f.guild_id, f.bot_installed]));
         }
-        botStatus = await loadBotStatus();
     } catch (error) {
         console.error('[dashboard] server list failed:', error?.message);
         loadError = error?.publicMessage || 'Could not load your servers right now. Refresh to try again.';

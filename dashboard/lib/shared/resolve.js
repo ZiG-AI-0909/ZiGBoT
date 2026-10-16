@@ -17,6 +17,7 @@
  * Discord permission (checked in the bot's router).
  */
 const { DEFAULT_MEMBER_FEATURES, LIMITS } = require('./constants');
+const { PREMIUM_ONLY_FEATURES } = require('./premium');
 
 function orderMappings(mappings, memberRoleIds, rolePositions = new Map()) {
     const owned = new Set((memberRoleIds || []).map(String));
@@ -27,7 +28,7 @@ function orderMappings(mappings, memberRoleIds, rolePositions = new Map()) {
             || String(a.role_id).localeCompare(String(b.role_id)));
 }
 
-function resolveMemberBehavior({ config, mappings = [], memberRoleIds = [], rolePositions } = {}) {
+function resolveMemberBehavior({ config, mappings = [], memberRoleIds = [], rolePositions, premium = true } = {}) {
     const cfg = config || {};
     const matched = orderMappings(mappings, memberRoleIds, rolePositions);
 
@@ -41,6 +42,8 @@ function resolveMemberBehavior({ config, mappings = [], memberRoleIds = [], role
     if (cfg.memory_enabled === false) features.delete('memory');
     if (cfg.music_enabled === false) features.delete('music');
     if (cfg.voice_enabled === false) features.delete('voice');
+    // Free servers: Premium-only features are off, whatever a mapping allows.
+    if (!premium) for (const f of PREMIUM_ONLY_FEATURES) features.delete(f);
 
     // A savage tone without the roast feature degrades to gentle.
     if (tone === 'savage' && !features.has('roast')) tone = 'gentle';

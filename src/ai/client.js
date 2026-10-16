@@ -332,9 +332,9 @@ const { CRISIS_PATTERNS, crisisResponse, declineReplyText, isCrisisMessage, mode
 
 // moderateReplyText (post-generation guardrail) is imported from the shared safety module above.
 
-async function classifyIntent(aiClient, model, userMessage, contextMessages = [], { rateLimiter = null, userId = null } = {}) {
+async function classifyIntent(aiClient, model, userMessage, contextMessages = [], { rateLimiter = null, userId = null, rateLimitMax = null } = {}) {
     // Classify counts against the same per-user AI quota as replies.
-    if (rateLimiter && !rateLimiter.attempt(userId)) {
+    if (rateLimiter && !rateLimiter.attempt(userId, Date.now(), { max: rateLimitMax })) {
         const error = new Error('AI rate limit exceeded');
         error.rateLimited = true;
         throw error;
@@ -411,12 +411,13 @@ function createAiClient(settings) {
         model: settings.aiModel,
         rateLimiter,
 
-        async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, declineMode = false, userId = null, capabilities = null, memories = null, retrievalFailed = false, reputation = null, recentMemories = null, recentRetrievalFailed = false, guildPrompt = null }) {
+        async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, declineMode = false, userId = null, capabilities = null, memories = null, retrievalFailed = false, reputation = null, recentMemories = null, recentRetrievalFailed = false, guildPrompt = null, rateLimitMax = null }) {
             // guildPrompt = { config, behavior, isHomeGuild } in multi-server mode; null keeps the legacy prompt exactly.
             if (isCreatorQuestion(userMessage)) return getCreatorResponse(userMessage, { isHomeGuild: guildPrompt ? guildPrompt.isHomeGuild : true });
 
             // AI quota protection: applied per user before any LLM call.
-            if (rateLimiter && !rateLimiter.attempt(userId)) {
+            // rateLimitMax: the server's plan limit (Premium servers get more).
+            if (rateLimiter && !rateLimiter.attempt(userId, Date.now(), { max: rateLimitMax })) {
                 const error = new Error('AI rate limit exceeded');
                 error.rateLimited = true;
                 throw error;

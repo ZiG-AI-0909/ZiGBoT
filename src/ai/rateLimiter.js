@@ -13,13 +13,15 @@ class RateLimiter {
     /**
      * Record a hit for key if allowed. Returns true when the request may
      * proceed, false when the user is over the limit for this window.
+     * `max` overrides the default cap for this call (e.g. Premium servers).
      */
-    attempt(key, now = Date.now()) {
+    attempt(key, now = Date.now(), { max = null } = {}) {
         if (!key) return true;
+        const limit = Number.isFinite(max) && max >= 1 ? Math.floor(max) : this.max;
         const windowStart = now - this.windowMs;
         const timestamps = (this.hits.get(key) || []).filter((time) => time > windowStart);
 
-        if (timestamps.length >= this.max) {
+        if (timestamps.length >= limit) {
             this.hits.set(key, timestamps);
             return false;
         }

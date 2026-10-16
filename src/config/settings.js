@@ -92,6 +92,8 @@ function loadSettings() {
         guildOwnerIds: guildConfig.owners,
         guildAdminRoleNames: guildConfig.adminRoles,
         aiRateLimitMax: Number(process.env.AI_RATE_LIMIT_MAX || 8),
+        // Per-user AI limit in ZiGBoT Premium servers (same window).
+        aiRateLimitPremiumMax: Number(process.env.AI_RATE_LIMIT_PREMIUM_MAX || 30),
         aiRateLimitWindowSeconds: Number(process.env.AI_RATE_LIMIT_WINDOW_SECONDS || 60),
         slashCommandGuildIds: parseList(process.env.SLASH_COMMAND_GUILD_IDS),
         serverOwnerRoleName: process.env.SERVER_OWNER_ROLE_NAME || '꧁༺ ZiG ༻꧂',

@@ -4,24 +4,26 @@ import TopBar from '@/components/TopBar';
 import GuildEditor from '@/components/GuildEditor';
 import shared from '@/lib/shared';
 import { getCurrentUser, requireGuildAdmin } from '@/lib/auth';
-import { loadGuildBundle } from '@/lib/guildData';
-import { inviteUrl } from '@/lib/discord';
+import { loadGuildBundle, prefetchGuildExtras } from '@/lib/guildData';
+import { inviteUrl, contactUrl } from '@/lib/discord';
 
 export const dynamic = 'force-dynamic';
 
-const { FEATURES, LIMITS, TONES, TIERS, PRONOUNS } = shared;
+const { FEATURES, LIMITS, TONES, TIERS, PRONOUNS, PREMIUM_PERKS, FREE_LIMITS } = shared;
 
 export default async function GuildPage({ params }) {
     const { guildId } = await params;
     const current = await getCurrentUser();
     if (!current) redirect('/');
-    const { data: profile } = await current.supabase.from('zb_profiles').select('username, avatar_url').eq('user_id', current.user.id).maybeSingle();
+    // The top-bar profile is independent of the guild checks: load it alongside them.
+    // (.then() starts the lazy Supabase query now instead of when awaited.)
+    const profilePromise = current.supabase.from('zb_profiles').select('username, avatar_url').eq('user_id', current.user.id).maybeSingle().then((result) => result);
 
     let bundle = null;
     let failure = null;
     try {
         // Live Discord verification on every page load — the URL's server id is never trusted.
-        const access = await requireGuildAdmin(guildId);
+        const access = await requireGuildAdmin(guildId, { onVerified: prefetchGuildExtras });
         bundle = await loadGuildBundle(access);
     } catch (error) {
         failure = { status: error.status || 500, message: error.publicMessage || error.message, code: error.extra?.code };
@@ -30,6 +32,7 @@ export default async function GuildPage({ params }) {
             failure.message = 'Could not load this server right now. Refresh to try again.';
         }
     }
+    const { data: profile } = await profilePromise;
 
     return (
         <div className="shell">
@@ -44,7 +47,7 @@ export default async function GuildPage({ params }) {
             ) : (
                 <GuildEditor
                     initial={bundle}
-                    meta={{ features: FEATURES, limits: LIMITS, tones: TONES, tiers: TIERS, pronouns: PRONOUNS }}
+                    meta={{ features: FEATURES, limits: LIMITS, tones: TONES, tiers: TIERS, pronouns: PRONOUNS, perks: PREMIUM_PERKS, freeRoleMappings: FREE_LIMITS.roleMappings, contactUrl: contactUrl() }}
                 />
             )}
         </div>

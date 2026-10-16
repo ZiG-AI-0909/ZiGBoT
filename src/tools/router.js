@@ -222,7 +222,11 @@ async function executeTool(message, settings, intent, context = {}) {
         // Member-level features (music, voice) can be switched off per server or per role.
         const behavior = behaviorForMember(settings.guildContext, message.member);
         if (!hasFeature(behavior, ACTION_FEATURES[intent.action])) {
-            return `❌ ${ACTION_FEATURES[intent.action] === 'music' ? 'Music' : 'Voice'} commands are turned off for you in this server.`;
+            const label = ACTION_FEATURES[intent.action] === 'music' ? 'Music' : 'Voice';
+            if (settings.guildContext.premium === false) {
+                return `💎 ${label} is a ZiGBoT Premium feature. A server admin can upgrade this server from the ZiGBoT dashboard.`;
+            }
+            return `❌ ${label} commands are turned off for you in this server.`;
         }
     }
 

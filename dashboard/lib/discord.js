@@ -94,6 +94,12 @@ export function inviteUrl(guildId) {
     return `https://discord.com/oauth2/authorize?${params.toString()}`;
 }
 
+/** Link to the bot creator's Discord profile (Message button), or null if unset. */
+export function contactUrl() {
+    const id = env.botCreatorId;
+    return SNOWFLAKE.test(String(id || '')) ? `https://discord.com/users/${id}` : null;
+}
+
 export function guildIconUrl(guildId, icon) {
     return icon ? `https://cdn.discordapp.com/icons/${guildId}/${icon}.png?size=96` : null;
 }

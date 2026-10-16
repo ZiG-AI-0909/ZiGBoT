@@ -46,7 +46,8 @@ const {
     isChatChannel,
     buildGuildSettings,
     pronounsToGender,
-    hasFeature
+    hasFeature,
+    rateLimitReplyFor
 } = require('./guildConfig/context');
 const { version: BOT_VERSION } = require('../package.json');
 
@@ -67,7 +68,6 @@ function logAiError(error) {
 }
 
 const aiFailureReply = 'I am dead';
-const rateLimitReply = 'Easy there — you have hit my AI quota for this minute. Try again shortly. ⏳';
 
 const logReplyPacing = (message) => console.log(`[ZiGBoT REPLY] ${message}`);
 
@@ -423,6 +423,7 @@ client.on(Events.MessageCreate, async (message) => {
                 contextMessages: history,
                 tone: 'savage',
                 userId: message.author.id,
+                rateLimitMax: gSettings.aiRateLimitMax,
                 gender: getMemberGender(
                     targetMember,
                     settings.femaleRoleNames,
@@ -437,7 +438,7 @@ client.on(Events.MessageCreate, async (message) => {
             defaultMemory.addMessage(message.channel.id, 'assistant', replyText);
         } catch (error) {
             logAiError(error);
-            await message.reply(error.rateLimited ? rateLimitReply : aiFailureReply).catch(() => {});
+            await message.reply(error.rateLimited ? rateLimitReplyFor(gSettings) : aiFailureReply).catch(() => {});
         }
         return;
     }
@@ -497,11 +498,11 @@ client.on(Events.MessageCreate, async (message) => {
             ai.model,
             userMessage,
             defaultMemory.getHistory(message.channel.id),
-            { rateLimiter: ai.rateLimiter, userId: message.author.id }
+            { rateLimiter: ai.rateLimiter, userId: message.author.id, rateLimitMax: gSettings.aiRateLimitMax }
         );
     } catch (error) {
         if (error.rateLimited) {
-            await message.reply(rateLimitReply).catch(() => {});
+            await message.reply(rateLimitReplyFor(gSettings)).catch(() => {});
             return;
         }
         logAiError(error);
@@ -640,7 +641,8 @@ client.on(Events.MessageCreate, async (message) => {
             reputation,
             recentMemories,
             recentRetrievalFailed,
-            guildPrompt
+            guildPrompt,
+            rateLimitMax: gSettings.aiRateLimitMax
         });
 
         await deliverAiReply(message, replyText, { log: logReplyPacing });
@@ -664,7 +666,7 @@ client.on(Events.MessageCreate, async (message) => {
 
     } catch (error) {
         logAiError(error);
-        await message.reply(error.rateLimited ? rateLimitReply : aiFailureReply).catch(() => {});
+        await message.reply(error.rateLimited ? rateLimitReplyFor(gSettings) : aiFailureReply).catch(() => {});
     }
 });
 
@@ -746,7 +748,8 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
             memories: userMemories,
             retrievalFailed,
             reputation,
-            guildPrompt: guildPromptFor(voiceCtx, voiceBehavior)
+            guildPrompt: guildPromptFor(voiceCtx, voiceBehavior),
+            rateLimitMax: voiceSettings.aiRateLimitMax
         });
 
         defaultMemory.addMessage(memoryKey, 'user', transcript, authorName);

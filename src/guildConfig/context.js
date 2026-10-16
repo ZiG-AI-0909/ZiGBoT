@@ -19,7 +19,7 @@ function behaviorForMember(ctx, member) {
             positions.set(String(role.id), Number(role.position) || 0);
         }
     }
-    return resolveMemberBehavior({ config: ctx.config, mappings: ctx.mappings, memberRoleIds: roleIds, rolePositions: positions });
+    return resolveMemberBehavior({ config: ctx.config, mappings: ctx.mappings, memberRoleIds: roleIds, rolePositions: positions, premium: ctx.premium !== false });
 }
 
 /** Blocked channels never get replies; a non-empty allow-list restricts replies to it. Threads inherit from their parent. */
@@ -58,8 +58,23 @@ function buildGuildSettings(settings, ctx) {
         // guild's own configured log channel is used (auditLog also checks
         // the channel belongs to the same guild).
         logChannelId: ctx.mode === 'multi' ? (cfg.log_channel_id || '') : settings.logChannelId,
+        // Premium servers get the higher per-user AI limit; legacy mode keeps the env limit.
+        aiRateLimitMax: ctx.mode === 'multi' && ctx.premium && Number.isFinite(settings.aiRateLimitPremiumMax)
+            ? settings.aiRateLimitPremiumMax
+            : settings.aiRateLimitMax,
         guildContext: ctx
     };
+}
+
+// What ZiGBoT says when a member hits the AI limit. On a FREE server
+// (multi-server mode, not Premium) it points to Premium via the website link
+// in the bot's Discord profile; everywhere else it is the normal cool-down.
+const RATE_LIMIT_REPLY = 'Easy there — you have hit my AI quota for this minute. Try again shortly. ⏳';
+const FREE_TIER_EXHAUSTED_REPLY = '🚫 The free version of ZiGBoT is exhausted for now — try again in a minute. Want way more replies? Get **ZiGBoT Premium** for this server: check the website link in my profile bio. 💎';
+
+function rateLimitReplyFor(settings) {
+    const ctx = settings?.guildContext;
+    return ctx && ctx.mode === 'multi' && ctx.premium === false ? FREE_TIER_EXHAUSTED_REPLY : RATE_LIMIT_REPLY;
 }
 
 function pronounsToGender(pronouns) {
@@ -68,4 +83,4 @@ function pronounsToGender(pronouns) {
     return null;
 }
 
-module.exports = { behaviorForMember, channelAllowed, isChatChannel, buildGuildSettings, pronounsToGender, hasFeature };
+module.exports = { behaviorForMember, channelAllowed, isChatChannel, buildGuildSettings, pronounsToGender, hasFeature, rateLimitReplyFor, RATE_LIMIT_REPLY, FREE_TIER_EXHAUSTED_REPLY };

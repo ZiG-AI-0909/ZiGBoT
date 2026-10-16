@@ -4,10 +4,11 @@ import { requireGuildAdmin } from '@/lib/auth';
 import { getChannels } from '@/lib/discord';
 import { isHomeGuild } from '@/lib/guildData';
 import { env } from '@/lib/env';
+import { loadPlan } from '@/lib/billing';
 
 const {
-    validateGuildConfig, validateRoleMappings, resolveMemberBehavior, composeSystemPrompt,
-    isCrisisMessage, crisisResponse, moderateReplyText, cleanText, LIMITS, FEATURE_KEYS
+    validateGuildConfig, resolveMemberBehavior, composeSystemPrompt,
+    isCrisisMessage, crisisResponse, moderateReplyText, cleanText, LIMITS, FEATURE_KEYS, TONES, applyPlanToConfig
 } = shared;
 
 export const dynamic = 'force-dynamic';
@@ -31,11 +32,9 @@ export const POST = handler(async (request, { params }) => {
     const configResult = validateGuildConfig(body?.config, { channelIds: new Set(channels.map((c) => String(c.id))), guildId: String(guild.id) });
     if (!configResult.ok) throw new HttpError(422, 'Fix the highlighted settings before testing.', { fieldErrors: configResult.errors });
 
-    const liveRoles = (guild.roles || []).filter((r) => !r.managed);
-    const roleIds = new Set(liveRoles.map((r) => String(r.id)));
-    const mappingResult = validateRoleMappings(body?.mappings || [], { roleIds, roleNames: new Map(liveRoles.map((r) => [String(r.id), r.name])), guildId: String(guild.id) });
-    if (!mappingResult.ok) throw new HttpError(422, 'Fix the role mappings before testing.', { mappingErrors: mappingResult.errors });
-    const asRoleIds = (Array.isArray(body?.asRoleIds) ? body.asRoleIds : []).map(String).filter((id) => roleIds.has(id)).slice(0, 25);
+    // The tester picks which of the three tones to hear; anything else is rejected.
+    const tone = body?.tone ?? configResult.value.default_tone;
+    if (!TONES.includes(tone)) throw new HttpError(422, `Pick one of these tones: ${TONES.join(', ')}.`);
 
     // Rate limit (RLS: users can only count/insert their own usage rows).
     const since = new Date(Date.now() - PREVIEW_WINDOW_MS).toISOString();
@@ -45,18 +44,19 @@ export const POST = handler(async (request, { params }) => {
     const { error: usageError } = await supabase.from('zb_preview_usage').insert({ user_id: user.id, guild_id: String(guild.id) });
     if (usageError) throw new Error(`Preview usage record failed: ${usageError.message}`);
 
-    const config = { ...configResult.value, guild_id: String(guild.id) };
-    const positions = new Map(liveRoles.map((r) => [String(r.id), r.position]));
-    const behavior = resolveMemberBehavior({ config, mappings: mappingResult.value, memberRoleIds: asRoleIds, rolePositions: positions });
+    // Same resolver as the live bot, for a member with no mapped roles, using
+    // the chosen tone as the server default.
+    // Preview exactly what this server's plan allows (free: no custom persona).
+    const { premium } = await loadPlan(guild);
+    const config = applyPlanToConfig({ ...configResult.value, default_tone: tone, guild_id: String(guild.id) }, premium);
+    const behavior = resolveMemberBehavior({ config, premium });
     const summary = {
         tone: behavior.tone,
         pronouns: behavior.pronouns,
-        features: FEATURE_KEYS.filter((f) => behavior.features.has(f)),
-        matchedRoles: behavior.matchedRoleIds
+        features: FEATURE_KEYS.filter((f) => behavior.features.has(f))
     };
 
     if (!config.enabled) return json({ reply: null, note: 'ZiGBoT is switched off for this server, so it would not reply.', summary });
-    if (!behavior.features.has('chat')) return json({ reply: null, note: 'These roles have the "chat" feature denied, so ZiGBoT would ignore this member.', summary });
     // Same code-enforced crisis override as the live bot.
     if (isCrisisMessage(message)) return json({ reply: crisisResponse, note: 'Crisis language always gets this fixed supportive reply, whatever the server settings are.', summary });
 

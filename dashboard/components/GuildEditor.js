@@ -8,6 +8,7 @@ const TABS = [
     { id: 'channels', label: 'Channels' },
     { id: 'features', label: 'Features' },
     { id: 'test', label: 'Test' },
+    { id: 'premium', label: '💎 Premium' },
     { id: 'history', label: 'History' }
 ];
 
@@ -46,10 +47,10 @@ async function api(path, { method = 'GET', body } = {}) {
     return data;
 }
 
-function Switch({ checked, onChange, label, help, id }) {
+function Switch({ checked, onChange, label, help, id, disabled = false }) {
     return (
-        <label className="switch" htmlFor={id}>
-            <input id={id} type="checkbox" checked={Boolean(checked)} onChange={(e) => onChange(e.target.checked)} />
+        <label className={`switch ${disabled ? 'is-disabled' : ''}`} htmlFor={id}>
+            <input id={id} type="checkbox" checked={Boolean(checked)} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
             <span className="track" aria-hidden="true" />
             <span>
                 <span className="label" style={{ display: 'block' }}>{label}</span>
@@ -59,13 +60,13 @@ function Switch({ checked, onChange, label, help, id }) {
     );
 }
 
-function TextArea({ id, label, help, value, onChange, max, error, rows = 5, placeholder }) {
+function TextArea({ id, label, help, value, onChange, max, error, rows = 5, placeholder, disabled = false }) {
     const length = (value || '').length;
     return (
         <div className="field">
             <label htmlFor={id}>{label}</label>
             {help ? <span className="help" id={`${id}-help`}>{help}</span> : null}
-            <textarea id={id} rows={rows} value={value || ''} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} aria-invalid={error ? 'true' : undefined} aria-describedby={help ? `${id}-help` : undefined} />
+            <textarea id={id} rows={rows} value={value || ''} placeholder={placeholder} disabled={disabled} onChange={(e) => onChange(e.target.value)} aria-invalid={error ? 'true' : undefined} aria-describedby={help ? `${id}-help` : undefined} />
             <div className="spread">
                 {error ? <span className="error" role="alert">{error}</span> : <span />}
                 <span className={`counter ${length > max ? 'over' : ''}`}>{length}/{max}</span>
@@ -123,6 +124,8 @@ export default function GuildEditor({ initial, meta }) {
     const [busy, setBusy] = useState(null);
     const [toasts, setToasts] = useState([]);
     const [confirmReset, setConfirmReset] = useState(false);
+    const [plan, setPlan] = useState(initial.plan);
+    const premium = Boolean(plan?.premium);
     const roles = initial.roles;
     const channels = initial.channels;
     const roleById = useMemo(() => new Map(roles.map((r) => [r.id, r])), [roles]);
@@ -148,6 +151,7 @@ export default function GuildEditor({ initial, meta }) {
     }, []);
 
     const set = (key) => (value) => setDraft((d) => ({ ...d, [key]: value }));
+
 
     async function save() {
         setBusy('save');
@@ -221,6 +225,7 @@ export default function GuildEditor({ initial, meta }) {
                             <span className="pill pill-ok">Installed</span>
                             <span className={`pill ${status.online ? 'pill-ok' : 'pill-bad'}`}>{status.online ? 'Bot online' : 'Bot offline'}</span>
                             <span className={`pill ${draft.enabled ? 'pill-ok' : 'pill-warn'}`}>{draft.enabled ? 'Active here' : 'Switched off here'}</span>
+                            <span className={`pill ${premium ? 'pill-premium' : ''}`}>{premium ? '💎 Premium' : 'Free plan'}</span>
                         </div>
                     </div>
                 </div>
@@ -238,11 +243,12 @@ export default function GuildEditor({ initial, meta }) {
             </div>
 
             <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
-                {tab === 'behaviour' ? <BehaviourTab draft={draft} set={set} errors={fieldErrors} meta={meta} /> : null}
-                {tab === 'roles' ? <RolesTab roles={roles} roleById={roleById} mappings={mappings} setMappings={setMappings} errors={mappingErrors} meta={meta} /> : null}
+                {tab === 'behaviour' ? <BehaviourTab draft={draft} saved={saved} set={set} errors={fieldErrors} meta={meta} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
+                {tab === 'roles' ? <RolesTab roles={roles} roleById={roleById} mappings={mappings} setMappings={setMappings} errors={mappingErrors} meta={meta} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'channels' ? <ChannelsTab draft={draft} set={set} errors={fieldErrors} channels={channels} /> : null}
-                {tab === 'features' ? <FeaturesTab draft={draft} set={set} isHome={initial.guild.isHome} /> : null}
-                {tab === 'test' ? <TestTab guildId={initial.guild.id} draft={draft} mappings={mappings} roles={roles} toast={toast} /> : null}
+                {tab === 'features' ? <FeaturesTab draft={draft} set={set} isHome={initial.guild.isHome} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
+                {tab === 'premium' ? <PremiumTab guildId={initial.guild.id} plan={plan} setPlan={setPlan} perks={meta.perks} contactUrl={meta.contactUrl} toast={toast} /> : null}
+                {tab === 'test' ? <TestTab guildId={initial.guild.id} draft={draft} tones={meta.tones} toast={toast} /> : null}
                 {tab === 'history' ? <HistoryTab guildId={initial.guild.id} /> : null}
             </div>
 
@@ -278,7 +284,16 @@ export default function GuildEditor({ initial, meta }) {
     );
 }
 
-function BehaviourTab({ draft, set, errors, meta }) {
+function PremiumNote({ children, onUpgrade }) {
+    return (
+        <div className="premium-note">
+            <span>💎 {children}</span>
+            <button type="button" className="btn btn-primary" onClick={onUpgrade}>See Premium</button>
+        </div>
+    );
+}
+
+function BehaviourTab({ draft, set, errors, meta, premium, onUpgrade }) {
     return (
         <div className="stack">
             <div className="card stack">
@@ -295,11 +310,13 @@ function BehaviourTab({ draft, set, errors, meta }) {
             </div>
             <div className="card stack">
                 <div>
-                    <h2>Custom personality</h2>
+                    <h2>Custom personality {premium ? null : <span className="pill pill-premium">Premium</span>}</h2>
                     <p className="help">Describe who ZiGBoT should be here. ZiGBoT’s safety rules always apply and cannot be switched off from here.</p>
                 </div>
-                <Switch id="replace" checked={draft.replace_base_persona} onChange={set('replace_base_persona')} label="Replace the ZiGBoT persona entirely" help="Off: your text is added on top of the selected tone. On: your text becomes the whole personality." />
-                <TextArea id="prompt" label="Personality / system prompt" value={draft.custom_system_prompt} onChange={set('custom_system_prompt')} max={meta.limits.customSystemPrompt} error={errors.custom_system_prompt} rows={7} placeholder="e.g. You are the cheerful mascot of an anime art server. Hype up people's artwork and answer art questions." />
+                {premium ? null : <PremiumNote onUpgrade={onUpgrade}>A custom personality is a Premium feature. Anything saved here earlier is kept but not used until this server is Premium.</PremiumNote>}
+                <Switch id="replace" disabled={!premium} checked={draft.replace_base_persona} onChange={set('replace_base_persona')} label="Replace the ZiGBoT persona entirely" help="Off: your text is added on top of the selected tone. On: your text becomes the whole personality." />
+                {errors.replace_base_persona ? <span className="error">{errors.replace_base_persona}</span> : null}
+                <TextArea id="prompt" disabled={!premium} label="Personality / system prompt" value={draft.custom_system_prompt} onChange={set('custom_system_prompt')} max={meta.limits.customSystemPrompt} error={errors.custom_system_prompt} rows={7} placeholder="e.g. You are the cheerful mascot of an anime art server. Hype up people's artwork and answer art questions." />
                 <TextArea id="instructions" label="How to respond to different messages" value={draft.response_instructions} onChange={set('response_instructions')} max={meta.limits.responseInstructions} error={errors.response_instructions} placeholder="e.g. Questions about events: point to #announcements. Art feedback: be specific and kind." />
                 <TextArea id="rules" label="Server rules and restrictions" value={draft.server_rules} onChange={set('server_rules')} max={meta.limits.serverRules} error={errors.server_rules} placeholder="e.g. No spoilers for ongoing anime. Never discuss politics." />
             </div>
@@ -344,7 +361,8 @@ function FeatureControl({ feature, label, mapping, onChange }) {
     );
 }
 
-function RolesTab({ roles, roleById, mappings, setMappings, errors, meta }) {
+function RolesTab({ roles, roleById, mappings, setMappings, errors, meta, premium, onUpgrade }) {
+    const maxMappings = premium ? meta.limits.roleMappingsPerGuild : meta.freeRoleMappings;
     const used = new Set(mappings.map((m) => m.role_id));
     const available = roles.filter((r) => !used.has(r.id));
     const [pick, setPick] = useState('');
@@ -369,6 +387,14 @@ function RolesTab({ roles, roleById, mappings, setMappings, errors, meta }) {
                     <li><strong>Moderation / admin tools</strong> also need the member’s real Discord permission (e.g. Kick Members). A mapping can never grant a permission they don’t have. The server owner and Administrators always keep access.</li>
                 </ul>
             </div>
+
+            {premium ? null : (
+                <PremiumNote onUpgrade={onUpgrade}>
+                    Free servers can map up to {meta.freeRoleMappings} roles ({Math.min(mappings.length, meta.freeRoleMappings)}/{meta.freeRoleMappings} used){mappings.length > meta.freeRoleMappings ? '. Only the highest-priority ones are active until this server is Premium.' : '.'} Premium allows up to {meta.limits.roleMappingsPerGuild}.
+                </PremiumNote>
+            )}
+            {errors._ ? <span className="error" role="alert">{errors._}</span> : null}
+            {errors[0]?._ ? <span className="error" role="alert">{errors[0]._}</span> : null}
 
             {mappings.length === 0 ? <div className="card empty"><p className="muted" style={{ margin: 0 }}>No role mappings yet. Everyone gets the server defaults.</p></div> : null}
 
@@ -430,7 +456,7 @@ function RolesTab({ roles, roleById, mappings, setMappings, errors, meta }) {
                     <option value="">{available.length === 0 ? 'All roles are mapped' : 'Choose a role…'}</option>
                     {available.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </select>
-                <button className="btn" onClick={add} disabled={!pick || mappings.length >= meta.limits.roleMappingsPerGuild}>Add mapping</button>
+                <button className="btn" onClick={add} disabled={!pick || mappings.length >= maxMappings}>Add mapping</button>
             </div>
         </div>
     );
@@ -467,14 +493,15 @@ function ChannelsTab({ draft, set, errors, channels }) {
     );
 }
 
-function FeaturesTab({ draft, set, isHome }) {
+function FeaturesTab({ draft, set, isHome, premium, onUpgrade }) {
     return (
         <div className="card stack">
             <h2>Server-wide features</h2>
             <Switch id="memory" checked={draft.memory_enabled} onChange={set('memory_enabled')} label="Long-term memory" help="ZiGBoT remembers durable facts members share (30-day retention) and can follow up later. Off by default for privacy." />
             <Switch id="rep" checked={draft.reputation_enabled} onChange={set('reputation_enabled')} label="Behaviour reputation" help="Tracks positive/negative behaviour signals and adapts how warmly ZiGBoT treats members." />
-            <Switch id="music" checked={draft.music_enabled} onChange={set('music_enabled')} label="Music commands" />
-            <Switch id="voice" checked={draft.voice_enabled} onChange={set('voice_enabled')} label="Voice chat" help="Joining voice channels and listening/speaking." />
+            {premium ? null : <PremiumNote onUpgrade={onUpgrade}>Music and voice chat are Premium features. The switches below take effect once this server is Premium.</PremiumNote>}
+            <Switch id="music" checked={draft.music_enabled} onChange={set('music_enabled')} label={premium ? 'Music commands' : 'Music commands (Premium)'} />
+            <Switch id="voice" checked={draft.voice_enabled} onChange={set('voice_enabled')} label={premium ? 'Voice chat' : 'Voice chat (Premium)'} help="Joining voice channels and listening/speaking." />
             {isHome || draft.legacy_role_rules ? (
                 <Switch id="legacy" checked={draft.legacy_role_rules} onChange={set('legacy_role_rules')} label="Legacy role rules (env-configured)" help="Keeps the original gentle/savage and pronoun role-name rules from the bot’s environment. Role mappings above still take priority." />
             ) : null}
@@ -482,9 +509,9 @@ function FeaturesTab({ draft, set, isHome }) {
     );
 }
 
-function TestTab({ guildId, draft, mappings, roles, toast }) {
+function TestTab({ guildId, draft, tones, toast }) {
     const [message, setMessage] = useState('');
-    const [asRoles, setAsRoles] = useState([]);
+    const [tone, setTone] = useState(tones.includes(draft.default_tone) ? draft.default_tone : tones[0]);
     const [busy, setBusy] = useState(false);
     const [history, setHistory] = useState([]);
 
@@ -494,7 +521,7 @@ function TestTab({ guildId, draft, mappings, roles, toast }) {
         setBusy(true);
         const text = message.trim();
         try {
-            const result = await api(`/api/guilds/${guildId}/preview`, { method: 'POST', body: { message: text, config: draft, mappings, asRoleIds: asRoles } });
+            const result = await api(`/api/guilds/${guildId}/preview`, { method: 'POST', body: { message: text, config: draft, tone } });
             setHistory((h) => [...h, { me: text, ...result }]);
             setMessage('');
         } catch (error) {
@@ -512,17 +539,9 @@ function TestTab({ guildId, draft, mappings, roles, toast }) {
                     <p className="help">Runs your current draft (including unsaved changes) through the same prompt and safety filters the live bot uses. Nothing is posted to Discord. Limited to 10 tests per 10 minutes.</p>
                 </div>
                 <div className="field">
-                    <span className="label" id="asroles">Pretend the member has these roles</span>
-                    <div className="checklist" role="group" aria-labelledby="asroles">
-                        {roles.length === 0 ? <span className="help" style={{ padding: 8 }}>This server has no roles.</span> : null}
-                        {roles.map((r) => (
-                            <label key={r.id}>
-                                <input type="checkbox" checked={asRoles.includes(r.id)} onChange={(e) => setAsRoles(e.target.checked ? [...asRoles, r.id] : asRoles.filter((x) => x !== r.id))} />
-                                <span className="role-dot" style={{ background: roleColor(r.color) }} aria-hidden="true" />
-                                <span>{r.name}</span>
-                            </label>
-                        ))}
-                    </div>
+                    <span className="label">Reply tone</span>
+                    <Segmented label="Reply tone" value={tone} onChange={setTone} options={tones.map((t) => ({ value: t, label: TONE_LABELS[t] }))} />
+                    <span className="help">{TONE_HELP[tone]} Send the same message in each tone to compare.</span>
                 </div>
                 <form onSubmit={run} className="stack">
                     <div className="field">
@@ -541,7 +560,7 @@ function TestTab({ guildId, draft, mappings, roles, toast }) {
                             <div className="bubble me">{h.me}</div>
                             {h.reply ? <div className="bubble bot">{h.reply}</div> : null}
                             {h.note ? <span className="help">{h.note}</span> : null}
-                            {h.summary ? <span className="help">Tone: <strong>{h.summary.tone}</strong>{h.summary.pronouns ? ` · Pronouns: ${h.summary.pronouns}` : ''} · Features: {h.summary.features.join(', ') || 'none'}</span> : null}
+                            {h.summary ? <span className="help">Tone: <strong>{TONE_LABELS[h.summary.tone] || h.summary.tone}</strong></span> : null}
                         </div>
                     ))}
                 </div>
@@ -573,6 +592,233 @@ function HistoryTab({ guildId }) {
                     <span className="help">{new Date(e.at).toLocaleString()}{e.fields.length ? ` · ${e.fields.slice(0, 6).join(', ')}${e.fields.length > 6 ? '…' : ''}` : ''}</span>
                 </div>
             ))}
+        </div>
+    );
+}
+
+const PERIOD_LABELS = { monthly: 'Monthly', yearly: 'Yearly' };
+
+// Load Razorpay's Standard Checkout script once, only when someone pays.
+const RAZORPAY_CHECKOUT_SRC = 'https://checkout.razorpay.com/v1/checkout.js';
+let razorpayScript = null;
+function loadRazorpayCheckout() {
+    if (typeof window.Razorpay === 'function') return Promise.resolve();
+    if (!razorpayScript) {
+        razorpayScript = new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = RAZORPAY_CHECKOUT_SRC;
+            script.async = true;
+            script.onload = () => resolve();
+            script.onerror = () => {
+                razorpayScript = null;
+                script.remove();
+                reject(new Error('Could not load Razorpay Checkout.'));
+            };
+            document.head.appendChild(script);
+        });
+    }
+    return razorpayScript;
+}
+
+function PremiumTab({ guildId, plan, setPlan, perks, contactUrl, toast }) {
+    const [busy, setBusy] = useState(null);
+    const [confirmCancel, setConfirmCancel] = useState(false);
+    const [watching, setWatching] = useState(false);
+    const end = plan.currentPeriodEnd ? new Date(plan.currentPeriodEnd).toLocaleDateString() : null;
+
+    // While a checkout is open on Razorpay's page, ask our server (which asks
+    // Razorpay) every 5 s whether the first payment went through. Stops after
+    // 15 minutes or as soon as Premium is active.
+    useEffect(() => {
+        if (!watching) return undefined;
+        let stopped = false;
+        const startedAt = Date.now();
+        const timer = setInterval(async () => {
+            if (stopped) return;
+            if (Date.now() - startedAt > 15 * 60 * 1000) {
+                setWatching(false);
+                return;
+            }
+            try {
+                const { plan: next } = await api(`/api/guilds/${guildId}/billing/sync`, { method: 'POST' });
+                setPlan(next);
+                if (next.premium && next.status === 'active' && !next.checkoutPending) {
+                    setWatching(false);
+                    toast('💎 Premium is active for this server. Thank you!');
+                }
+            } catch {
+                // Transient: keep polling.
+            }
+        }, 5000);
+        return () => {
+            stopped = true;
+            clearInterval(timer);
+        };
+    }, [watching, guildId, setPlan, toast]);
+
+    // Razorpay Standard Checkout: our server creates the subscription, the
+    // modal collects the payment, and our server verifies the signature.
+    async function checkout(period) {
+        setBusy(period);
+        let session;
+        try {
+            [session] = await Promise.all([
+                api(`/api/guilds/${guildId}/billing/checkout`, { method: 'POST', body: { period } }),
+                loadRazorpayCheckout().catch(() => null)
+            ]);
+        } catch (error) {
+            toast(error.message, 'err');
+            setBusy(null);
+            return;
+        }
+
+        if (typeof window.Razorpay !== 'function') {
+            // Script blocked (e.g. an ad-blocker): pay on Razorpay's hosted page instead.
+            setBusy(null);
+            setWatching(true);
+            window.location.href = session.url;
+            return;
+        }
+
+        const rzp = new window.Razorpay({
+            key: session.keyId,
+            subscription_id: session.subscriptionId,
+            name: 'ZiGBoT Premium',
+            description: `${PERIOD_LABELS[period]} plan for this server`,
+            image: `${window.location.origin}/zigbot.png`,
+            theme: { color: '#a855f7' },
+            handler: async (response) => {
+                setBusy('verify');
+                try {
+                    const { plan: next } = await api(`/api/guilds/${guildId}/billing/verify`, {
+                        method: 'POST',
+                        body: {
+                            razorpay_payment_id: response.razorpay_payment_id,
+                            razorpay_subscription_id: response.razorpay_subscription_id,
+                            razorpay_signature: response.razorpay_signature
+                        }
+                    });
+                    setPlan(next);
+                    if (next.premium && next.status === 'active') {
+                        toast('💎 Payment verified — Premium is active for this server. Thank you!');
+                    } else {
+                        // Signature is valid; Razorpay is still activating the subscription.
+                        toast('Payment verified. Razorpay is activating your subscription — this updates in a few seconds.');
+                        setWatching(true);
+                    }
+                } catch (error) {
+                    toast(error.message, 'err');
+                } finally {
+                    setBusy(null);
+                }
+            },
+            modal: {
+                ondismiss: () => {
+                    setBusy(null);
+                    toast('Checkout closed. Nothing was charged.');
+                }
+            }
+        });
+        rzp.on('payment.failed', (response) => {
+            toast(`Payment failed: ${response?.error?.description || 'please try another method.'}`, 'err');
+        });
+        rzp.open();
+    }
+
+    async function refresh() {
+        setBusy('refresh');
+        try {
+            const { plan: next } = await api(`/api/guilds/${guildId}/billing/sync`, { method: 'POST' });
+            setPlan(next);
+            toast(next.premium ? 'Premium is active.' : 'No completed payment yet.');
+        } catch (error) {
+            toast(error.message, 'err');
+        } finally {
+            setBusy(null);
+        }
+    }
+
+    async function cancel() {
+        setBusy('cancel');
+        try {
+            const { plan: next } = await api(`/api/guilds/${guildId}/billing/cancel`, { method: 'POST' });
+            setPlan(next);
+            setConfirmCancel(false);
+            toast(next.currentPeriodEnd ? `Renewal cancelled. Premium stays until ${new Date(next.currentPeriodEnd).toLocaleDateString()}.` : 'Renewal cancelled.');
+        } catch (error) {
+            toast(error.message, 'err');
+        } finally {
+            setBusy(null);
+        }
+    }
+
+    let status;
+    if (plan.isHome) status = 'You own this server, so every Premium feature is always on — free.';
+    else if (plan.status === 'active' && plan.cancelAtPeriodEnd) status = `Renewal cancelled — Premium stays active until ${end || 'the end of this period'}.`;
+    else if (plan.status === 'active') status = `Premium (${PERIOD_LABELS[plan.period] || 'subscription'}) is active${end ? ` and renews on ${end}` : ''}.`;
+    else if (plan.status === 'pending') status = `The last renewal payment failed and Razorpay is retrying. Premium stays on until ${end || 'the end of this period'}.`;
+    else if (plan.status === 'halted') status = 'Premium is paused because the renewal payment kept failing. Start a new subscription to restore it.';
+    else if (plan.premium && plan.status === 'cancelled') status = `Subscription cancelled — Premium stays active until ${end}.`;
+    else if (watching || plan.checkoutPending) status = 'Waiting for your payment on Razorpay…';
+    else status = 'This server is on the free plan.';
+
+    const renewing = plan.status === 'active' && !plan.cancelAtPeriodEnd;
+    const canBuy = !plan.isHome && !renewing;
+
+    return (
+        <div className="stack">
+            <div className="card stack premium-hero">
+                <div>
+                    <h2>💎 ZiGBoT Premium</h2>
+                    <p className="muted" style={{ margin: 0 }} aria-live="polite">{status}</p>
+                </div>
+                <div className="perk-grid">
+                    {perks.map((perk) => (
+                        <div key={perk.key} className="perk">
+                            <strong>{perk.title}</strong>
+                            <span className="help">{perk.text}</span>
+                        </div>
+                    ))}
+                </div>
+                {canBuy ? (
+                    plan.billingEnabled ? (
+                        <div className="row">
+                            <button className="btn btn-primary btn-lg" onClick={() => checkout('monthly')} disabled={Boolean(busy)}>
+                                {busy === 'monthly' ? 'Opening Razorpay…' : `Monthly${plan.prices?.monthly ? ` · ${plan.prices.monthly}` : ''}`}
+                            </button>
+                            <button className="btn btn-primary btn-lg" onClick={() => checkout('yearly')} disabled={Boolean(busy)}>
+                                {busy === 'yearly' ? 'Opening Razorpay…' : `Yearly${plan.prices?.yearly ? ` · ${plan.prices.yearly}` : ''}`}
+                            </button>
+                            {watching || plan.checkoutPending ? (
+                                <button className="btn" onClick={refresh} disabled={Boolean(busy)}>{busy === 'refresh' ? 'Checking…' : 'I’ve paid — check now'}</button>
+                            ) : null}
+                        </div>
+                    ) : (
+                        <p className="help" style={{ margin: 0 }}>Premium checkout is not open yet. Check back soon!</p>
+                    )
+                ) : null}
+                {canBuy && plan.billingEnabled ? <p className="help" style={{ margin: 0 }}>Paid securely through Razorpay — UPI Autopay, cards (Indian and international) and netbanking. Premium applies to this server only; cancel any time and it stays active until the end of the period you paid for.</p> : null}
+                {renewing && !plan.isHome ? (
+                    confirmCancel ? (
+                        <div className="row">
+                            <span className="small">Stop renewing? Premium stays until {end || 'the end of this period'}.</span>
+                            <button className="btn" onClick={() => setConfirmCancel(false)} disabled={busy === 'cancel'}>Keep Premium</button>
+                            <button className="btn btn-danger" onClick={cancel} disabled={busy === 'cancel'}>{busy === 'cancel' ? 'Cancelling…' : 'Yes, cancel renewal'}</button>
+                        </div>
+                    ) : (
+                        <div><button className="btn btn-ghost btn-danger" onClick={() => setConfirmCancel(true)}>Cancel renewal…</button></div>
+                    )
+                ) : null}
+            </div>
+            {contactUrl ? (
+                <div className="card spread">
+                    <div>
+                        <h3>Questions about Premium?</h3>
+                        <p className="help" style={{ margin: 0 }}>Message ZiG, ZiGBoT’s creator, directly on Discord.</p>
+                    </div>
+                    <a className="btn" href={contactUrl} target="_blank" rel="noreferrer">💬 Message ZiG on Discord</a>
+                </div>
+            ) : null}
         </div>
     );
 }
