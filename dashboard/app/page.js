@@ -25,7 +25,9 @@ export default async function Home({ searchParams }) {
         <div className="shell">
             <TopBar />
             <section className="hero">
-                <h1>Make ZiGBoT yours, server by server.</h1>
+                <img className="hero-avatar" src="/zigbot.png" alt="ZiGBoT" width="120" height="120" />
+                <p className="hero-tagline">Auto replies. Gen Z vibes. Zero drama. <em>Max roast.</em></p>
+                <h1>Make <span className="zig">ZiG</span>BoT yours, server by server.</h1>
                 <p className="muted">Sign in with Discord to configure ZiGBoT in the servers you manage. Each server gets its own personality, rules, role behaviour and channels — changes in one server never touch another.</p>
                 {error ? <div className="notice" role="alert">{error}</div> : null}
                 <div className="row">

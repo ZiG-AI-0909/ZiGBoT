@@ -1,48 +1,39 @@
+/* ZiGBoT neon theme: matches the bot's avatar and banner (black hoodie,
+   neon violet/magenta glow). Dark-only on purpose — it is the brand. */
 :root {
-    --bg: #0d0f14;
-    --panel: #151821;
-    --panel-2: #1b1f2b;
-    --border: #272c3a;
-    --text: #e9ecf3;
-    --muted: #98a1b3;
-    --accent: #c6f432;
-    --accent-ink: #11140a;
-    --danger: #ff6b6b;
+    --bg: #07040d;
+    --panel: #120a1f;
+    --panel-2: #1a0f2c;
+    --border: #2e1a4d;
+    --text: #f4efff;
+    --muted: #b3a3cf;
+    --accent: #a855f7;
+    --accent-2: #e040fb;
+    --accent-ink: #ffffff;
+    --glow: rgba(168, 85, 247, 0.45);
+    --danger: #ff5c7a;
     --warn: #ffb547;
     --ok: #4ade80;
-    --focus: #8fb4ff;
-    --radius: 12px;
-    --shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px rgba(0, 0, 0, 0.25);
+    --focus: #d8b4fe;
+    --radius: 14px;
+    --shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 10px 30px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(168, 85, 247, 0.06);
     color-scheme: dark;
-}
-
-@media (prefers-color-scheme: light) {
-    :root {
-        --bg: #f5f6f8;
-        --panel: #ffffff;
-        --panel-2: #f0f2f6;
-        --border: #dde1e9;
-        --text: #141821;
-        --muted: #5b6475;
-        --accent: #5d8a00;
-        --accent-ink: #ffffff;
-        --danger: #d43c3c;
-        --warn: #b26a00;
-        --ok: #1f8f4b;
-        --focus: #2f6bff;
-        --shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
-        color-scheme: light;
-    }
 }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
-    background: var(--bg);
+    background:
+        radial-gradient(900px 500px at 85% -10%, rgba(168, 85, 247, 0.22), transparent 60%),
+        radial-gradient(700px 420px at -10% 30%, rgba(224, 64, 251, 0.12), transparent 60%),
+        var(--bg);
+    background-attachment: fixed;
+    min-height: 100vh;
     color: var(--text);
     font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
     -webkit-font-smoothing: antialiased;
 }
+::selection { background: var(--accent); color: #fff; }
 a { color: inherit; }
 button, input, select, textarea { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
@@ -52,11 +43,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
     padding: 16px 0; border-bottom: 1px solid var(--border); margin-bottom: 24px;
 }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -0.01em; text-decoration: none; }
-.brand-mark {
-    width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
-    background: var(--accent); color: var(--accent-ink); font-weight: 800; font-size: 14px;
-}
+.brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-display), sans-serif; font-size: 24px; letter-spacing: 0.04em; text-decoration: none; }
+.brand .zig { color: var(--accent); text-shadow: 0 0 12px var(--glow); }
+.brand-mark { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; box-shadow: 0 0 14px var(--glow); }
+.hero-avatar { width: 120px; height: 120px; border-radius: 50%; box-shadow: 0 0 40px var(--glow); }
+.hero-banner { width: 100%; height: auto; display: block; border-radius: var(--radius); border: 1px solid var(--border); box-shadow: 0 0 48px rgba(168, 85, 247, 0.25); }
+.hero-tagline { font-family: var(--font-display), sans-serif; font-size: 22px; letter-spacing: 0.06em; margin: 0; }
+.hero-tagline em { font-style: normal; color: var(--accent-2); text-shadow: 0 0 12px rgba(224, 64, 251, 0.5); }
 .user-chip { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; }
 .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--panel-2); object-fit: cover; }
 
@@ -75,8 +68,8 @@ p { margin: 0 0 12px; }
 }
 .btn:hover { border-color: var(--muted); }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
-.btn-primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
-.btn-primary:hover { filter: brightness(1.05); border-color: transparent; }
+.btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); border-color: transparent; box-shadow: 0 0 18px var(--glow); }
+.btn-primary:hover { filter: brightness(1.1); border-color: transparent; box-shadow: 0 0 26px var(--glow); }
 .btn-danger { color: var(--danger); }
 .btn-ghost { background: transparent; }
 .btn-lg { min-height: 46px; padding: 0 20px; font-size: 15px; }
@@ -89,8 +82,12 @@ p { margin: 0 0 12px; }
 .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .spread { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
 
-.hero { padding: 64px 0 32px; display: grid; gap: 20px; max-width: 640px; }
-.hero h1 { font-size: clamp(30px, 6vw, 44px); }
+.card { transition: border-color 150ms ease, box-shadow 150ms ease; }
+a.card:hover, .guild-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); box-shadow: var(--shadow), 0 0 22px rgba(168, 85, 247, 0.18); }
+
+.hero { padding: 32px 0; display: grid; gap: 20px; max-width: 680px; }
+.hero h1 { font-family: var(--font-display), sans-serif; font-weight: 400; font-size: clamp(38px, 8vw, 60px); line-height: 1; letter-spacing: 0.02em; }
+.hero h1 .zig { color: var(--accent); text-shadow: 0 0 18px var(--glow); }
 .hero ul { margin: 0; padding-left: 18px; color: var(--muted); }
 
 .guild-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
@@ -120,7 +117,7 @@ p { margin: 0 0 12px; }
     background: none; border: 0; padding: 10px 14px; cursor: pointer; color: var(--muted);
     font-weight: 600; border-bottom: 2px solid transparent; white-space: nowrap;
 }
-.tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); text-shadow: 0 0 10px var(--glow); }
 
 .field { display: grid; gap: 6px; align-content: start; }
 .field label, .label { font-weight: 600; font-size: 14px; }

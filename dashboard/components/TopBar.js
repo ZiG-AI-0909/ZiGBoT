@@ -4,8 +4,8 @@ export default function TopBar({ profile }) {
     return (
         <header className="topbar">
             <Link href={profile ? '/dashboard' : '/'} className="brand">
-                <span className="brand-mark" aria-hidden="true">Z</span>
-                <span>ZiGBoT</span>
+                <img className="brand-mark" src="/zigbot.png" alt="" width="30" height="30" />
+                <span><span className="zig">ZIG</span>BOT</span>
             </Link>
             {profile ? (
                 <div className="user-chip">

@@ -9,6 +9,7 @@ const {
 } = require('discord.js');
 const { destructiveActions } = require('./tools/router');
 const { isOwner } = require('./security/authorization');
+const { isHomeGuild } = require('./guildConfig/store');
 const {
     isYouTubeReady,
     getYouTubeStatus,
@@ -114,16 +115,25 @@ function buildDefinitions() {
     ].map((command) => command.toJSON());
 }
 
+// YouTube is tied to the owner's personal channel: its commands are only
+// registered in home servers, so other servers never even see them.
+const YOUTUBE_COMMANDS = new Set(['watch', 'unwatch', 'ytstatus', 'ytgreet', 'ytmod', 'ytroast', 'ytretry']);
+
 async function registerSlashCommands(client, settings) {
     const json = buildDefinitions();
+    const general = json.filter((command) => !YOUTUBE_COMMANDS.has(command.name));
+    const youtube = json.filter((command) => YOUTUBE_COMMANDS.has(command.name));
     if (settings.slashCommandGuildIds.length > 0) {
         for (const guildId of settings.slashCommandGuildIds) {
             const guild = client.guilds.cache.get(guildId);
-            if (guild) await guild.commands.set(json).catch(() => {});
+            if (guild) await guild.commands.set(isHomeGuild(guild, settings) ? json : general).catch(() => {});
         }
         return;
     }
-    await client.application.commands.set(json).catch(() => {});
+    await client.application.commands.set(general).catch(() => {});
+    for (const guild of client.guilds.cache.values()) {
+        if (isHomeGuild(guild, settings)) await guild.commands.set(youtube).catch(() => {});
+    }
 }
 
 // Convert an interaction into the same intent shape the text path uses.
@@ -214,5 +224,6 @@ module.exports = {
     registerSlashCommands,
     interactionToIntent,
     slashActionByCommand,
+    YOUTUBE_COMMANDS,
     runYouTubeInteraction
 };
