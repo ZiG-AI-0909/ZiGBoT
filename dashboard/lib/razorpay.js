@@ -35,13 +35,22 @@ async function call(path, { method = 'GET', body } = {}) {
     });
     if (response.status === 404) return null;
     if (!response.ok) {
-        // Razorpay error descriptions are safe to log (no secrets), but keep them out of user responses.
+        // Razorpay's error description explains the problem (wrong plan, feature
+        // not enabled, ...) and contains no secrets. Only it is ever surfaced —
+        // never keys, auth headers or the request body.
         const detail = await response.json().catch(() => ({}));
-        const logMessage = `Razorpay ${method} ${path.split('?')[0]} failed (${response.status}): ${detail?.error?.description || 'unknown error'}`;
+        const description = String(detail?.error?.description || '')
+            .replace(/rzp_(test|live)_[A-Za-z0-9]+/g, '[key]')
+            .trim()
+            .slice(0, 200);
+        const logMessage = `Razorpay ${method} ${path.split('?')[0]} failed (${response.status}): ${description || 'unknown error'}`;
+        console.error(`[razorpay] ${logMessage}`);
         // Our API keys rejected: a server configuration problem, not the admin's
         // login, so never surface it as 401 (which the dashboard treats as "sign in again").
         if (response.status === 401) throw new RazorpayError(logMessage, 502, 'Payments are misconfigured on our side (Razorpay rejected the API keys). Please try again later.');
-        throw new RazorpayError(logMessage, 502, 'Razorpay could not process that right now. Please try again in a moment.');
+        throw new RazorpayError(logMessage, 502, description
+            ? `Razorpay could not process that: ${description}`
+            : 'Razorpay could not process that right now. Please try again in a moment.');
     }
     return response.json();
 }
