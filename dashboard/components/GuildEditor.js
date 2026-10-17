@@ -606,14 +606,22 @@ function loadRazorpayCheckout() {
     if (!razorpayScript) {
         razorpayScript = new Promise((resolve, reject) => {
             const script = document.createElement('script');
-            script.src = RAZORPAY_CHECKOUT_SRC;
-            script.async = true;
-            script.onload = () => resolve();
-            script.onerror = () => {
+            const fail = () => {
+                clearTimeout(timer);
                 razorpayScript = null;
                 script.remove();
                 reject(new Error('Could not load Razorpay Checkout.'));
             };
+            // Never wait forever: a blocked or hanging script counts as a failure.
+            const timer = setTimeout(fail, 10_000);
+            script.src = RAZORPAY_CHECKOUT_SRC;
+            script.async = true;
+            script.onload = () => {
+                clearTimeout(timer);
+                if (typeof window.Razorpay === 'function') resolve();
+                else fail();
+            };
+            script.onerror = fail;
             document.head.appendChild(script);
         });
     }
@@ -672,57 +680,68 @@ function PremiumTab({ guildId, plan, setPlan, perks, contactUrl, toast }) {
             return;
         }
 
-        if (typeof window.Razorpay !== 'function') {
-            // Script blocked (e.g. an ad-blocker): pay on Razorpay's hosted page instead.
+        // Fallback: pay on Razorpay's hosted page, so the button can never stay stuck.
+        const openHostedPage = () => {
             setBusy(null);
             setWatching(true);
-            window.location.href = session.url;
+            if (session?.url) window.location.href = session.url;
+            else toast('Could not open Razorpay. Please disable ad-blockers and try again.', 'err');
+        };
+
+        if (typeof window.Razorpay !== 'function') {
+            // Script blocked (e.g. an ad-blocker).
+            openHostedPage();
             return;
         }
 
-        const rzp = new window.Razorpay({
-            key: session.keyId,
-            subscription_id: session.subscriptionId,
-            name: 'ZiGBoT Premium',
-            description: `${PERIOD_LABELS[period]} plan for this server`,
-            image: `${window.location.origin}/zigbot.png`,
-            theme: { color: '#a855f7' },
-            handler: async (response) => {
-                setBusy('verify');
-                try {
-                    const { plan: next } = await api(`/api/guilds/${guildId}/billing/verify`, {
-                        method: 'POST',
-                        body: {
-                            razorpay_payment_id: response.razorpay_payment_id,
-                            razorpay_subscription_id: response.razorpay_subscription_id,
-                            razorpay_signature: response.razorpay_signature
+        try {
+            const rzp = new window.Razorpay({
+                key: session.keyId,
+                subscription_id: session.subscriptionId,
+                name: 'ZiGBoT Premium',
+                description: `${PERIOD_LABELS[period]} plan for this server`,
+                image: `${window.location.origin}/zigbot.png`,
+                theme: { color: '#a855f7' },
+                handler: async (response) => {
+                    setBusy('verify');
+                    try {
+                        const { plan: next } = await api(`/api/guilds/${guildId}/billing/verify`, {
+                            method: 'POST',
+                            body: {
+                                razorpay_payment_id: response.razorpay_payment_id,
+                                razorpay_subscription_id: response.razorpay_subscription_id,
+                                razorpay_signature: response.razorpay_signature
+                            }
+                        });
+                        setPlan(next);
+                        if (next.premium && next.status === 'active') {
+                            toast('💎 Payment verified — Premium is active for this server. Thank you!');
+                        } else {
+                            // Signature is valid; Razorpay is still activating the subscription.
+                            toast('Payment verified. Razorpay is activating your subscription — this updates in a few seconds.');
+                            setWatching(true);
                         }
-                    });
-                    setPlan(next);
-                    if (next.premium && next.status === 'active') {
-                        toast('💎 Payment verified — Premium is active for this server. Thank you!');
-                    } else {
-                        // Signature is valid; Razorpay is still activating the subscription.
-                        toast('Payment verified. Razorpay is activating your subscription — this updates in a few seconds.');
-                        setWatching(true);
+                    } catch (error) {
+                        toast(error.message, 'err');
+                    } finally {
+                        setBusy(null);
                     }
-                } catch (error) {
-                    toast(error.message, 'err');
-                } finally {
-                    setBusy(null);
+                },
+                modal: {
+                    ondismiss: () => {
+                        setBusy(null);
+                        toast('Checkout closed. Nothing was charged.');
+                    }
                 }
-            },
-            modal: {
-                ondismiss: () => {
-                    setBusy(null);
-                    toast('Checkout closed. Nothing was charged.');
-                }
-            }
-        });
-        rzp.on('payment.failed', (response) => {
-            toast(`Payment failed: ${response?.error?.description || 'please try another method.'}`, 'err');
-        });
-        rzp.open();
+            });
+            rzp.on('payment.failed', (response) => {
+                toast(`Payment failed: ${response?.error?.description || 'please try another method.'}`, 'err');
+            });
+            rzp.open();
+        } catch (error) {
+            console.error('[razorpay] checkout failed to open', error);
+            openHostedPage();
+        }
     }
 
     async function refresh() {
