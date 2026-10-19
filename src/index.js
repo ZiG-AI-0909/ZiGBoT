@@ -37,7 +37,12 @@ const {
 } = require('./ai/client');
 const { registerSlashCommands, interactionToIntent, runYouTubeInteraction } = require('./slash');
 const { handleSetupCommand, sendWelcome } = require('./guildConfig/setup');
-const { isMusicButton, handleMusicButton } = require('./music/panel');
+const { isMusicComponent, handleMusicComponent } = require('./music/panel');
+const music = require('./music/player');
+const { startMusicStatus } = require('./music/status');
+
+// An idle music session never cuts off a voice chat that is still listening.
+music.setIdleLeaveGuard((guildId) => !isListening(guildId));
 const { initYouTube } = require('./youtube');
 const brain = require('./db/brain');
 const { startHealthServer } = require('./health');
@@ -157,6 +162,7 @@ client.once(Events.ClientReady, async (c) => {
             .catch((error) => console.error(`[ZiGBoT CONFIG] Heartbeat failed: ${error.message}`));
         await beat();
         setInterval(beat, 60_000).unref();
+        startMusicStatus(guildStore);
     }
     // Slash commands are a secondary interface: a registration failure must
     // never take down the whole bot — keep running in mention-driven mode.
@@ -191,14 +197,26 @@ client.on(Events.GuildCreate, async (guild) => {
     await sendWelcome(guild).catch((error) => console.error(`[ZiGBoT SETUP] Welcome message failed for ${guild.id}: ${error.message}`));
 });
 
+// Music: pause and leave later when everyone leaves the bot's voice channel;
+// resume when someone comes back.
+client.on(Events.VoiceStateUpdate, (oldState, newState) => {
+    const guild = newState.guild || oldState.guild;
+    const botChannel = guild?.members?.me?.voice?.channel;
+    if (!botChannel) return;
+    if (![oldState.channelId, newState.channelId].includes(botChannel.id)) return;
+    const listeners = [...botChannel.members.values()].filter((m) => !m.user.bot).length;
+    if (listeners === 0) music.onChannelEmpty(guild.id);
+    else music.onChannelOccupied(guild.id);
+});
+
 client.on(Events.GuildDelete, async (guild) => {
     console.log(`[ZiGBoT CONFIG] Removed from server ${guild.id}.`);
     await guildStore.markRemoved(guild.id).catch((error) => console.error(`[ZiGBoT CONFIG] Uninstall mark failed for ${guild.id}: ${error.message}`));
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
-    if (isMusicButton(interaction)) {
-        await handleMusicButton(interaction, async (intent) => {
+    if (isMusicComponent(interaction)) {
+        await handleMusicComponent(interaction, async (intent) => {
             const fakeMessage = {
                 author: interaction.user,
                 member: interaction.member,

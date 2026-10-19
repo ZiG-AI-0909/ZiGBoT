@@ -7,6 +7,7 @@ const TABS = [
     { id: 'roles', label: 'Roles' },
     { id: 'channels', label: 'Channels' },
     { id: 'features', label: 'Features' },
+    { id: 'music', label: '🎵 Music' },
     { id: 'test', label: 'Test' },
     { id: 'premium', label: '💎 Premium' },
     { id: 'history', label: 'History' }
@@ -176,7 +177,7 @@ export default function GuildEditor({ initial, meta }) {
                 setTab('roles');
             } else if (error.data?.fieldErrors) {
                 const first = Object.keys(error.data.fieldErrors)[0] || '';
-                setTab(/channel|respond|cooldown|keyword/.test(first) ? 'channels' : /memory|reputation|music|voice|legacy/.test(first) ? 'features' : 'behaviour');
+                setTab(/^music_/.test(first) ? 'music' : /channel|respond|cooldown|keyword/.test(first) ? 'channels' : /memory|reputation|music|voice|legacy/.test(first) ? 'features' : 'behaviour');
             }
             toast(error.status === 401 ? 'Your session expired. Sign in again.' : error.message, 'err');
         } finally {
@@ -247,6 +248,7 @@ export default function GuildEditor({ initial, meta }) {
                 {tab === 'roles' ? <RolesTab roles={roles} roleById={roleById} mappings={mappings} setMappings={setMappings} errors={mappingErrors} meta={meta} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'channels' ? <ChannelsTab draft={draft} set={set} errors={fieldErrors} channels={channels} /> : null}
                 {tab === 'features' ? <FeaturesTab draft={draft} set={set} isHome={initial.guild.isHome} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
+                {tab === 'music' ? <MusicTab guildId={initial.guild.id} draft={draft} set={set} errors={fieldErrors} roles={roles} channels={channels} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'premium' ? <PremiumTab guildId={initial.guild.id} plan={plan} setPlan={setPlan} perks={meta.perks} contactUrl={meta.contactUrl} toast={toast} /> : null}
                 {tab === 'test' ? <TestTab guildId={initial.guild.id} draft={draft} tones={meta.tones} toast={toast} /> : null}
                 {tab === 'history' ? <HistoryTab guildId={initial.guild.id} /> : null}
@@ -505,6 +507,166 @@ function FeaturesTab({ draft, set, isHome, premium, onUpgrade }) {
             {isHome || draft.legacy_role_rules ? (
                 <Switch id="legacy" checked={draft.legacy_role_rules} onChange={set('legacy_role_rules')} label="Legacy role rules (env-configured)" help="Keeps the original gentle/savage and pronoun role-name rules from the bot’s environment. Role mappings above still take priority." />
             ) : null}
+        </div>
+    );
+}
+
+const SOURCE_NAMES = { youtube: 'YouTube', soundcloud: 'SoundCloud', direct: 'Direct link' };
+const MUSIC_COMMANDS = [
+    ['/play <song or link>', 'Play the best match (YouTube first, SoundCloud when YouTube is unavailable)'],
+    ['/search <song>', 'Pick from the top 5 results'],
+    ['/pause · /resume · /skip · /stop', 'Playback controls (also buttons on the music panel)'],
+    ['/queue · /nowplaying', 'What is playing and what is next'],
+    ['/volume · /loop · /shuffle', 'Volume 1-100, loop song/queue/off, shuffle'],
+    ['/remove <position> · /clearqueue', 'Edit the queue'],
+    ['/leave', 'Disconnect from voice']
+];
+
+function formatSeconds(seconds) {
+    if (!Number.isFinite(seconds) || seconds <= 0) return '';
+    const s = Math.round(seconds);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+// Live state comes from the bot through Supabase (read-only here): playback
+// itself is controlled from Discord, never from the browser.
+function MusicTab({ guildId, draft, set, errors, roles, channels, premium, onUpgrade }) {
+    const [live, setLive] = useState({ loading: true, data: null, error: null });
+    useEffect(() => {
+        let alive = true;
+        const load = () => api(`/api/guilds/${guildId}/music`)
+            .then((data) => alive && setLive({ loading: false, data, error: null }))
+            .catch((error) => alive && setLive((prev) => ({ loading: false, data: prev.data, error: error.message })));
+        load();
+        const timer = setInterval(load, 10_000);
+        return () => {
+            alive = false;
+            clearInterval(timer);
+        };
+    }, [guildId]);
+
+    const djIds = draft.music_dj_role_ids || [];
+    const djSet = new Set(djIds);
+    const data = live.data;
+    const state = data?.state;
+    const health = data?.health;
+    const track = state?.current_track;
+    return (
+        <div className="stack">
+            {premium ? null : <PremiumNote onUpgrade={onUpgrade}>Music is a Premium feature. These settings take effect once this server is Premium.</PremiumNote>}
+
+            <div className="card stack">
+                <div className="spread">
+                    <h2>Now playing</h2>
+                    <span className="help">Updates every 10 seconds</span>
+                </div>
+                {live.loading ? <div className="skeleton" /> : null}
+                {data?.migrationMissing ? <div className="notice" role="alert">Music status needs the database update <code>20261019010000_zigbot_music.sql</code>. Run it in Supabase → SQL Editor.</div> : null}
+                {live.error ? <div className="notice" role="alert">{live.error}</div> : null}
+                {data && !data.migrationMissing ? (
+                    track ? (
+                        <div className="row" style={{ alignItems: 'flex-start' }}>
+                            {track.thumbnail ? <img src={track.thumbnail} alt="" width={120} height={68} style={{ borderRadius: 8, objectFit: 'cover' }} /> : null}
+                            <div className="stack" style={{ gap: 4 }}>
+                                <a href={track.url} target="_blank" rel="noreferrer"><strong>{track.title || track.url}</strong></a>
+                                <span className="help">
+                                    {[track.artist, formatSeconds(track.duration), `${SOURCE_NAMES[track.source] || track.source}${track.fallback_from ? ' (YouTube unavailable)' : ''}`].filter(Boolean).join(' · ')}
+                                </span>
+                                <div className="row">
+                                    <span className={`pill ${state.status === 'playing' ? 'pill-ok' : 'pill-warn'}`}>{state.status === 'playing' ? 'Playing' : 'Paused'}</span>
+                                    <span className="pill">Volume {state.volume}%</span>
+                                    <span className="pill">Loop: {state.loop_mode}</span>
+                                    <span className="pill">{state.queue_length} queued</span>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <p className="muted" style={{ margin: 0 }}>Nothing is playing in this server right now. Start music in Discord with <code>/play</code>.</p>
+                    )
+                ) : null}
+                {state?.upcoming?.length ? (
+                    <div className="stack" style={{ gap: 2 }}>
+                        <span className="label">Up next</span>
+                        {state.upcoming.map((t, i) => (
+                            <span key={`${t.url}-${i}`} className="help">{i + 1}. {t.title || t.url}{t.duration ? ` · ${formatSeconds(t.duration)}` : ''}</span>
+                        ))}
+                        {state.queue_length > state.upcoming.length ? <span className="help">…and {state.queue_length - state.upcoming.length} more</span> : null}
+                    </div>
+                ) : null}
+            </div>
+
+            <div className="card stack">
+                <h2>Music service status</h2>
+                {data ? (
+                    <div className="row">
+                        <span className={`pill ${data.bot?.online ? 'pill-ok' : 'pill-bad'}`}>{data.bot?.online ? 'Bot online' : 'Bot offline'}</span>
+                        {health ? (
+                            <>
+                                <span className={`pill ${health.ready && health.fresh ? 'pill-ok' : 'pill-bad'}`}>{health.ready && health.fresh ? 'Audio ready' : health.fresh ? 'Audio not ready' : 'No recent audio report'}</span>
+                                <span className="pill">Searches: {SOURCE_NAMES[health.preferred_source] || health.preferred_source} first</span>
+                                <span className="pill">{health.active_players} active player{health.active_players === 1 ? '' : 's'}</span>
+                            </>
+                        ) : <span className="pill pill-warn">No audio report yet</span>}
+                    </div>
+                ) : null}
+                {health && !health.ready && health.fresh ? (
+                    <div className="notice">The bot cannot play audio right now: {health.ytdlp_version ? '' : 'yt-dlp is missing (it installs during npm install). '}{health.ffmpeg_ready ? '' : 'ffmpeg is missing.'}</div>
+                ) : null}
+                {health?.last_error ? (
+                    <p className="help" style={{ margin: 0 }}>Last playback problem{health.last_error_at ? ` (${new Date(health.last_error_at).toLocaleString()})` : ''}: {health.last_error}</p>
+                ) : null}
+                {health?.ytdlp_version ? <p className="help" style={{ margin: 0 }}>yt-dlp {health.ytdlp_version}</p> : null}
+            </div>
+
+            <div className="card stack">
+                <h2>Settings</h2>
+                <Switch id="music-enabled" checked={draft.music_enabled} onChange={set('music_enabled')} label="Music enabled in this server" help="Turns all music commands and the music panel on or off for everyone." />
+                <div className="grid-2">
+                    <div className="field">
+                        <label htmlFor="music-volume">Starting volume: {draft.music_default_volume ?? 80}%</label>
+                        <span className="help">Volume when a new music session starts.</span>
+                        <input id="music-volume" type="range" min={1} max={100} value={draft.music_default_volume ?? 80} onChange={(e) => set('music_default_volume')(Number(e.target.value))} />
+                        {errors.music_default_volume ? <span className="error">{errors.music_default_volume}</span> : null}
+                    </div>
+                    <div className="field">
+                        <label htmlFor="music-idle">Leave after inactivity (minutes)</label>
+                        <span className="help">With nothing playing or nobody listening, ZiGBoT leaves voice after this long.</span>
+                        <input id="music-idle" type="number" min={1} max={60} value={draft.music_idle_minutes ?? 3} onChange={(e) => set('music_idle_minutes')(e.target.value === '' ? 1 : Number(e.target.value))} aria-invalid={errors.music_idle_minutes ? 'true' : undefined} />
+                        {errors.music_idle_minutes ? <span className="error">{errors.music_idle_minutes}</span> : null}
+                    </div>
+                    <div className="field">
+                        <label htmlFor="music-channel">Music request channel</label>
+                        <span className="help">If set, /play and /search only work in this channel.</span>
+                        <select id="music-channel" value={draft.music_channel_id || ''} onChange={(e) => set('music_channel_id')(e.target.value || null)} aria-invalid={errors.music_channel_id ? 'true' : undefined}>
+                            <option value="">Any channel</option>
+                            {channels.map((c) => <option key={c.id} value={c.id}>#{c.name}</option>)}
+                        </select>
+                        {errors.music_channel_id ? <span className="error">{errors.music_channel_id}</span> : null}
+                    </div>
+                    <div className="field">
+                        <span className="label" id="dj-label">DJ roles</span>
+                        <span className="help">If any are picked, only DJs control playback (skip, stop, volume, queue edits). Server managers, whoever requested the current song (for skip) and someone alone with the bot always can. Leave empty to let everyone control music.</span>
+                        <div className="checklist" role="group" aria-labelledby="dj-label">
+                            {roles.length === 0 ? <span className="help" style={{ padding: 8 }}>No roles found.</span> : null}
+                            {roles.map((r) => (
+                                <label key={r.id}>
+                                    <input type="checkbox" checked={djSet.has(r.id)} onChange={(e) => set('music_dj_role_ids')(e.target.checked ? [...djIds, r.id] : djIds.filter((x) => x !== r.id))} />
+                                    <span>{r.name}</span>
+                                </label>
+                            ))}
+                        </div>
+                        {errors.music_dj_role_ids ? <span className="error">{errors.music_dj_role_ids}</span> : null}
+                    </div>
+                </div>
+            </div>
+
+            <div className="card stack">
+                <h2>Commands</h2>
+                <p className="help" style={{ margin: 0 }}>Music is controlled from Discord. Every song also gets a music panel with buttons.</p>
+                {MUSIC_COMMANDS.map(([cmd, text]) => (
+                    <div key={cmd} className="spread"><code>{cmd}</code><span className="help">{text}</span></div>
+                ))}
+            </div>
         </div>
     );
 }

@@ -156,8 +156,17 @@ function validateGuildConfig(input, ctx = {}) {
         reputation_enabled: checkBool(errors, 'reputation_enabled', input.reputation_enabled, base.reputation_enabled),
         music_enabled: checkBool(errors, 'music_enabled', input.music_enabled, base.music_enabled),
         voice_enabled: checkBool(errors, 'voice_enabled', input.voice_enabled, base.voice_enabled),
-        legacy_role_rules: checkBool(errors, 'legacy_role_rules', input.legacy_role_rules, false)
+        legacy_role_rules: checkBool(errors, 'legacy_role_rules', input.legacy_role_rules, false),
+        music_dj_role_ids: checkIdList(errors, 'music_dj_role_ids', input.music_dj_role_ids, ctx.roleIds || null).slice(0, 10),
+        music_channel_id: null,
+        music_idle_minutes: checkInt(errors, 'music_idle_minutes', input.music_idle_minutes, 1, 60, base.music_idle_minutes),
+        music_default_volume: checkInt(errors, 'music_default_volume', input.music_default_volume, 1, 100, base.music_default_volume)
     };
+    if (input.music_channel_id !== undefined && input.music_channel_id !== null && input.music_channel_id !== '') {
+        const [id] = checkIdList(errors, 'music_channel_id', [input.music_channel_id], channels);
+        value.music_channel_id = id || null;
+    }
+    if (value.music_dj_role_ids.includes(String(ctx.guildId))) errors.music_dj_role_ids = '@everyone cannot be the DJ role.';
     if (input.log_channel_id !== undefined && input.log_channel_id !== null && input.log_channel_id !== '') {
         const [id] = checkIdList(errors, 'log_channel_id', [input.log_channel_id], channels);
         value.log_channel_id = id || null;
@@ -245,7 +254,7 @@ function sanitizeStoredConfig(row, { guildId } = {}) {
         const expected = typeof defaults[key];
         if (Array.isArray(defaults[key])) {
             if (Array.isArray(row[key])) out[key] = row[key].map(String).filter((id) => SNOWFLAKE.test(id));
-        } else if (key === 'log_channel_id') {
+        } else if (key === 'log_channel_id' || key === 'music_channel_id') {
             out[key] = SNOWFLAKE.test(String(row[key])) ? String(row[key]) : null;
         } else if (key === 'owner_pronouns') {
             out[key] = PRONOUNS.includes(row[key]) ? row[key] : null;
@@ -258,6 +267,8 @@ function sanitizeStoredConfig(row, { guildId } = {}) {
     for (const [key, limit] of Object.entries(TEXT_LIMITS)) {
         out[key] = cleanText(out[key]).slice(0, limit);
     }
+    out.music_idle_minutes = Math.min(60, Math.max(1, Math.round(out.music_idle_minutes) || defaults.music_idle_minutes));
+    out.music_default_volume = Math.min(100, Math.max(1, Math.round(out.music_default_volume) || defaults.music_default_volume));
     out.guild_id = String(guildId ?? row.guild_id ?? '');
     return out;
 }

@@ -25,6 +25,19 @@ const {
 // everything else stays on the text/voice path.
 const slashActionByCommand = new Map([
     ['play', 'play'],
+    ['search', 'search_music'],
+    ['pause', 'pause_music'],
+    ['resume', 'resume_music'],
+    ['skip', 'skip_music'],
+    ['stop', 'stop_music'],
+    ['queue', 'queue_music'],
+    ['nowplaying', 'now_playing'],
+    ['volume', 'volume_music'],
+    ['shuffle', 'shuffle_music'],
+    ['loop', 'loop_music'],
+    ['remove', 'remove_music'],
+    ['clearqueue', 'clear_queue'],
+    ['leave', 'leave_voice'],
     ['kick', 'kick_member'],
     ['ban', 'ban_member'],
     ['memory', 'memory_status'],
@@ -39,9 +52,35 @@ function buildDefinitions() {
             .setDescription('Play a song in your voice channel')
             .addStringOption((option) => option
                 .setName('song')
-                .setDescription('Song name or YouTube link')
+                .setDescription('Song name, or a YouTube / SoundCloud link')
                 .setMaxLength(500)
                 .setRequired(true)),
+        new SlashCommandBuilder()
+            .setName('search')
+            .setDescription('Search for a song and pick which result to play')
+            .addStringOption((option) => option.setName('song').setDescription('Song name').setMaxLength(200).setRequired(true)),
+        new SlashCommandBuilder().setName('pause').setDescription('Pause the music'),
+        new SlashCommandBuilder().setName('resume').setDescription('Resume the music'),
+        new SlashCommandBuilder().setName('skip').setDescription('Skip the current song'),
+        new SlashCommandBuilder().setName('stop').setDescription('Stop the music and clear the queue'),
+        new SlashCommandBuilder().setName('queue').setDescription('Show the current song and what plays next'),
+        new SlashCommandBuilder().setName('nowplaying').setDescription('Show the song that is playing now'),
+        new SlashCommandBuilder()
+            .setName('volume')
+            .setDescription('Set the music volume')
+            .addIntegerOption((option) => option.setName('level').setDescription('1-100').setMinValue(1).setMaxValue(100).setRequired(true)),
+        new SlashCommandBuilder().setName('shuffle').setDescription('Shuffle the upcoming songs'),
+        new SlashCommandBuilder()
+            .setName('loop')
+            .setDescription('Loop the current song, the whole queue, or turn looping off')
+            .addStringOption((option) => option.setName('mode').setDescription('What to loop').setRequired(true)
+                .addChoices({ name: 'Current song', value: 'track' }, { name: 'Whole queue', value: 'queue' }, { name: 'Off', value: 'off' })),
+        new SlashCommandBuilder()
+            .setName('remove')
+            .setDescription('Remove a song from the queue')
+            .addIntegerOption((option) => option.setName('position').setDescription('Its number in /queue').setMinValue(1).setMaxValue(50).setRequired(true)),
+        new SlashCommandBuilder().setName('clearqueue').setDescription('Clear the upcoming songs (the current one keeps playing)'),
+        new SlashCommandBuilder().setName('leave').setDescription('Make ZiGBoT leave the voice channel'),
         new SlashCommandBuilder()
             .setName('kick')
             .setDescription('Kick a member (owner confirmation required)')
@@ -168,6 +207,10 @@ async function interactionToIntent(interaction) {
     if (action === 'play') {
         return { action, target: interaction.options.getString('song', true).trim().slice(0, 2000) };
     }
+    if (action === 'search_music') return { action, target: interaction.options.getString('song', true).trim().slice(0, 200) };
+    if (action === 'volume_music') return { action, volume: interaction.options.getInteger('level', true) };
+    if (action === 'loop_music') return { action, loop: interaction.options.getString('mode', true) };
+    if (action === 'remove_music') return { action, position: interaction.options.getInteger('position', true) };
     if (action === 'kick_member' || action === 'ban_member') {
         const user = interaction.options.getUser('member', true);
         return { action, target: `<@${user.id}>` };

@@ -75,7 +75,11 @@ const ACTION_FEATURES = Object.freeze({
     queue_music: 'music',
     now_playing: 'music',
     volume_music: 'music',
-    loop_music: 'music'
+    loop_music: 'music',
+    search_music: 'music',
+    shuffle_music: 'music',
+    remove_music: 'music',
+    clear_queue: 'music'
 });
 
 // Discord permission bits (as BigInt) used by the backend checks.

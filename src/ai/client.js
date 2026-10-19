@@ -304,6 +304,9 @@ Actions and their fields:
 - play: {target} (target = the song name, artist, YouTube link, or direct https:// audio URL the user wants played; use action "chat" if they did not name anything to play)
 - pause_music, resume_music, skip_music, stop_music, queue_music, now_playing, loop_music: {}
 - volume_music: {volume} (0-100)
+- shuffle_music, clear_queue: {}
+- remove_music: {count} (the song's position in the queue)
+- search_music: {target} (song name to search, when the user wants to pick from results)
 - send_message: {message} (the exact text to send, max 1900 chars)
 - create_role: {role} (role name, max 100 chars)
 - delete_role: {role}

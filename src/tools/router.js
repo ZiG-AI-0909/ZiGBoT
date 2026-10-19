@@ -6,6 +6,8 @@ const { ownerAuthorization, botPermission } = require('../security/authorization
 const { auditLog } = require('../logging/auditLog');
 const { joinMemberVoiceChannel, leaveGuildVoice, isInGuildVoice } = require('../voice/voiceManager');
 const music = require('../music/player');
+const musicSources = require('../music/sources');
+const { musicAccessProblem } = require('../music/access');
 const { startListening, stopListening } = require('../voice/voiceConversation');
 const brain = require('../db/brain');
 const { ACTION_FEATURES } = require('../../dashboard/lib/shared/constants');
@@ -49,6 +51,10 @@ const actionAliases = new Map([
     ['nowplaying', 'now_playing'],
     ['volume', 'volume_music'],
     ['loop', 'loop_music'],
+    ['shuffle', 'shuffle_music'],
+    ['search', 'search_music'],
+    ['remove', 'remove_music'],
+    ['clearqueue', 'clear_queue'],
     ['help', 'bot_help'],
     ['serverinfo', 'get_server_info'],
     ['memberinfo', 'get_member_info'],
@@ -89,7 +95,11 @@ const actionCatalog = new Map([
     ['queue_music', { permission: null, description: 'Show the music queue.' }],
     ['now_playing', { permission: null, description: 'Show the currently playing track.' }],
     ['volume_music', { permission: null, description: 'Set playback volume (0-100).' }],
-    ['loop_music', { permission: null, description: 'Toggle looping the current track.' }],
+    ['loop_music', { permission: null, description: 'Loop the current track, the whole queue, or turn looping off.' }],
+    ['search_music', { permission: null, description: 'Search for a song and pick which result to play.' }],
+    ['shuffle_music', { permission: null, description: 'Shuffle the upcoming songs.' }],
+    ['remove_music', { permission: null, description: 'Remove a song from the queue by its position.' }],
+    ['clear_queue', { permission: null, description: 'Clear the upcoming songs (the current one keeps playing).' }],
     ['warn_member', { permission: PermissionFlagsBits.ModerateMembers, description: 'Warn a member (destructive: needs confirmation).' }],
     ['list_warnings', { permission: null, description: 'List warnings for a member.' }],
     ['memory_status', { permission: null, description: 'Owner/admin diagnostic: report the real state of my persistent memory (MongoDB connection, stored memories).' }],
@@ -221,13 +231,30 @@ async function executeTool(message, settings, intent, context = {}) {
     } else if (ACTION_FEATURES[intent.action] && settings.guildContext?.mode === 'multi') {
         // Member-level features (music, voice) can be switched off per server or per role.
         const behavior = behaviorForMember(settings.guildContext, message.member);
-        if (!hasFeature(behavior, ACTION_FEATURES[intent.action])) {
+        // Leaving is allowed to anyone who may use music OR voice (music servers with voice chat off).
+        const allowed = hasFeature(behavior, ACTION_FEATURES[intent.action])
+            || (intent.action === 'leave_voice' && hasFeature(behavior, 'music'));
+        if (!allowed) {
             const label = ACTION_FEATURES[intent.action] === 'music' ? 'Music' : 'Voice';
             if (settings.guildContext.premium === false) {
                 return `💎 ${label} is a ZiGBoT Premium feature. A server admin can upgrade this server from the ZiGBoT dashboard.`;
             }
             return `❌ ${label} commands are turned off for you in this server.`;
         }
+    }
+
+    // Music request channel + DJ role (dashboard Music settings).
+    if (ACTION_FEATURES[intent.action] === 'music' || intent.action === 'leave_voice') {
+        const musicActive = music.isActive(message.guild.id);
+        const musicProblem = musicAccessProblem({
+            action: intent.action,
+            member: message.member,
+            channel: message.channel,
+            config: settings.guildContext?.config,
+            musicActive,
+            currentTrack: musicActive ? music.queue(message.guild.id).current : null
+        });
+        if (musicProblem) return musicProblem;
     }
 
     // Warn storage is optional: warns are no-ops until the database is wired.
@@ -335,15 +362,17 @@ async function executeTool(message, settings, intent, context = {}) {
                 const query = text(intent.target, 'Song name or link', 2000);
                 if (!message.member?.voice?.channel && !isInGuildVoice(guild)) return '❌ Join a voice channel first.';
                 // Look the song up before joining, so a bad search never drags the bot into voice.
-                const track = await music.resolve(query);
+                const track = intent.track || await music.resolve(query);
                 if (!isInGuildVoice(guild)) await joinMemberVoiceChannel(message);
+                const musicConfig = settings.guildContext?.config || {};
+                music.configure(guild.id, { idleMinutes: musicConfig.music_idle_minutes, defaultVolume: musicConfig.music_default_volume });
                 // The music panel (src/music/panel.js) shows playback in this channel.
                 const added = music.queueTrack(guild.id, track, message.author.id, {
                     announce: (content) => message.channel?.send({ content, allowedMentions: { parse: [] } }),
                     channel: message.channel || null
                 });
                 result = added.startedNow
-                    ? `🎶 Starting ${music.describeTrack(added.track)}`
+                    ? `🎶 Starting ${music.describeTrack(added.track)}${added.track.source && added.track.source !== 'direct' ? ` from ${musicSources.SOURCE_LABEL[added.track.source]}` : ''}`
                     : `✅ Added ${music.describeTrack(added.track)} to the queue (position ${added.position}).`;
                 target = added.track.url;
                 break;
@@ -371,22 +400,59 @@ async function executeTool(message, settings, intent, context = {}) {
                     .map((track, index) => `${index + 1}. ${music.describeTrack(track)}`);
                 const more = currentQueue.tracks.length > 10 ? `\n…and ${currentQueue.tracks.length - 10} more` : '';
                 result = [
-                    currentQueue.current ? `🎵 Now playing: ${music.describeTrack(currentQueue.current)}${currentQueue.loop ? ' 🔁' : ''}` : null,
+                    currentQueue.current ? `🎵 Now playing: ${music.describeTrack(currentQueue.current)}${currentQueue.loop !== 'off' ? ` 🔁 (${currentQueue.loop})` : ''}` : null,
                     upNext.length ? `**Up next:**\n${upNext.join('\n')}${more}` : 'Nothing else queued.'
                 ].filter(Boolean).join('\n');
                 break;
             }
             case 'now_playing': {
                 const currentQueue = music.queue(guild.id);
-                result = currentQueue.current ? `🎵 Now playing: ${music.describeTrack(currentQueue.current)}` : '🎵 Nothing is currently playing.';
+                const track = currentQueue.current;
+                if (!track) {
+                    result = '🎵 Nothing is currently playing.';
+                    break;
+                }
+                const elapsed = music.formatDuration(currentQueue.elapsedMs / 1000) || '0:00';
+                const total = music.formatDuration(track.duration);
+                result = [
+                    `${currentQueue.paused ? '⏸️ Paused' : '🎵 Now playing'}: ${music.describeTrack(track)}${track.artist ? ` — ${track.artist}` : ''}`,
+                    `⏱️ ${elapsed}${total ? ` / ${total}` : ''} · 🔊 ${currentQueue.volume}% · 🔁 ${currentQueue.loop} · requested by <@${track.requestedBy}>`,
+                    track.url
+                ].join('\n');
                 break;
             }
             case 'volume_music':
                 result = `🔊 Volume set to ${music.setVolume(guild.id, intent.volume)}%.`;
                 break;
-            case 'loop_music':
-                result = music.toggleLoop(guild.id) ? '🔁 Loop enabled.' : '➡️ Loop disabled.';
-                break;            case 'send_message': {
+            case 'loop_music': {
+                const mode = intent.loop ? music.setLoop(guild.id, String(intent.loop).toLowerCase()) : music.toggleLoop(guild.id);
+                result = mode === 'track' ? '🔂 Looping the current song.' : mode === 'queue' ? '🔁 Looping the whole queue.' : '➡️ Loop is off.';
+                break;
+            }
+            case 'shuffle_music': {
+                const count = music.shuffle(guild.id);
+                result = count > 1 ? `🔀 Shuffled ${count} songs.` : '❌ Add at least two songs to the queue to shuffle.';
+                break;
+            }
+            case 'remove_music': {
+                const removed = music.remove(guild.id, intent.position ?? intent.count);
+                result = `🗑️ Removed ${music.describeTrack(removed)} from the queue.`;
+                target = removed.url;
+                break;
+            }
+            case 'clear_queue': {
+                const count = music.clearQueue(guild.id);
+                result = count ? `🧹 Cleared ${count} song${count === 1 ? '' : 's'} from the queue.` : 'ℹ️ The queue is already empty.';
+                break;
+            }
+            case 'search_music': {
+                const query = text(intent.target, 'Song name', 200);
+                // Returns a message payload with a pick list (src/music/search.js).
+                const { searchPayload } = require('../music/search');
+                result = await searchPayload({ query, userId: message.author.id });
+                target = query;
+                break;
+            }            case 'send_message': {
                 const content = text(intent.message, 'Message', 1900);
                 // Lock pings down: an AI-authored message may only ever notify
                 // real users already named via <@id>, never @everyone/@here/roles.

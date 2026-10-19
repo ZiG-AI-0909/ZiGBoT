@@ -39,6 +39,11 @@ function defaultGuildConfig({ guildId, legacy = false, legacySettings = null } =
         female_role_ids: [],
         adult_role_ids: [],
         minor_role_ids: [],
+        // Music (dashboard Music tab).
+        music_dj_role_ids: [],
+        music_channel_id: null,
+        music_idle_minutes: 3,
+        music_default_volume: 80,
         version: 1
     };
 }

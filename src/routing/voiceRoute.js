@@ -6,7 +6,7 @@ const { destructiveActions, normalizeAction } = require('../tools/router');
 const ALLOWED_VOICE_ACTIONS = new Set([
     'join_voice', 'leave_voice', 'voice_status', 'play', 'pause_music',
     'resume_music', 'skip_music', 'stop_music', 'queue_music', 'now_playing',
-    'volume_music', 'loop_music', 'bot_help', 'chat', 'say'
+    'volume_music', 'loop_music', 'shuffle_music', 'bot_help', 'chat', 'say'
 ]);
 
 function isAllowedVoiceAction(action) {
@@ -28,7 +28,8 @@ const VOICE_COMMAND_PATTERNS = [
     { regex: /\bstop\b/i, action: 'stop_music' },
     { regex: /\bqueue\b/i, action: 'queue_music' },
     { regex: /\b(what.?s playing|now playing)\b/i, action: 'now_playing' },
-    { regex: /\bloop\b/i, action: 'loop_music' }
+    { regex: /\bloop\b/i, action: 'loop_music' },
+    { regex: /\bshuffle\b/i, action: 'shuffle_music' }
 ];
 
 // Deterministic keyword routing for the voice path (no LLM call): transcripts
