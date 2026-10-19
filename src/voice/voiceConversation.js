@@ -135,9 +135,24 @@ function startListening(guild, settings, onTranscript, { notify = null } = {}) {
         const decoder = new prism.opus.Decoder({ frameSize: 960, channels: 2, rate: 48000 });
         const chunks = [];
         let totalBytes = 0;
+        let endReason = 'silence';
         // Unhandled 'error' on a raw stream would crash the whole process.
-        opusStream.on('error', (error) => console.error(`[ZiGBoT VOICE] opus stream: ${error.message}`));
-        decoder.on('error', (error) => console.error(`[ZiGBoT VOICE] decoder: ${error.message}`));
+        // A decrypt error (Discord's DAVE voice encryption) must also end the
+        // capture: keep what was heard and release the user.
+        opusStream.on('error', (error) => {
+            console.error(`[ZiGBoT VOICE] opus stream: ${error.message}`);
+            endReason = 'stream error';
+            if (!decoder.writableEnded) decoder.end();
+        });
+        decoder.on('error', (error) => {
+            console.error(`[ZiGBoT VOICE] decoder: ${error.message}`);
+            finish('decoder error');
+        });
+        // A decrypt failure destroys the opus stream, and pipe() never ends the
+        // decoder in that case: end it ourselves so the user is not stuck "busy".
+        opusStream.once('close', () => {
+            if (!decoder.writableEnded) decoder.end();
+        });
         opusStream.pipe(decoder);
         decoder.on('data', (chunk) => {
             if (totalBytes < 48_000 * 2 * 2 * 15) {
@@ -145,14 +160,33 @@ function startListening(guild, settings, onTranscript, { notify = null } = {}) {
                 totalBytes += chunk.length;
             }
         });
-        decoder.once('end', async () => {
+        // Runs exactly once, however the capture ends (end, decoder error/close,
+        // or the watchdog), so activeUsers is always released.
+        let finished = false;
+        const watchdog = setTimeout(() => {
+            console.log(`[ZiGBoT VC] capture watchdog fired user=${userId}`);
+            opusStream.destroy();
+            finish('watchdog');
+        }, 30_000);
+        watchdog.unref?.();
+        decoder.once('end', () => finish(endReason));
+        decoder.once('close', () => finish(endReason));
+        const finish = async (reason = endReason) => {
+            if (finished) return;
+            finished = true;
+            clearTimeout(watchdog);
             session.activeUsers.delete(userId);
             if (!session.enabled || chunks.length === 0) {
                 console.log(`[ZiGBoT VC] utterance discarded (enabled=${session.enabled}, chunks=${chunks.length}) user=${userId}`);
                 return;
             }
+            // Under half a second is a cough, a click or a cut-off glitch.
+            if (totalBytes < 48_000 * 2 * 2 * 0.5) {
+                console.log(`[ZiGBoT VC] utterance too short (${reason}); ignoring. user=${userId}`);
+                return;
+            }
             const seconds = (totalBytes / (48_000 * 2 * 2)).toFixed(1);
-            console.log(`[ZiGBoT VC] utterance captured (${seconds}s, ${totalBytes} bytes) user=${userId}; transcribing...`);
+            console.log(`[ZiGBoT VC] utterance captured (${seconds}s, ${totalBytes} bytes, ended by ${reason}) user=${userId}; transcribing...`);
             try {
                 const transcript = await transcribeUtterance(settings, chunks);
                 if (!transcript) {
@@ -168,7 +202,7 @@ function startListening(guild, settings, onTranscript, { notify = null } = {}) {
                     Promise.resolve(session.notify(`🎙️ I heard you, but couldn't understand it: ${error.message}`)).catch(() => {});
                 }
             }
-        });
+        };
     };
     session.onSpeakingStart = onSpeakingStart;
     receiver.speaking.on('start', onSpeakingStart);
