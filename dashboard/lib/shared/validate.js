@@ -7,7 +7,7 @@
  * timestamps, or anything outside this whitelist.
  */
 const {
-    FEATURE_KEYS, TONES, TIERS, PRONOUNS, RESPONSE_LENGTHS, LIMITS
+    FEATURE_KEYS, TONES, TIERS, PRONOUNS, RESPONSE_LENGTHS, LIMITS, VOICE_SPEAKERS, VOICE_LANGUAGES
 } = require('./constants');
 const { defaultGuildConfig } = require('./defaults');
 
@@ -160,8 +160,23 @@ function validateGuildConfig(input, ctx = {}) {
         music_dj_role_ids: checkIdList(errors, 'music_dj_role_ids', input.music_dj_role_ids, ctx.roleIds || null).slice(0, 10),
         music_channel_id: null,
         music_idle_minutes: checkInt(errors, 'music_idle_minutes', input.music_idle_minutes, 1, 60, base.music_idle_minutes),
-        music_default_volume: checkInt(errors, 'music_default_volume', input.music_default_volume, 1, 100, base.music_default_volume)
+        music_default_volume: checkInt(errors, 'music_default_volume', input.music_default_volume, 1, 100, base.music_default_volume),
+        voice_speaker: input.voice_speaker === undefined || input.voice_speaker === null || input.voice_speaker === '' ? '' : checkEnum(errors, 'voice_speaker', input.voice_speaker, VOICE_SPEAKERS, ''),
+        voice_pace: checkInt(errors, 'voice_pace', input.voice_pace, 50, 200, base.voice_pace),
+        voice_language: checkEnum(errors, 'voice_language', input.voice_language, VOICE_LANGUAGES, base.voice_language),
+        voice_speak_replies: checkBool(errors, 'voice_speak_replies', input.voice_speak_replies, base.voice_speak_replies),
+        // Server setup (also set by the bot's /setup command).
+        owner_pronouns: input.owner_pronouns === undefined || input.owner_pronouns === null || input.owner_pronouns === '' ? null : checkEnum(errors, 'owner_pronouns', input.owner_pronouns, PRONOUNS, null),
+        male_role_ids: checkIdList(errors, 'male_role_ids', input.male_role_ids, ctx.roleIds || null).slice(0, 10),
+        female_role_ids: checkIdList(errors, 'female_role_ids', input.female_role_ids, ctx.roleIds || null).slice(0, 10),
+        adult_role_ids: checkIdList(errors, 'adult_role_ids', input.adult_role_ids, ctx.roleIds || null).slice(0, 10),
+        minor_role_ids: checkIdList(errors, 'minor_role_ids', input.minor_role_ids, ctx.roleIds || null).slice(0, 10)
     };
+    for (const field of ['male_role_ids', 'female_role_ids', 'adult_role_ids', 'minor_role_ids']) {
+        if (value[field].includes(String(ctx.guildId))) errors[field] = '@everyone cannot be used here.';
+    }
+    if (value.male_role_ids.some((id) => value.female_role_ids.includes(id))) errors.female_role_ids = 'A role cannot be both male and female.';
+    if (value.adult_role_ids.some((id) => value.minor_role_ids.includes(id))) errors.minor_role_ids = 'A role cannot be both 18+ and under 18.';
     if (input.music_channel_id !== undefined && input.music_channel_id !== null && input.music_channel_id !== '') {
         const [id] = checkIdList(errors, 'music_channel_id', [input.music_channel_id], channels);
         value.music_channel_id = id || null;
@@ -267,6 +282,9 @@ function sanitizeStoredConfig(row, { guildId } = {}) {
     for (const [key, limit] of Object.entries(TEXT_LIMITS)) {
         out[key] = cleanText(out[key]).slice(0, limit);
     }
+    if (out.voice_speaker && !VOICE_SPEAKERS.includes(out.voice_speaker)) out.voice_speaker = '';
+    if (!VOICE_LANGUAGES.includes(out.voice_language)) out.voice_language = 'auto';
+    out.voice_pace = Math.min(200, Math.max(50, Math.round(out.voice_pace) || 100));
     out.music_idle_minutes = Math.min(60, Math.max(1, Math.round(out.music_idle_minutes) || defaults.music_idle_minutes));
     out.music_default_volume = Math.min(100, Math.max(1, Math.round(out.music_default_volume) || defaults.music_default_volume));
     out.guild_id = String(guildId ?? row.guild_id ?? '');

@@ -31,7 +31,8 @@ const SNOWFLAKE = /^\d{17,20}$/;
 // defaults, so it keeps working before those migrations are applied.
 const SETUP_FIELDS = [
     'owner_pronouns', 'male_role_ids', 'female_role_ids', 'adult_role_ids', 'minor_role_ids',
-    'music_dj_role_ids', 'music_channel_id', 'music_idle_minutes', 'music_default_volume'
+    'music_dj_role_ids', 'music_channel_id', 'music_idle_minutes', 'music_default_volume',
+    'voice_speaker', 'voice_pace', 'voice_language', 'voice_speak_replies'
 ];
 const SETUP_PRONOUNS = ['she/her', 'he/him', 'they/them'];
 

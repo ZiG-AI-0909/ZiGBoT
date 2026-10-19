@@ -9,7 +9,7 @@ import { inviteUrl, contactUrl } from '@/lib/discord';
 
 export const dynamic = 'force-dynamic';
 
-const { FEATURES, LIMITS, TONES, TIERS, PRONOUNS, PREMIUM_PERKS, FREE_LIMITS } = shared;
+const { FEATURES, LIMITS, TONES, TIERS, PRONOUNS, PREMIUM_PERKS, FREE_LIMITS, VOICE_SPEAKERS } = shared;
 
 export default async function GuildPage({ params }) {
     const { guildId } = await params;
@@ -47,7 +47,7 @@ export default async function GuildPage({ params }) {
             ) : (
                 <GuildEditor
                     initial={bundle}
-                    meta={{ features: FEATURES, limits: LIMITS, tones: TONES, tiers: TIERS, pronouns: PRONOUNS, perks: PREMIUM_PERKS, freeRoleMappings: FREE_LIMITS.roleMappings, contactUrl: contactUrl() }}
+                    meta={{ features: FEATURES, limits: LIMITS, tones: TONES, tiers: TIERS, pronouns: PRONOUNS, perks: PREMIUM_PERKS, freeRoleMappings: FREE_LIMITS.roleMappings, voiceSpeakers: VOICE_SPEAKERS, contactUrl: contactUrl() }}
                 />
             )}
         </div>

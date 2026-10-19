@@ -320,6 +320,7 @@ function speakReplyInVoice(message, gSettings, replyText, behavior) {
     if (!botChannel || !replyText) return;
     const inThisVoice = message.channel?.id === botChannel.id || message.member?.voice?.channelId === botChannel.id;
     if (!inThisVoice || music.isActive(message.guild.id)) return;
+    if (gSettings.guildContext?.config?.voice_speak_replies === false) return;
     if (behavior && !hasFeature(behavior, 'voice')) return;
     speak(message.guild.id, gSettings, replyText)
         .catch((error) => console.error(`[ZiGBoT VOICE] Could not speak the reply: ${error.message}`));

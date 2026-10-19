@@ -96,6 +96,15 @@ const PERMISSIONS = Object.freeze({
 
 const CONFIG_CACHE_TTL_MS = 30_000;
 
+// Sarvam Bulbul v3 voices (lowercase ids). '' = the bot's default voice.
+const VOICE_SPEAKERS = Object.freeze([
+    'shubh', 'aditya', 'ritu', 'priya', 'neha', 'rahul', 'pooja', 'rohan', 'simran', 'kavya',
+    'amit', 'dev', 'ishita', 'shreya', 'ratan', 'varun', 'manan', 'sumit', 'roopa', 'kabir',
+    'aayan', 'ashutosh', 'advait', 'anand', 'tanya', 'tarun', 'sunny', 'mani', 'gokul', 'vijay',
+    'shruti', 'suhani', 'mohit', 'kavitha', 'rehan', 'soham', 'rupali'
+]);
+const VOICE_LANGUAGES = Object.freeze(['auto', 'hi-IN', 'en-IN']);
+
 module.exports = {
     FEATURES,
     FEATURE_KEYS,
@@ -107,5 +116,7 @@ module.exports = {
     LIMITS,
     ACTION_FEATURES,
     PERMISSIONS,
-    CONFIG_CACHE_TTL_MS
+    CONFIG_CACHE_TTL_MS,
+    VOICE_SPEAKERS,
+    VOICE_LANGUAGES
 };

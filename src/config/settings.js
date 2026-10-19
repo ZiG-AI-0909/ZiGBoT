@@ -135,6 +135,14 @@ function loadSettings() {
         // Render's free tier, so the hosted path is what actually works there.
         // Set NVIDIA_SPEECH=false to force the legacy local STT/TTS commands.
         useNvidiaSpeech: process.env.NVIDIA_SPEECH !== 'false',
+        // Whisper large-v3 on Groq for speech-to-text when a key is set.
+        groqApiKey: process.env.GROQ_API_KEY || '',
+        groqSttModel: process.env.GROQ_STT_MODEL || 'whisper-large-v3-turbo',
+        // Sarvam AI Bulbul for the speaking voice when a key is set.
+        sarvamApiKey: process.env.SARVAM_API_KEY || '',
+        sarvamVoice: process.env.SARVAM_VOICE || 'shubh',
+        sarvamModel: process.env.SARVAM_MODEL || 'bulbul:v3',
+        sarvamPace: process.env.SARVAM_PACE || '',
         asrFunctionId: process.env.NVIDIA_ASR_FUNCTION_ID || '',
         ttsEndpoint: process.env.NVIDIA_TTS_ENDPOINT || '',
         ttsLanguage: process.env.NVIDIA_TTS_LANGUAGE || 'en-US',

@@ -10,6 +10,8 @@ const {
 } = require('@discordjs/voice');
 const localSpeech = require('./localSpeech');
 const nvidiaSpeech = require('./nvidiaSpeech');
+const groqSpeech = require('./groqSpeech');
+const sarvamSpeech = require('./sarvamSpeech');
 
 const sessions = new Map();
 
@@ -27,6 +29,14 @@ const EMPTY_VC_LEAVE_AFTER_MS = 60_000;
  * nothing intelligible was captured.
  */
 async function transcribeUtterance(settings, chunks) {
+    // Whisper large-v3 on Groq first (best for Hinglish), then NVIDIA, then local.
+    if (groqSpeech.isGroqEnabled(settings)) {
+        try {
+            return await groqSpeech.transcribePcmChunks(settings, chunks);
+        } catch (error) {
+            console.error(`[ZiGBoT VOICE] Groq Whisper failed, trying NVIDIA: ${error.message}`);
+        }
+    }
     if (settings.useNvidiaSpeech !== false) {
         try {
             const transcript = await nvidiaSpeech.transcribePcmChunks(settings, chunks);
@@ -168,7 +178,15 @@ async function speak(guildId, settings, rawText) {
     let directory = null;
     let pcm = null;
 
-    if (settings.useNvidiaSpeech !== false) {
+    // Sarvam (Indian voices) first, then NVIDIA, then a local TTS command.
+    if (sarvamSpeech.isSarvamEnabled(settings)) {
+        try {
+            ({ pcm } = await sarvamSpeech.synthesizeSpeech(settings, text));
+        } catch (error) {
+            console.error(`[ZiGBoT VOICE] Sarvam TTS failed, trying NVIDIA: ${error.message}`);
+        }
+    }
+    if (!pcm && settings.useNvidiaSpeech !== false) {
         try {
             const result = await nvidiaSpeech.synthesizeSpeech(settings, text);
             outputPath = result.outputPath;
@@ -178,7 +196,7 @@ async function speak(guildId, settings, rawText) {
             console.error(`[ZiGBoT VOICE] NVIDIA TTS failed, trying local TTS: ${error.message}`);
         }
     }
-    if (!outputPath) {
+    if (!outputPath && !pcm) {
         const result = await localSpeech.synthesizeSpeech(settings, text);
         outputPath = result.outputPath;
         directory = result.directory;

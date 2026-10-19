@@ -8,6 +8,7 @@ const TABS = [
     { id: 'channels', label: 'Channels' },
     { id: 'features', label: 'Features' },
     { id: 'music', label: '🎵 Music' },
+    { id: 'voice', label: '🎙️ Voice' },
     { id: 'test', label: 'Test' },
     { id: 'premium', label: '💎 Premium' },
     { id: 'history', label: 'History' }
@@ -177,7 +178,7 @@ export default function GuildEditor({ initial, meta }) {
                 setTab('roles');
             } else if (error.data?.fieldErrors) {
                 const first = Object.keys(error.data.fieldErrors)[0] || '';
-                setTab(/^music_/.test(first) ? 'music' : /channel|respond|cooldown|keyword/.test(first) ? 'channels' : /memory|reputation|music|voice|legacy/.test(first) ? 'features' : 'behaviour');
+                setTab(/^music_/.test(first) ? 'music' : /^voice_/.test(first) ? 'voice' : /_role_ids$|owner_pronouns/.test(first) ? 'roles' : /channel|respond|cooldown|keyword/.test(first) ? 'channels' : /memory|reputation|music|voice|legacy/.test(first) ? 'features' : 'behaviour');
             }
             toast(error.status === 401 ? 'Your session expired. Sign in again.' : error.message, 'err');
         } finally {
@@ -245,7 +246,9 @@ export default function GuildEditor({ initial, meta }) {
 
             <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
                 {tab === 'behaviour' ? <BehaviourTab draft={draft} saved={saved} set={set} errors={fieldErrors} meta={meta} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
-                {tab === 'roles' ? <RolesTab roles={roles} roleById={roleById} mappings={mappings} setMappings={setMappings} errors={mappingErrors} meta={meta} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
+                {tab === 'roles' ? <ServerSetupCard draft={draft} set={set} errors={fieldErrors} roles={roles} /> : null}
+                {tab === 'roles' ? <div style={{ marginTop: 16 }}><RolesTab roles={roles} roleById={roleById} mappings={mappings} setMappings={setMappings} errors={mappingErrors} meta={meta} premium={premium} onUpgrade={() => setTab('premium')} /></div> : null}
+                {tab === 'voice' ? <VoiceTab draft={draft} set={set} errors={fieldErrors} meta={meta} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'channels' ? <ChannelsTab draft={draft} set={set} errors={fieldErrors} channels={channels} /> : null}
                 {tab === 'features' ? <FeaturesTab draft={draft} set={set} isHome={initial.guild.isHome} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'music' ? <MusicTab guildId={initial.guild.id} draft={draft} set={set} errors={fieldErrors} roles={roles} channels={channels} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
@@ -325,7 +328,8 @@ function BehaviourTab({ draft, set, errors, meta, premium, onUpgrade }) {
             <div className="card grid-2">
                 <div className="field">
                     <label htmlFor="language">Language</label>
-                    <input id="language" type="text" value={draft.language || ''} maxLength={meta.limits.language + 10} onChange={(e) => set('language')(e.target.value)} placeholder="e.g. English, Hindi, Hinglish" aria-invalid={errors.language ? 'true' : undefined} />
+                    <input id="language" type="text" value={draft.language || ''} maxLength={meta.limits.language + 10} onChange={(e) => set('language')(e.target.value)} placeholder="English or Hinglish" aria-invalid={errors.language ? 'true' : undefined} />
+                    <span className="help">“English” = English-only replies with international humour; “Hinglish” = Hinglish with desi humour. Anything else is passed to the AI as a preference.</span>
                     {errors.language ? <span className="error">{errors.language}</span> : null}
                 </div>
                 <div className="field">
@@ -666,6 +670,107 @@ function MusicTab({ guildId, draft, set, errors, roles, channels, premium, onUpg
                 {MUSIC_COMMANDS.map(([cmd, text]) => (
                     <div key={cmd} className="spread"><code>{cmd}</code><span className="help">{text}</span></div>
                 ))}
+            </div>
+        </div>
+    );
+}
+
+function titleCase(name) {
+    return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+// One role picker for the /setup roles (same style as the channel pickers).
+function RoleChecklist({ id, label, help, roles, selected, onChange, error }) {
+    const set = new Set(selected || []);
+    return (
+        <div className="field">
+            <span className="label" id={`${id}-label`}>{label}</span>
+            {help ? <span className="help">{help}</span> : null}
+            <div className="checklist" role="group" aria-labelledby={`${id}-label`}>
+                {roles.length === 0 ? <span className="help" style={{ padding: 8 }}>No roles found.</span> : null}
+                {roles.map((r) => (
+                    <label key={r.id}>
+                        <input type="checkbox" checked={set.has(r.id)} onChange={(e) => onChange(e.target.checked ? [...(selected || []), r.id] : (selected || []).filter((x) => x !== r.id))} />
+                        <span style={{ color: roleColor(r.color) }}>●</span>
+                        <span>{r.name}</span>
+                    </label>
+                ))}
+            </div>
+            {error ? <span className="error" role="alert">{error}</span> : null}
+        </div>
+    );
+}
+
+// The same answers the bot's /setup command asks for, editable here too.
+function ServerSetupCard({ draft, set, errors, roles }) {
+    return (
+        <div className="card stack">
+            <h2>Server setup</h2>
+            <p className="help" style={{ margin: 0 }}>What ZiGBoT cannot work out by itself. Same as the <code>/setup</code> command in Discord. The language is under <strong>AI behaviour</strong>.</p>
+            <div className="field" style={{ maxWidth: 320 }}>
+                <label htmlFor="owner-gender">Server owner's gender</label>
+                <select id="owner-gender" value={draft.owner_pronouns || ''} onChange={(e) => set('owner_pronouns')(e.target.value || null)} aria-invalid={errors.owner_pronouns ? 'true' : undefined}>
+                    <option value="">Not set</option>
+                    <option value="he/him">Male (he/him)</option>
+                    <option value="she/her">Female (she/her)</option>
+                    <option value="they/them">Prefer not to say (they/them)</option>
+                </select>
+                {errors.owner_pronouns ? <span className="error">{errors.owner_pronouns}</span> : null}
+            </div>
+            <div className="grid-2">
+                <RoleChecklist id="male-roles" label="Male roles (he/him)" roles={roles} selected={draft.male_role_ids} onChange={set('male_role_ids')} error={errors.male_role_ids} />
+                <RoleChecklist id="female-roles" label="Female roles (she/her)" roles={roles} selected={draft.female_role_ids} onChange={set('female_role_ids')} error={errors.female_role_ids} />
+                <RoleChecklist id="adult-roles" label="18+ roles" help="Members with these get roast mode." roles={roles} selected={draft.adult_role_ids} onChange={set('adult_role_ids')} error={errors.adult_role_ids} />
+                <RoleChecklist id="minor-roles" label="Under-18 roles" help="Always gentle and clean, never roasted — beats every other setting." roles={roles} selected={draft.minor_role_ids} onChange={set('minor_role_ids')} error={errors.minor_role_ids} />
+            </div>
+        </div>
+    );
+}
+
+function VoiceTab({ draft, set, errors, meta, premium, onUpgrade }) {
+    const pace = draft.voice_pace ?? 100;
+    return (
+        <div className="stack">
+            {premium ? null : <PremiumNote onUpgrade={onUpgrade}>Voice chat is a Premium feature. These settings take effect once this server is Premium.</PremiumNote>}
+            <div className="card stack">
+                <h2>Voice chat</h2>
+                <Switch id="voice-enabled" checked={draft.voice_enabled} onChange={set('voice_enabled')} label="Voice chat enabled in this server" help="Lets ZiGBoT join voice channels to listen and talk (/join, or @ZiGBoT join)." />
+                <Switch id="voice-speak-replies" checked={draft.voice_speak_replies} onChange={set('voice_speak_replies')} label="Speak typed replies out loud" help="When ZiGBoT is in a voice channel, replies to messages typed in that channel's chat (or by people sitting in it) are also spoken. Never while music is playing." />
+            </div>
+            <div className="card stack">
+                <h2>ZiGBoT's voice</h2>
+                <div className="grid-2">
+                    <div className="field">
+                        <label htmlFor="voice-speaker">Voice</label>
+                        <span className="help">Natural Indian voices from Sarvam AI. Listen to them on Sarvam's website, then pick one here.</span>
+                        <select id="voice-speaker" value={draft.voice_speaker || ''} onChange={(e) => set('voice_speaker')(e.target.value)} aria-invalid={errors.voice_speaker ? 'true' : undefined}>
+                            <option value="">Default voice</option>
+                            {meta.voiceSpeakers.map((name) => <option key={name} value={name}>{titleCase(name)}</option>)}
+                        </select>
+                        {errors.voice_speaker ? <span className="error">{errors.voice_speaker}</span> : null}
+                    </div>
+                    <div className="field">
+                        <label htmlFor="voice-language">Accent / language</label>
+                        <span className="help">Automatic follows the server language: English servers get Indian English, others Hindi/Hinglish.</span>
+                        <select id="voice-language" value={draft.voice_language || 'auto'} onChange={(e) => set('voice_language')(e.target.value)}>
+                            <option value="auto">Automatic</option>
+                            <option value="hi-IN">Hindi / Hinglish</option>
+                            <option value="en-IN">Indian English</option>
+                        </select>
+                    </div>
+                    <div className="field">
+                        <label htmlFor="voice-pace">Speaking speed: {(pace / 100).toFixed(2)}×</label>
+                        <input id="voice-pace" type="range" min={50} max={200} step={5} value={pace} onChange={(e) => set('voice_pace')(Number(e.target.value))} />
+                        {errors.voice_pace ? <span className="error">{errors.voice_pace}</span> : null}
+                    </div>
+                </div>
+                <p className="help" style={{ margin: 0 }}>If the Indian voice service is unavailable, ZiGBoT falls back to its standard voice automatically.</p>
+            </div>
+            <div className="card stack">
+                <h2>How to talk to ZiGBoT</h2>
+                <div className="spread"><code>/join</code><span className="help">Call ZiGBoT into your voice channel (posts a panel with Start/Stop listening, Status and Leave)</span></div>
+                <div className="spread"><code>Start listening</code><span className="help">Then just talk — server owner and admins switch listening on, because it controls recording</span></div>
+                <div className="spread"><code>Type in the voice chat</code><span className="help">ZiGBoT answers in text and out loud</span></div>
             </div>
         </div>
     );

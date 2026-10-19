@@ -44,6 +44,11 @@ function defaultGuildConfig({ guildId, legacy = false, legacySettings = null } =
         music_channel_id: null,
         music_idle_minutes: 3,
         music_default_volume: 80,
+        // Voice chat (dashboard Voice tab).
+        voice_speaker: '',
+        voice_pace: 100,
+        voice_language: 'auto',
+        voice_speak_replies: true,
         version: 1
     };
 }
