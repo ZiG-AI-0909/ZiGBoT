@@ -814,7 +814,9 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
             }
         }
 
+        const aiStartedAt = Date.now();
         const replyText = await ai.reply({
+            fast: true,
             userMessage: transcript,
             authorName,
             contextMessages: history,
@@ -830,8 +832,14 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
             rateLimitMax: voiceSettings.aiRateLimitMax
         });
 
+        console.log(`[ZiGBoT VC] AI reply ready in ${Date.now() - aiStartedAt} ms`);
+
         defaultMemory.addMessage(memoryKey, 'user', transcript, authorName);
         defaultMemory.addMessage(memoryKey, 'assistant', replyText);
+
+        // Speak first: the database bookkeeping below must never delay the voice.
+        const speaking = speak(guild.id, voiceSettings, replyText)
+            .catch((error) => console.error(`[ZiGBoT VOICE] Could not speak the reply: ${error.message}`));
 
         // Voice transcripts feed the same accountability ledger as text.
         if (voiceReputationAllowed) {
@@ -853,7 +861,7 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
             console.error(`[ZiGBoT MEMORY] Save skipped: ${memoryError.message}`);
         }
 
-        await speak(guild.id, voiceSettings, replyText);
+        await speaking;
     } catch (error) {
         console.error(`[ZiGBoT VOICE ROUTE] ${error.message}`);
     }

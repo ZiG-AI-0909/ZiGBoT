@@ -414,7 +414,7 @@ function createAiClient(settings) {
         model: settings.aiModel,
         rateLimiter,
 
-        async reply({ userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, declineMode = false, userId = null, capabilities = null, memories = null, retrievalFailed = false, reputation = null, recentMemories = null, recentRetrievalFailed = false, guildPrompt = null, rateLimitMax = null }) {
+        async reply({ fast = false, userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, declineMode = false, userId = null, capabilities = null, memories = null, retrievalFailed = false, reputation = null, recentMemories = null, recentRetrievalFailed = false, guildPrompt = null, rateLimitMax = null }) {
             // guildPrompt = { config, behavior, isHomeGuild } in multi-server mode; null keeps the legacy prompt exactly.
             if (isCreatorQuestion(userMessage)) return getCreatorResponse(userMessage, { isHomeGuild: guildPrompt ? guildPrompt.isHomeGuild : true });
 
@@ -450,14 +450,20 @@ function createAiClient(settings) {
                 { role: 'user', content: formattedUserContent }
  ];
 
+            // Voice chat (fast): reasoning models such as gpt-oss think briefly
+            // ("Reasoning: low" in their system prompt), and a slow request is
+            // retried once after 30 s instead of the SDK's long defaults.
+            if (fast && /gpt-oss/i.test(String(settings.aiModel || ''))) {
+                messages[0] = { ...messages[0], content: `Reasoning: low\n${messages[0].content}` };
+            }
             const response = await client.chat.completions.create({
                 model: settings.aiModel,
                 messages,
                 temperature: 1,
                 top_p: 1,
-                max_tokens: 4096,
+                max_tokens: fast ? 1024 : 4096,
                 stream: false
-            });
+            }, fast ? { timeout: 30_000, maxRetries: 1 } : undefined);
 
 
             const content = response.choices?.[0]?.message?.content;

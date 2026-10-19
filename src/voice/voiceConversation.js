@@ -241,11 +241,14 @@ async function speak(guildId, settings, rawText) {
     let outputPath = null;
     let directory = null;
     let pcm = null;
+    const ttsStartedAt = Date.now();
+    let ttsProvider = 'local';
 
     // Sarvam (Indian voices) first, then NVIDIA, then a local TTS command.
     if (sarvamSpeech.isSarvamEnabled(settings)) {
         try {
             ({ pcm } = await sarvamSpeech.synthesizeSpeech(settings, text));
+            ttsProvider = 'Sarvam';
         } catch (error) {
             console.error(`[ZiGBoT VOICE] Sarvam TTS failed, trying NVIDIA: ${error.message}`);
         }
@@ -256,6 +259,7 @@ async function speak(guildId, settings, rawText) {
             outputPath = result.outputPath;
             directory = result.directory;
             pcm = result.pcm;
+            ttsProvider = 'NVIDIA';
         } catch (error) {
             console.error(`[ZiGBoT VOICE] NVIDIA TTS failed, trying local TTS: ${error.message}`);
         }
@@ -274,7 +278,7 @@ async function speak(guildId, settings, rawText) {
     await previous.catch(() => {});
 
     try {
-        console.log(`[ZiGBoT VC] speaking reply (${text.length} chars)`);
+        console.log(`[ZiGBoT VC] speaking reply (${text.length} chars, ${ttsProvider} voice ready in ${Date.now() - ttsStartedAt} ms)`);
         const player = createAudioPlayer();
         // Without this listener, a player error is an unhandled 'error' event
         // and crashes the whole process.
