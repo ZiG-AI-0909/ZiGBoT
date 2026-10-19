@@ -28,12 +28,27 @@ function orderMappings(mappings, memberRoleIds, rolePositions = new Map()) {
             || String(a.role_id).localeCompare(String(b.role_id)));
 }
 
-function resolveMemberBehavior({ config, mappings = [], memberRoleIds = [], rolePositions, premium = true } = {}) {
+// /setup age roles. Under 18 beats every other role and setting.
+const MINOR_INSTRUCTION = 'This member is UNDER 18. Keep every reply clean, kind and age-appropriate: no roasts, no insults, no swearing, no dark, sexual, romantic or adult humour.';
+
+function hasAnyRole(owned, ids) {
+    return (ids || []).some((id) => owned.has(String(id)));
+}
+
+function resolveMemberBehavior({ config, mappings = [], memberRoleIds = [], rolePositions, premium = true, isGuildOwner = false } = {}) {
     const cfg = config || {};
     const matched = orderMappings(mappings, memberRoleIds, rolePositions);
+    const owned = new Set((memberRoleIds || []).map(String));
+    const isMinor = hasAnyRole(owned, cfg.minor_role_ids);
+    const isAdult = !isMinor && hasAnyRole(owned, cfg.adult_role_ids);
 
-    let tone = matched.find((m) => m.tone)?.tone || cfg.default_tone || 'gentle';
-    const pronouns = matched.find((m) => m.pronouns)?.pronouns || null;
+    // Tone: a role mapping's tone, else 18+ members get roasted, else the server default.
+    let tone = matched.find((m) => m.tone)?.tone || (isAdult ? 'savage' : null) || cfg.default_tone || 'gentle';
+    // Pronouns: a role mapping, else the /setup gender roles, else the owner's from /setup.
+    const pronouns = matched.find((m) => m.pronouns)?.pronouns
+        || (hasAnyRole(owned, cfg.female_role_ids) ? 'she/her' : null)
+        || (hasAnyRole(owned, cfg.male_role_ids) ? 'he/him' : null)
+        || (isGuildOwner ? cfg.owner_pronouns || null : null);
 
     const features = new Set(DEFAULT_MEMBER_FEATURES);
     if (tone === 'savage' || cfg.default_tone === 'savage') features.add('roast');
@@ -45,10 +60,13 @@ function resolveMemberBehavior({ config, mappings = [], memberRoleIds = [], role
     // Free servers: Premium-only features are off, whatever a mapping allows.
     if (!premium) for (const f of PREMIUM_ONLY_FEATURES) features.delete(f);
 
+    // Under 18: never roasted, whatever any role or the server default says.
+    if (isMinor) features.delete('roast');
+
     // A savage tone without the roast feature degrades to gentle.
     if (tone === 'savage' && !features.has('roast')) tone = 'gentle';
 
-    const instructions = [];
+    const instructions = isMinor ? [MINOR_INSTRUCTION] : [];
     let budget = LIMITS.roleInstructions * 2;
     for (const mapping of matched) {
         const text = String(mapping.instructions || '').trim();
@@ -60,6 +78,7 @@ function resolveMemberBehavior({ config, mappings = [], memberRoleIds = [], role
     return {
         tone,
         pronouns,
+        isMinor,
         instructions,
         features,
         primary: matched[0] || null,

@@ -172,6 +172,16 @@ test('voice path allows playback and info commands', () => {
     assert.equal(play.action, 'play');
     assert.equal(play.target, 'https://audio.example/track.mp3');
 
+    const song = buildVoiceTranscriptRoute(routeContext, 'hey zigbot play kesariya by arijit singh.', settings, 'bot-id');
+    assert.equal(song.action, 'play');
+    assert.equal(song.target, 'kesariya by arijit singh');
+
+    const hinglish = buildVoiceTranscriptRoute(routeContext, 'kesariya bajao', settings, 'bot-id');
+    assert.equal(hinglish.action, 'play');
+    assert.equal(hinglish.target, 'kesariya');
+
+    assert.notEqual(buildVoiceTranscriptRoute(routeContext, "let's play a game", settings, 'bot-id').action, 'play');
+
     const volume = buildVoiceTranscriptRoute(routeContext, 'set volume to 40', settings, 'bot-id');
     assert.equal(volume.action, 'volume_music');
     assert.equal(volume.volume, 40);

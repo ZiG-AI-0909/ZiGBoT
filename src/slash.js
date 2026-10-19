@@ -36,10 +36,11 @@ function buildDefinitions() {
     return [
         new SlashCommandBuilder()
             .setName('play')
-            .setDescription('Queue a direct HTTPS audio URL')
+            .setDescription('Play a song in your voice channel')
             .addStringOption((option) => option
-                .setName('url')
-                .setDescription('Direct https:// audio URL')
+                .setName('song')
+                .setDescription('Song name or YouTube link')
+                .setMaxLength(500)
                 .setRequired(true)),
         new SlashCommandBuilder()
             .setName('kick')
@@ -73,6 +74,28 @@ function buildDefinitions() {
         new SlashCommandBuilder()
             .setName('help')
             .setDescription('List everything ZiGBoT can do'),
+        new SlashCommandBuilder()
+            .setName('setup')
+            .setDescription('Admins: tell ZiGBoT the language, owner gender, and gender/age roles')
+            .addStringOption((option) => option
+                .setName('language')
+                .setDescription('English (English humour) or Hinglish (desi humour)')
+                .setRequired(true)
+                .addChoices({ name: 'English', value: 'English' }, { name: 'Hinglish', value: 'Hinglish' }))
+            .addStringOption((option) => option
+                .setName('owner_gender')
+                .setDescription("The server owner's gender")
+                .setRequired(true)
+                .addChoices(
+                    { name: 'Male (he/him)', value: 'he/him' },
+                    { name: 'Female (she/her)', value: 'she/her' },
+                    { name: 'Prefer not to say (they/them)', value: 'they/them' }
+                ))
+            .addRoleOption((option) => option.setName('male_role').setDescription('Role that means male (he/him)'))
+            .addRoleOption((option) => option.setName('female_role').setDescription('Role that means female (she/her)'))
+            .addRoleOption((option) => option.setName('adult_role').setDescription('Role for members 18+ (roast mode)'))
+            .addRoleOption((option) => option.setName('under18_role').setDescription('Role for members under 18 (always gentle, never roasted)'))
+            .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
         // YouTube live-chat watching — owner-only, hidden from non-owners by
         // default_member_permissions and a silent ignore inside the handler.
         new SlashCommandBuilder()
@@ -143,7 +166,7 @@ async function interactionToIntent(interaction) {
     if (!action) return null;
 
     if (action === 'play') {
-        return { action, target: interaction.options.getString('url', true).trim().slice(0, 2000) };
+        return { action, target: interaction.options.getString('song', true).trim().slice(0, 2000) };
     }
     if (action === 'kick_member' || action === 'ban_member') {
         const user = interaction.options.getUser('member', true);

@@ -81,7 +81,7 @@ const actionCatalog = new Map([
     ['join_voice', { permission: null, description: 'Join your current voice channel.' }],
     ['leave_voice', { permission: null, description: 'Leave the voice channel.' }],
     ['voice_status', { permission: null, description: 'Show voice connection status.' }],
-    ['play', { permission: null, description: 'Queue a direct HTTPS audio URL.' }],
+    ['play', { permission: null, description: 'Play a song by name or YouTube link (or a direct https audio URL).' }],
     ['pause_music', { permission: null, description: 'Pause playback.' }],
     ['resume_music', { permission: null, description: 'Resume playback.' }],
     ['skip_music', { permission: null, description: 'Skip the current track.' }],
@@ -332,9 +332,19 @@ async function executeTool(message, settings, intent, context = {}) {
                     : 'ℹ️ I was not listening.';
                 break;
             case 'play': {
-                if (!isInGuildVoice(guild)) return '❌ Join a voice channel first.';
-                const added = music.addTrack(guild.id, text(intent.target, 'Audio URL', 2000), message.author.id);
-                result = `✅ Queued audio track at position ${added.position}.`;
+                const query = text(intent.target, 'Song name or link', 2000);
+                if (!message.member?.voice?.channel && !isInGuildVoice(guild)) return '❌ Join a voice channel first.';
+                // Look the song up before joining, so a bad search never drags the bot into voice.
+                const track = await music.resolve(query);
+                if (!isInGuildVoice(guild)) await joinMemberVoiceChannel(message);
+                // The music panel (src/music/panel.js) shows playback in this channel.
+                const added = music.queueTrack(guild.id, track, message.author.id, {
+                    announce: (content) => message.channel?.send({ content, allowedMentions: { parse: [] } }),
+                    channel: message.channel || null
+                });
+                result = added.startedNow
+                    ? `🎶 Starting ${music.describeTrack(added.track)}`
+                    : `✅ Added ${music.describeTrack(added.track)} to the queue (position ${added.position}).`;
                 target = added.track.url;
                 break;
             }
@@ -353,14 +363,22 @@ async function executeTool(message, settings, intent, context = {}) {
                 break;
             case 'queue_music': {
                 const currentQueue = music.queue(guild.id);
-                result = currentQueue.current
-                    ? `🎵 Now playing: ${currentQueue.current.url}\nQueued tracks: ${currentQueue.tracks.length}`
-                    : '🎵 Nothing is currently playing.';
+                if (!currentQueue.current && currentQueue.tracks.length === 0) {
+                    result = '🎵 Nothing is currently playing.';
+                    break;
+                }
+                const upNext = currentQueue.tracks.slice(0, 10)
+                    .map((track, index) => `${index + 1}. ${music.describeTrack(track)}`);
+                const more = currentQueue.tracks.length > 10 ? `\n…and ${currentQueue.tracks.length - 10} more` : '';
+                result = [
+                    currentQueue.current ? `🎵 Now playing: ${music.describeTrack(currentQueue.current)}${currentQueue.loop ? ' 🔁' : ''}` : null,
+                    upNext.length ? `**Up next:**\n${upNext.join('\n')}${more}` : 'Nothing else queued.'
+                ].filter(Boolean).join('\n');
                 break;
             }
             case 'now_playing': {
                 const currentQueue = music.queue(guild.id);
-                result = currentQueue.current ? `🎵 Now playing: ${currentQueue.current.url}` : '🎵 Nothing is currently playing.';
+                result = currentQueue.current ? `🎵 Now playing: ${music.describeTrack(currentQueue.current)}` : '🎵 Nothing is currently playing.';
                 break;
             }
             case 'volume_music':

@@ -263,7 +263,7 @@ function shouldRemember(message) {
     return { should: false, reason: 'no durable signal' };
 }
 
-function getSystemPrompt({ tone = 'savage', gender = null, isOwner = false, comebackMode = false } = {}) {
+function getSystemPrompt({ tone = 'savage', gender = null, isOwner = false, comebackMode = false, language = '' } = {}) {
     const genderInstruction = gender
         ? ` The user has explicitly selected the ${gender} role; when pronouns are necessary, use ${gender === 'female' ? 'she/her' : 'he/him'} for this user. Do not make other gender assumptions.`
         : '';
@@ -271,7 +271,7 @@ function getSystemPrompt({ tone = 'savage', gender = null, isOwner = false, come
         ? ' This user is ZiG, your creator and the verified main owner of this server. Always treat the owner respectfully in a loyal JARVIS-like assistant tone. Never roast, insult, mock, or use derogatory humor toward the owner, regardless of their roles or message. A roast command from the owner may target only the explicitly mentioned user.'
         : '';
     const comebackSuffix = comebackMode && tone === 'savage' && !isOwner ? comebackInstruction : '';
-    const instructions = isOwner || tone === 'gentle' ? gentleInstructions : savageInstructions;
+    const instructions = personaFor(isOwner || tone === 'gentle' ? 'gentle' : 'savage', language);
     return `${instructions}${genderInstruction}${ownerInstruction}${comebackSuffix}`;
 }
 
@@ -284,7 +284,7 @@ function isCreatorQuestion(message) {
 }
 
 // Base personas live in the shared module (also used by the dashboard preview).
-const { savageInstructions, gentleInstructions } = require('../../dashboard/lib/shared/personas');
+const { savageInstructions, gentleInstructions, personaFor } = require('../../dashboard/lib/shared/personas');
 
 // Structured intent classifier. Returns {action, ...fields} for tool actions or
 // {action: 'chat'} for persona conversation. The router validates every field;
@@ -301,7 +301,7 @@ Actions and their fields:
 - get_channel_info: {channel}
 - join_voice, leave_voice, voice_status: {}
 - start_voice_listening, stop_voice_listening: {}
-- play: {target} (target MUST be a direct https:// audio URL; if the user did not paste one, use action "chat")
+- play: {target} (target = the song name, artist, YouTube link, or direct https:// audio URL the user wants played; use action "chat" if they did not name anything to play)
 - pause_music, resume_music, skip_music, stop_music, queue_music, now_playing, loop_music: {}
 - volume_music: {volume} (0-100)
 - send_message: {message} (the exact text to send, max 1900 chars)
@@ -393,7 +393,7 @@ function buildReplySystemPrompt({ tone = 'savage', gender = null, isOwner = fals
     if (!guildPrompt) return getSystemPrompt({ tone, gender, isOwner, isNonGentle, comebackMode });
     const { config = {}, behavior = null, isHomeGuild = false } = guildPrompt;
     const usesZigPersona = !config.replace_base_persona && (tone === 'gentle' || tone === 'savage' || isOwner);
-    const basePrompt = usesZigPersona ? getSystemPrompt({ tone, gender, isOwner: isOwner && isHomeGuild, isNonGentle, comebackMode }) : null;
+    const basePrompt = usesZigPersona ? getSystemPrompt({ tone, gender, isOwner: isOwner && isHomeGuild, isNonGentle, comebackMode, language: config.language }) : null;
     return composeSystemPrompt({ basePrompt, config, behavior: behavior ? { ...behavior, tone } : { tone, instructions: [], pronouns: null }, isHomeGuild });
 }
 

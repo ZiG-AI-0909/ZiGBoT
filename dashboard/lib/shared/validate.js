@@ -247,6 +247,8 @@ function sanitizeStoredConfig(row, { guildId } = {}) {
             if (Array.isArray(row[key])) out[key] = row[key].map(String).filter((id) => SNOWFLAKE.test(id));
         } else if (key === 'log_channel_id') {
             out[key] = SNOWFLAKE.test(String(row[key])) ? String(row[key]) : null;
+        } else if (key === 'owner_pronouns') {
+            out[key] = PRONOUNS.includes(row[key]) ? row[key] : null;
         } else if (expected === typeof row[key]) {
             out[key] = row[key];
         }

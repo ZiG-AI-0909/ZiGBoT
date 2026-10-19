@@ -19,7 +19,8 @@ function behaviorForMember(ctx, member) {
             positions.set(String(role.id), Number(role.position) || 0);
         }
     }
-    return resolveMemberBehavior({ config: ctx.config, mappings: ctx.mappings, memberRoleIds: roleIds, rolePositions: positions, premium: ctx.premium !== false });
+    const isGuildOwner = Boolean(member?.id) && String(member.id) === String(member?.guild?.ownerId || '');
+    return resolveMemberBehavior({ config: ctx.config, mappings: ctx.mappings, memberRoleIds: roleIds, rolePositions: positions, premium: ctx.premium !== false, isGuildOwner });
 }
 
 /** Blocked channels never get replies; a non-empty allow-list restricts replies to it. Threads inherit from their parent. */

@@ -27,6 +27,8 @@ const {
 } = require('../../dashboard/lib/shared');
 
 const SNOWFLAKE = /^\d{17,20}$/;
+const SETUP_FIELDS = ['owner_pronouns', 'male_role_ids', 'female_role_ids', 'adult_role_ids', 'minor_role_ids'];
+const SETUP_PRONOUNS = ['she/her', 'he/him', 'they/them'];
 
 function isHomeGuild(guild, settings) {
     if (!guild) return false;
@@ -210,6 +212,9 @@ class GuildConfigStore {
         const home = isHomeGuild(guild, this.settings);
         const defaults = defaultGuildConfig({ guildId, legacy: home, legacySettings: this.settings });
         delete defaults.version;
+        // /setup columns keep their database defaults (and seeding keeps
+        // working on a database that has not run the setup migration yet).
+        for (const key of SETUP_FIELDS) delete defaults[key];
         await this.request('zb_guild_configs?on_conflict=guild_id', {
             method: 'POST',
             prefer: 'resolution=ignore-duplicates,return=minimal',
@@ -228,6 +233,34 @@ class GuildConfigStore {
         });
         this.invalidate(guildId);
         return true;
+    }
+
+    /**
+     * Save the /setup answers for THIS guild. Only the language and the
+     * setup columns are written; everything else an admin set stays as is.
+     */
+    async saveSetup(guild, { language, ownerPronouns, maleRoleIds, femaleRoleIds, adultRoleIds, minorRoleIds }) {
+        if (!this.enabled) throw new Error('Server settings are not available on this bot (no database configured).');
+        const guildId = String(guild?.id || '');
+        if (!SNOWFLAKE.test(guildId)) throw new Error('Invalid server.');
+        const ids = (list) => [...new Set((list || []).map(String).filter((id) => SNOWFLAKE.test(id) && id !== guildId))].slice(0, 10);
+        const body = {
+            language: language === 'English' ? 'English' : 'Hinglish',
+            owner_pronouns: SETUP_PRONOUNS.includes(ownerPronouns) ? ownerPronouns : null,
+            male_role_ids: ids(maleRoleIds),
+            female_role_ids: ids(femaleRoleIds),
+            adult_role_ids: ids(adultRoleIds),
+            minor_role_ids: ids(minorRoleIds),
+            updated_at: new Date(this.now()).toISOString()
+        };
+        await this.ensureGuild(guild);
+        await this.request(`zb_guild_configs?guild_id=eq.${encodeURIComponent(guildId)}`, {
+            method: 'PATCH',
+            prefer: 'return=minimal',
+            body
+        });
+        this.invalidate(guildId);
+        return body;
     }
 
     async heartbeat({ guildCount = 0, version = '' } = {}) {

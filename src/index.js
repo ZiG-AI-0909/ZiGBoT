@@ -36,6 +36,8 @@ const {
     extractTopicKeyword
 } = require('./ai/client');
 const { registerSlashCommands, interactionToIntent, runYouTubeInteraction } = require('./slash');
+const { handleSetupCommand, sendWelcome } = require('./guildConfig/setup');
+const { isMusicButton, handleMusicButton } = require('./music/panel');
 const { initYouTube } = require('./youtube');
 const brain = require('./db/brain');
 const { startHealthServer } = require('./health');
@@ -111,7 +113,8 @@ function resolveToneAndGender(ctx, behavior, member, { isOwner = false } = {}) {
     const legacyGentle = legacy && !isOwner && !isNonGentle && isGentleMember(member, settings.gentleRoleNames, member?.guild?.id, settings.nonGentleRoleNames);
     const mappedTone = behavior?.primary && (behavior.matchedRoleIds || []).length > 0 && behavior.tone;
     let tone;
-    if (isOwner) tone = 'gentle';
+    // Under-18 members (/setup) are always gentle — checked before anything else.
+    if (behavior?.isMinor || isOwner) tone = 'gentle';
     else if (legacy && !mappedTone) tone = legacyGentle ? 'gentle' : 'savage';
     else tone = behavior?.tone || 'gentle';
     if (tone === 'savage' && behavior && !hasFeature(behavior, 'roast')) tone = 'gentle';
@@ -184,6 +187,8 @@ client.once(Events.ClientReady, async (c) => {
 client.on(Events.GuildCreate, async (guild) => {
     console.log(`[ZiGBoT CONFIG] Added to server ${guild.id} (${guild.name}).`);
     await guildStore.ensureGuild(guild).catch((error) => console.error(`[ZiGBoT CONFIG] Seed failed for ${guild.id}: ${error.message}`));
+    // Ask the admins for what the bot cannot work out by itself (/setup).
+    await sendWelcome(guild).catch((error) => console.error(`[ZiGBoT SETUP] Welcome message failed for ${guild.id}: ${error.message}`));
 });
 
 client.on(Events.GuildDelete, async (guild) => {
@@ -192,6 +197,21 @@ client.on(Events.GuildDelete, async (guild) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
+    if (isMusicButton(interaction)) {
+        await handleMusicButton(interaction, async (intent) => {
+            const fakeMessage = {
+                author: interaction.user,
+                member: interaction.member,
+                guild: interaction.guild,
+                channel: interaction.channel,
+                reply: () => null
+            };
+            const { ctx, gSettings } = await guildRuntime(interaction.guild, interaction.member);
+            if (ctx && ctx.config.enabled === false) return '❌ ZiGBoT is switched off in this server by its admins.';
+            return runIntent(fakeMessage, gSettings, intent, { warnStore });
+        }).catch((error) => console.error(`[ZiGBoT MUSIC] button failed: ${error.message}`));
+        return;
+    }
     if (!interaction.isChatInputCommand()) return;
     try {
         await interaction.deferReply();
@@ -206,6 +226,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const { ctx: interactionCtx, gSettings: interactionSettings } = await guildRuntime(interaction.guild, interaction.member);
         if (interactionCtx && interactionCtx.config.enabled === false) {
             await interaction.editReply('ZiGBoT is switched off in this server by its admins.');
+            return;
+        }
+
+        if (interaction.commandName === 'setup') {
+            await interaction.editReply({ content: await handleSetupCommand(interaction, guildStore), allowedMentions: { parse: [] } });
             return;
         }
 
@@ -413,6 +438,10 @@ client.on(Events.MessageCreate, async (message) => {
     if (ownerRoastTarget) {
         const targetMember = message.guild.members.cache.get(ownerRoastTarget.id);
         const targetName = targetMember?.displayName || ownerRoastTarget.globalName || ownerRoastTarget.username;
+        if (behaviorForMember(guildCtx, targetMember)?.isMinor) {
+            await message.reply({ content: `I don't roast members under 18 — ${targetName} gets the wholesome treatment only. 🌸`, allowedMentions: { repliedUser: false } });
+            return;
+        }
 
         try {
             await message.channel.sendTyping();

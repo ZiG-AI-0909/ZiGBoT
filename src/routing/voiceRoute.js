@@ -50,11 +50,20 @@ function buildVoiceTranscriptRoute(routeContext, transcript, settings, botUserId
         return intent;
     }
 
-    // play needs a direct HTTPS audio URL in the transcript
     const urlMatch = text.match(/https:\/\/\S+/);
     if (urlMatch && /\b(play|queue)\b/i.test(text)) {
         intent.action = 'play';
         intent.target = urlMatch[0];
+        return intent;
+    }
+
+    // "play <song>" / Hinglish "<song> bajao|chalao|lagao", anchored so
+    // "let's play a game" mid-sentence never starts music.
+    const songMatch = text.match(/^(?:hey |ok |yo |zigbot |zi g bot |bot )*(?:please |plz )*(?:play|bajao|chalao)\s+(?:the song |song |gaana )?(.+)/i)
+        || text.match(/^(?:hey |ok |zigbot |bot )*(.+?)\s+(?:bajao|chalao|lagao|laga do|play karo)[.!]*$/i);
+    if (songMatch && songMatch[1].trim().length > 1) {
+        intent.action = 'play';
+        intent.target = songMatch[1].trim().replace(/[.!?]+$/, '').slice(0, 200);
         return intent;
     }
 

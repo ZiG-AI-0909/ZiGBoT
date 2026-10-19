@@ -33,6 +33,12 @@ function defaultGuildConfig({ guildId, legacy = false, legacySettings = null } =
         music_enabled: true,
         voice_enabled: true,
         legacy_role_rules: legacy,
+        // Filled in by the bot's /setup command.
+        owner_pronouns: null,
+        male_role_ids: [],
+        female_role_ids: [],
+        adult_role_ids: [],
+        minor_role_ids: [],
         version: 1
     };
 }
