@@ -47,3 +47,21 @@ test('silence and Whisper noise phrases give an empty transcript; errors are rep
         await assert.rejects(groq.transcribePcmChunks({ groqApiKey: 'k' }, oneSecond), /401.*Invalid API Key/);
     });
 });
+
+test('when Groq and NVIDIA both fail, transcription reports why instead of going silent', async () => {
+    const nvidia = require('../src/voice/nvidiaSpeech');
+    const conversation = require('../src/voice/voiceConversation');
+    nvidia.setAsrClientForTests({
+        StreamingRecognize() { throw new Error('endpoint down'); }
+    });
+    try {
+        await withFetch(async () => ({ ok: false, status: 401, json: async () => ({ error: { message: 'Invalid API Key' } }) }), async () => {
+            await assert.rejects(
+                conversation.transcribeUtterance({ groqApiKey: 'bad', nvidiaApiKey: 'x' }, oneSecond),
+                /speech-to-text failed \(Groq: .*401.*NVIDIA/
+            );
+        });
+    } finally {
+        nvidia.closeAsrClient();
+    }
+});

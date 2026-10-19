@@ -222,6 +222,12 @@ async function authorize(message, settings, intent, permission) {
     return null;
 }
 
+// Where listening problems are reported: the channel the command came from.
+function voiceNotify(message) {
+    const channel = message.channel;
+    return channel?.send ? (content) => channel.send({ content, allowedMentions: { parse: [] } }) : null;
+}
+
 async function executeTool(message, settings, intent, context = {}) {
     if (!message.guild) return '❌ These tools only work inside a server.';
     let target = intent.target || intent.channel || intent.role || 'server';
@@ -296,7 +302,7 @@ async function executeTool(message, settings, intent, context = {}) {
                 // transcribing immediately when the pipeline is configured.
                 const canListen = settings.voiceMode === 'push-to-talk' && typeof context.onVoiceTranscript === 'function';
                 if (canListen) {
-                    const started = startListening(guild, settings, context.onVoiceTranscript);
+                    const started = startListening(guild, settings, context.onVoiceTranscript, { notify: voiceNotify(message) });
                     result = started
                         ? `✅ Joined **${voiceChannel.name}** and I am listening — talk to me!`
                         : `✅ Joined **${voiceChannel.name}**. Already listening.`;
@@ -352,7 +358,7 @@ async function executeTool(message, settings, intent, context = {}) {
             case 'start_voice_listening':
                 if (settings.voiceMode !== 'push-to-talk') return '❌ Voice listening is disabled by configuration.';
                 if (typeof context.onVoiceTranscript !== 'function') return '❌ Local voice processing is not configured.';
-                result = startListening(guild, settings, context.onVoiceTranscript)
+                result = startListening(guild, settings, context.onVoiceTranscript, { notify: voiceNotify(message) })
                     ? '✅ I am listening temporarily. Use `@ZiGBoT stop listening` when finished.'
                     : 'ℹ️ I am already listening.';
                 break;

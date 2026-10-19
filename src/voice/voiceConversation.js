@@ -6,7 +6,8 @@ const {
     createAudioPlayer,
     createAudioResource,
     getVoiceConnection,
-    StreamType
+    StreamType,
+    VoiceConnectionStatus
 } = require('@discordjs/voice');
 const localSpeech = require('./localSpeech');
 const nvidiaSpeech = require('./nvidiaSpeech');
@@ -30,22 +31,30 @@ const EMPTY_VC_LEAVE_AFTER_MS = 60_000;
  */
 async function transcribeUtterance(settings, chunks) {
     // Whisper large-v3 on Groq first (best for Hinglish), then NVIDIA, then local.
+    const failures = [];
     if (groqSpeech.isGroqEnabled(settings)) {
         try {
             return await groqSpeech.transcribePcmChunks(settings, chunks);
         } catch (error) {
             console.error(`[ZiGBoT VOICE] Groq Whisper failed, trying NVIDIA: ${error.message}`);
+            failures.push(`Groq: ${error.message}`);
         }
     }
     if (settings.useNvidiaSpeech !== false) {
         try {
             const transcript = await nvidiaSpeech.transcribePcmChunks(settings, chunks);
             if (transcript) return transcript;
+            if (!failures.length) return '';
         } catch (error) {
             console.error(`[ZiGBoT VOICE] NVIDIA ASR failed, trying local STT: ${error.message}`);
+            failures.push(`NVIDIA: ${error.message}`);
         }
     }
-    if (!settings.sttCommand) return '';
+    if (!settings.sttCommand) {
+        // Every service failed: say so instead of looking like silence.
+        if (failures.length) throw new Error(`speech-to-text failed (${failures.join(' | ').slice(0, 300)})`);
+        return '';
+    }
     const { directory, wavPath } = await nvidiaSpeech.writeTemporaryWav(chunks);
     try {
         return (await localSpeech.transcribeWav(settings, wavPath)) || '';
@@ -86,15 +95,32 @@ function watchForEmptyChannel(guild, session) {
     session.emptyCheckInterval.unref?.();
 }
 
-function startListening(guild, settings, onTranscript) {
+// How often a "I heard you but could not understand" note may be posted.
+const FAILURE_NOTICE_EVERY_MS = 2 * 60_000;
+
+/**
+ * notify(text) posts a short note in the text channel the listening was
+ * started from, e.g. when speech-to-text keeps failing.
+ */
+function startListening(guild, settings, onTranscript, { notify = null } = {}) {
     const connection = getVoiceConnection(guild.id);
     if (!connection) throw new Error('Join a voice channel before starting voice listening.');
-    if (sessions.has(guild.id)) return false;
+    const existing = sessions.get(guild.id);
+    if (existing && existing.receiver === connection.receiver) {
+        if (notify) existing.notify = notify;
+        return false;
+    }
+    // A session left over from an earlier (now destroyed) connection would
+    // listen to nothing: replace it.
+    if (existing) stopListening(guild.id);
 
     const receiver = connection.receiver;
-    const session = { enabled: true, activeUsers: new Set(), receiver };
+    const session = { enabled: true, activeUsers: new Set(), receiver, notify, lastFailureNotice: 0 };
     sessions.set(guild.id, session);
     watchForEmptyChannel(guild, session);
+    connection.once(VoiceConnectionStatus.Destroyed, () => {
+        if (sessions.get(guild.id) === session) stopListening(guild.id);
+    });
 
     const onSpeakingStart = (userId) => {
         if (!session.enabled || session.activeUsers.has(userId)) {
@@ -137,6 +163,10 @@ function startListening(guild, settings, onTranscript) {
                 await onTranscript({ guild, userId, transcript });
             } catch (error) {
                 console.error(`[ZiGBoT VOICE] ${error.message}`);
+                if (typeof session.notify === 'function' && Date.now() - session.lastFailureNotice > FAILURE_NOTICE_EVERY_MS) {
+                    session.lastFailureNotice = Date.now();
+                    Promise.resolve(session.notify(`🎙️ I heard you, but couldn't understand it: ${error.message}`)).catch(() => {});
+                }
             }
         });
     };
