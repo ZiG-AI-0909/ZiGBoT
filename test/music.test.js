@@ -220,3 +220,12 @@ test('voice panel shows listen/status/leave buttons, or a hint when not in voice
     assert.equal(outside.components.length, 0);
     assert.match(outside.embeds[0].toJSON().description, /\/join/);
 });
+
+test('replies are cleaned up before ZiGBoT speaks them', () => {
+    const { toSpeechText } = require('../src/voice/voiceConversation');
+    assert.equal(
+        toSpeechText('Hello bestie! 💖 **How** can I help <@123456789012345678>? ✨ <:zig:123456789012345678> https://x.com ok'),
+        'Hello bestie! How can I help ? a link ok'
+    );
+    assert.equal(toSpeechText('💖✨🌸'), '');
+});

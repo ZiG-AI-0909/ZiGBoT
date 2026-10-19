@@ -36,6 +36,7 @@ function buildVoicePanel(guild, note = '') {
             listening
                 ? '🟢 **Listening** — just talk, I reply out loud.'
                 : '⚪ **Not listening** — press **Start listening** to talk with me.',
+            '💬 Or type in this voice channel\'s chat — I answer out loud too.',
             '🎵 Want music? Use `/play <song>`.'
         ].join('\n'))
         .setFooter({ text: 'Start/Stop listening: server owner & admins only (it controls recording).' });

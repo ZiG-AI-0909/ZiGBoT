@@ -141,9 +141,28 @@ function startListening(guild, settings, onTranscript) {
  * StreamType.Raw — no ffmpeg involved in the voice path at all.
  * Falls back to a locally configured TTS command when NVIDIA speech is off.
  */
-async function speak(guildId, settings, text) {
+/**
+ * Chat text -> something a voice can read: no mentions, links, custom emojis,
+ * emoji, markdown or code. Returns '' when nothing speakable is left.
+ */
+function toSpeechText(text) {
+    return String(text || '')
+        .replace(/```[\s\S]*?```/g, ' ')
+        .replace(/<a?:(\w+):\d+>/g, ' ')
+        .replace(/<[@#][!&]?\d+>/g, ' ')
+        .replace(/https?:\/\/\S+/g, ' a link ')
+        .replace(/[*_~`|>#]+/g, ' ')
+        .replace(/\p{Extended_Pictographic}|\p{Emoji_Modifier}|\u200d|\ufe0f/gu, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 600);
+}
+
+async function speak(guildId, settings, rawText) {
     const connection = getVoiceConnection(guildId);
     if (!connection) throw new Error('ZiGBoT is not connected to voice.');
+    const text = toSpeechText(rawText);
+    if (!text) return;
 
     let outputPath = null;
     let directory = null;
@@ -202,4 +221,4 @@ function isListening(guildId) {
     return sessions.get(guildId)?.enabled === true;
 }
 
-module.exports = { startListening, stopListening, speak, transcribeUtterance, isListening };
+module.exports = { startListening, stopListening, speak, transcribeUtterance, isListening, toSpeechText };

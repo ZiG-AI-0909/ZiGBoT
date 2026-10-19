@@ -312,6 +312,19 @@ async function recordBehaviorSignals(guildId, userId, signals, source) {
     }
 }
 
+// ZiGBoT talks: a typed chat reply is also spoken out loud when it is in the
+// voice channel the conversation is about (that channel's own text chat, or
+// the writer is sitting in it). Never over music — that would cut the song.
+function speakReplyInVoice(message, gSettings, replyText, behavior) {
+    const botChannel = message.guild?.members?.me?.voice?.channel;
+    if (!botChannel || !replyText) return;
+    const inThisVoice = message.channel?.id === botChannel.id || message.member?.voice?.channelId === botChannel.id;
+    if (!inThisVoice || music.isActive(message.guild.id)) return;
+    if (behavior && !hasFeature(behavior, 'voice')) return;
+    speak(message.guild.id, gSettings, replyText)
+        .catch((error) => console.error(`[ZiGBoT VOICE] Could not speak the reply: ${error.message}`));
+}
+
 // Pure dispatcher so tests can cover gating without touching Discord or the AI API.
 async function runIntent(message, settings, intent, { onVoiceTranscript, isVoiceListening, warnStore: warns, viaVoice = false } = {}) {
     const action = intent?.action;
@@ -703,6 +716,7 @@ client.on(Events.MessageCreate, async (message) => {
         });
 
         await deliverAiReply(message, replyText, { log: logReplyPacing });
+        speakReplyInVoice(message, gSettings, replyText, behavior);
 
         // Record message in conversation memory (full unsplit text)
         defaultMemory.addMessage(message.channel.id, 'user', userMessage, authorName);
