@@ -19,7 +19,8 @@ const os = require('node:os');
 const path = require('node:path');
 
 const RESOLVE_TIMEOUT_MS = 30_000;
-const STREAM_START_TIMEOUT_MS = 25_000;
+// Free hosts have slow CPUs: yt-dlp can need a while before the first audio bytes.
+const STREAM_START_TIMEOUT_MS = Math.min(120, Math.max(10, Number(process.env.MUSIC_STREAM_TIMEOUT_SECONDS) || 45)) * 1000;
 const MAX_DURATION_SECONDS = 3 * 60 * 60;
 const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
 const HOSTS = {
@@ -231,16 +232,47 @@ async function resolveTrack(query) {
     throw new Error(`No results for "${input.slice(0, 80)}".`);
 }
 
+// Words YouTube uploaders add around a song name that only hurt a search.
+const TITLE_NOISE = /\b(official|full|video|audio|song|songs|lyrics?|lyrical|4k|hd|hq|remastered|remaster|new|latest|music|mv|visualizer|t-series|19\d\d|20\d\d)\b|[:"“”]/gi;
+
+function cleanPart(text) {
+    return String(text || '')
+        .replace(/\([^)]*\)|\[[^\]]*\]|@/g, ' ')
+        .replace(TITLE_NOISE, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/^[\s\-–|]+|[\s\-–|]+$/g, '')
+        .trim();
+}
+
+/**
+ * Search queries for the same song elsewhere, best first. YouTube titles look
+ * like "Official: Song Full VIDEO | Artist | Album 2014" or "Artist - Song
+ * (Official Video)"; keep the song and artist parts, drop the rest.
+ */
+function alternativeQueries(track) {
+    const parts = String(track.title || '').split(/\s[|｜]\s|\s[-–]\s/).map(cleanPart).filter(Boolean);
+    const channel = cleanPart(String(track.artist || '').replace(/\s*-\s*topic$/i, '').replace(/vevo$/i, ''));
+    const queries = [];
+    if (parts.length >= 2) queries.push(`${parts[0]} ${parts[1]}`);
+    if (parts.length >= 1 && channel && !parts.slice(0, 2).some((p) => p.toLowerCase().includes(channel.toLowerCase()))) {
+        queries.push(`${parts[0]} ${channel}`);
+    }
+    if (parts.length >= 1) queries.push(parts[0]);
+    return [...new Set(queries.map((q) => q.slice(0, 120)).filter((q) => q.length >= 2))].slice(0, 3);
+}
+
 /** The same song on SoundCloud, for a YouTube track this host cannot stream. */
 async function findAlternative(track) {
-    const cleaned = String(track.title || '')
-        .replace(/\((official|lyrics?|full|audio|video|4k|hd)[^)]*\)|\[[^\]]*\]|\|.*$|official (music )?video|full video|lyrics?/gi, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-    const query = /-/.test(cleaned) || !track.artist ? cleaned : `${track.artist} ${cleaned}`;
-    if (!query) return null;
-    const [alt] = await search(query, { source: 'soundcloud', limit: 1 }).catch(() => []);
-    return alt || null;
+    for (const query of alternativeQueries(track)) {
+        try {
+            const [alt] = await search(query, { source: 'soundcloud', limit: 1 });
+            if (alt) return alt;
+        } catch (error) {
+            console.error(`[ZiGBoT MUSIC] SoundCloud search failed for "${query}": ${error.message}`);
+        }
+    }
+    console.error(`[ZiGBoT MUSIC] No SoundCloud match for "${track.title}" (tried: ${alternativeQueries(track).join(' / ')})`);
+    return null;
 }
 
 /**
@@ -306,6 +338,7 @@ module.exports = {
     resolveTrack,
     resolveUrl,
     findAlternative,
+    alternativeQueries,
     openStream,
     sourceOfUrl,
     isYouTubeUrl,

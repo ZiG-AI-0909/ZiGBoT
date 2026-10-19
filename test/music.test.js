@@ -199,3 +199,13 @@ test('a YouTube track the host cannot stream falls back to the same song on Soun
         Object.assign(sources, original);
     }
 });
+
+test('fallback search queries keep the song and artist, drop YouTube title noise', () => {
+    const { alternativeQueries } = require('../src/music/sources');
+    assert.deepEqual(
+        alternativeQueries({ title: 'Official: Desi Kalakaar Full VIDEO Song | Yo Yo Honey Singh | Honey Singh New Songs 2014', artist: 'T-Series' }),
+        ['Desi Kalakaar Yo Yo Honey Singh', 'Desi Kalakaar']
+    );
+    assert.deepEqual(alternativeQueries({ title: 'Alan Walker - Faded', artist: 'Alan Walker' }), ['Alan Walker Faded', 'Alan Walker']);
+    assert.deepEqual(alternativeQueries({ title: '', artist: '' }), []);
+});
