@@ -38,6 +38,7 @@ const {
 const { registerSlashCommands, interactionToIntent, runYouTubeInteraction } = require('./slash');
 const { handleSetupCommand, sendWelcome } = require('./guildConfig/setup');
 const { isMusicComponent, handleMusicComponent } = require('./music/panel');
+const { isVoiceComponent, handleVoiceComponent } = require('./voice/panel');
 const music = require('./music/player');
 const { startMusicStatus } = require('./music/status');
 
@@ -215,6 +216,15 @@ client.on(Events.GuildDelete, async (guild) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
+    if (isVoiceComponent(interaction)) {
+        await handleVoiceComponent(interaction, async (intent) => {
+            const fakeMessage = { author: interaction.user, member: interaction.member, guild: interaction.guild, channel: interaction.channel, reply: () => null };
+            const { ctx, gSettings } = await guildRuntime(interaction.guild, interaction.member);
+            if (ctx && ctx.config.enabled === false) return '❌ ZiGBoT is switched off in this server by its admins.';
+            return runIntent(fakeMessage, gSettings, intent, { warnStore, onVoiceTranscript: handleVoiceTranscript, isVoiceListening: isListening });
+        }).catch((error) => console.error(`[ZiGBoT VOICE] button failed: ${error.message}`));
+        return;
+    }
     if (isMusicComponent(interaction)) {
         await handleMusicComponent(interaction, async (intent) => {
             const fakeMessage = {
@@ -273,7 +283,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             return;
         }
 
-        const toolResult = await runIntent(fakeMessage, interactionSettings, intent, { warnStore });
+        const toolResult = await runIntent(fakeMessage, interactionSettings, intent, { warnStore, onVoiceTranscript: handleVoiceTranscript, isVoiceListening: isListening });
         if (toolResult) {
             await interaction.editReply(toolResult);
             return;
@@ -303,7 +313,7 @@ async function recordBehaviorSignals(guildId, userId, signals, source) {
 }
 
 // Pure dispatcher so tests can cover gating without touching Discord or the AI API.
-async function runIntent(message, settings, intent, { onVoiceTranscript, warnStore: warns, viaVoice = false } = {}) {
+async function runIntent(message, settings, intent, { onVoiceTranscript, isVoiceListening, warnStore: warns, viaVoice = false } = {}) {
     const action = intent?.action;
 
     if (!action || action === 'chat') return null; // caller falls back to persona reply
@@ -326,12 +336,12 @@ async function runIntent(message, settings, intent, { onVoiceTranscript, warnSto
             message,
             settings,
             { action, target: summary },
-            () => executeTool(message, settings, { ...intent, action }, { warnStore: warns, onVoiceTranscript })
+            () => executeTool(message, settings, { ...intent, action }, { warnStore: warns, onVoiceTranscript, isVoiceListening })
         );
         return null; // confirmation UI owns the conversation from here
     }
 
-    return executeTool(message, settings, intent, { warnStore: warns, onVoiceTranscript });
+    return executeTool(message, settings, intent, { warnStore: warns, onVoiceTranscript, isVoiceListening });
 }
 
 client.on(Events.MessageCreate, async (message) => {

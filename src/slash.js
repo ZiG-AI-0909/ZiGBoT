@@ -38,6 +38,7 @@ const slashActionByCommand = new Map([
     ['remove', 'remove_music'],
     ['clearqueue', 'clear_queue'],
     ['leave', 'leave_voice'],
+    ['join', 'join_voice'],
     ['kick', 'kick_member'],
     ['ban', 'ban_member'],
     ['memory', 'memory_status'],
@@ -81,6 +82,7 @@ function buildDefinitions() {
             .addIntegerOption((option) => option.setName('position').setDescription('Its number in /queue').setMinValue(1).setMaxValue(50).setRequired(true)),
         new SlashCommandBuilder().setName('clearqueue').setDescription('Clear the upcoming songs (the current one keeps playing)'),
         new SlashCommandBuilder().setName('leave').setDescription('Make ZiGBoT leave the voice channel'),
+        new SlashCommandBuilder().setName('join').setDescription('Call ZiGBoT into your voice channel to talk'),
         new SlashCommandBuilder()
             .setName('kick')
             .setDescription('Kick a member (owner confirmation required)')

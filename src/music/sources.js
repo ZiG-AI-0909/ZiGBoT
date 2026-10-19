@@ -318,6 +318,7 @@ function openStream(url, { timeoutMs = STREAM_START_TIMEOUT_MS } = {}) {
                 finish(new Error(friendlyError(stderr)));
             } else if (code && !signal && !/Errno 22|Errno 32|Broken pipe/i.test(stderr)) {
                 console.error(`[ZiGBoT MUSIC] yt-dlp stream exited ${code} mid-track: ${stderr.trim().slice(0, 500)}`);
+                child.failureReason = friendlyError(stderr);
             }
         });
     });

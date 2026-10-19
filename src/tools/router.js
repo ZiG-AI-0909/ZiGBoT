@@ -9,6 +9,7 @@ const music = require('../music/player');
 const musicSources = require('../music/sources');
 const { musicAccessProblem } = require('../music/access');
 const { startListening, stopListening } = require('../voice/voiceConversation');
+const { buildVoicePanel } = require('../voice/panel');
 const brain = require('../db/brain');
 const { ACTION_FEATURES } = require('../../dashboard/lib/shared/constants');
 const { hasFeature } = require('../../dashboard/lib/shared/resolve');
@@ -302,6 +303,8 @@ async function executeTool(message, settings, intent, context = {}) {
                 } else {
                     result = `✅ Joined **${voiceChannel.name}**. Voice capture is not enabled; I will not record or process audio yet.`;
                 }
+                // Buttons for the rest (listen / status / leave) instead of typed commands.
+                result = buildVoicePanel(guild, result);
                 break;
             }
             case 'leave_voice':

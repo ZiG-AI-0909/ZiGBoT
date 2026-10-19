@@ -209,3 +209,14 @@ test('fallback search queries keep the song and artist, drop YouTube title noise
     assert.deepEqual(alternativeQueries({ title: 'Alan Walker - Faded', artist: 'Alan Walker' }), ['Alan Walker Faded', 'Alan Walker']);
     assert.deepEqual(alternativeQueries({ title: '', artist: '' }), []);
 });
+
+test('voice panel shows listen/status/leave buttons, or a hint when not in voice', () => {
+    const { buildVoicePanel, PREFIX } = require('../src/voice/panel');
+    const inVoice = buildVoicePanel({ id: 'g-voice', members: { me: { voice: { channel: { id: '900000000000000077' } } } } }, '✅ Joined');
+    assert.equal(inVoice.content, '✅ Joined');
+    const ids = inVoice.components[0].toJSON().components.map((c) => c.custom_id);
+    assert.deepEqual(ids, ['listen', 'status', 'leave'].map((id) => PREFIX + id));
+    const outside = buildVoicePanel({ id: 'g-voice', members: { me: { voice: { channel: null } } } });
+    assert.equal(outside.components.length, 0);
+    assert.match(outside.embeds[0].toJSON().description, /\/join/);
+});

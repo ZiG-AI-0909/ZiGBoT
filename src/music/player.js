@@ -136,6 +136,7 @@ async function createTrackResource(track) {
     if (track.source === 'youtube' || track.source === 'soundcloud') {
         const child = await openSearchedTrack(track);
         children.push(child);
+        child.on('close', () => { if (child.failureReason) track.lastError = child.failureReason; });
         input = child.stdout;
     } else {
         // The timeout covers the response headers only, never the song itself.
@@ -164,8 +165,15 @@ async function createTrackResource(track) {
         if (error.code !== 'EPIPE') console.error(`[ZiGBoT MUSIC] ffmpeg stdin: ${error.message}`);
     });
     ffmpeg.stdout.on('error', (error) => console.error(`[ZiGBoT MUSIC] ffmpeg stdout: ${error.message}`));
-    ffmpeg.on('error', (error) => console.error(`[ZiGBoT MUSIC] ffmpeg process: ${error.message}`));
-    ffmpeg.stderr.on('data', (data) => console.error(`[ZiGBoT MUSIC] ${data.toString().trim()}`));
+    ffmpeg.on('error', (error) => {
+        console.error(`[ZiGBoT MUSIC] ffmpeg process: ${error.message}`);
+        track.lastError = error.code === 'ENOENT' ? 'ffmpeg is missing on the bot\'s server.' : `ffmpeg failed: ${error.message}`;
+    });
+    ffmpeg.stderr.on('data', (data) => {
+        const text = data.toString().trim();
+        console.error(`[ZiGBoT MUSIC] ffmpeg: ${text}`);
+        if (text) track.lastError = `audio conversion error: ${text.split(/\r?\n/)[0].slice(0, 160)}`;
+    });
     input.pipe(ffmpeg.stdin);
 
     const resource = createAudioResource(ffmpeg.stdout, {
@@ -213,9 +221,25 @@ function nextTrack(state) {
     return state.tracks.shift() || null;
 }
 
+// A song that stops after a few seconds although it is much longer means the
+// audio stream broke (blocked source, missing ffmpeg, network): say so instead
+// of silently moving on.
+const EARLY_END_MS = 15_000;
+function reportEarlyEnd(guildId, state) {
+    const track = state.current;
+    const playedMs = state.resource?.playbackDuration ?? 0;
+    if (!track || track.failed || state.skipping || state.resource?.metadata !== track || playedMs >= EARLY_END_MS || !(track.duration > 30)) return;
+    const reason = track.lastError || 'the audio stream stopped unexpectedly.';
+    console.error(`[ZiGBoT MUSIC] ${guildId}: "${track.title || track.url}" ended after ${Math.round(playedMs / 1000)}s: ${reason}`);
+    emit('trackError', guildId, `"${track.title || track.url}" stopped after ${Math.round(playedMs / 1000)}s: ${reason}`);
+    announce(track, `⚠️ ${describeTrack(track)} stopped after ${Math.round(playedMs / 1000)}s: ${reason}`);
+    track.failed = true;
+}
+
 async function playNext(guildId) {
     const state = queues.get(guildId);
     if (!state || state.loading) return;
+    reportEarlyEnd(guildId, state);
     const connection = getVoiceConnection(guildId);
     const track = connection ? nextTrack(state) : null;
     if (!track) {
