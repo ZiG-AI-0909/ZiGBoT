@@ -311,6 +311,7 @@ function BehaviourTab({ draft, set, errors, meta, premium, onUpgrade }) {
                 </div>
                 <Segmented label="Default tone" value={draft.default_tone} onChange={set('default_tone')} options={meta.tones.map((t) => ({ value: t, label: TONE_LABELS[t] }))} />
                 <p className="help" style={{ margin: 0 }}>{TONE_HELP[draft.default_tone]}</p>
+                <Switch id="owner-roast" checked={draft.owner_roast} onChange={set('owner_roast')} label="Roast the owner too" help="Off: the server owner always gets ZiGBoT's respectful assistant mode. On: the owner is roasted like everyone else (safety rules still apply)." />
                 {errors.default_tone ? <span className="error">{errors.default_tone}</span> : null}
             </div>
             <div className="card stack">

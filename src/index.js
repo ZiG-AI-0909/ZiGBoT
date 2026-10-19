@@ -113,7 +113,7 @@ function usesLegacyRoleRules(ctx) {
 
 // Tone + pronoun resolution for one member. Role mappings set by the
 // dashboard win over legacy env rules; the verified owner is always gentle.
-function resolveToneAndGender(ctx, behavior, member, { isOwner = false } = {}) {
+function resolveToneAndGender(ctx, behavior, member, { isOwner = false, ownerRoast = false } = {}) {
     const legacy = usesLegacyRoleRules(ctx);
     const isNonGentle = legacy && isNonGentleMember(member, settings.nonGentleRoleNames);
     const legacyGentle = legacy && !isOwner && !isNonGentle && isGentleMember(member, settings.gentleRoleNames, member?.guild?.id, settings.nonGentleRoleNames);
@@ -121,9 +121,11 @@ function resolveToneAndGender(ctx, behavior, member, { isOwner = false } = {}) {
     let tone;
     // Under-18 members (/setup) are always gentle — checked before anything else.
     if (behavior?.isMinor || isOwner) tone = 'gentle';
+    // Dashboard "Roast the owner too": the owner asked for it, so no feature gate.
+    else if (ownerRoast) tone = 'savage';
     else if (legacy && !mappedTone) tone = legacyGentle ? 'gentle' : 'savage';
     else tone = behavior?.tone || 'gentle';
-    if (tone === 'savage' && behavior && !hasFeature(behavior, 'roast')) tone = 'gentle';
+    if (tone === 'savage' && !ownerRoast && behavior && !hasFeature(behavior, 'roast')) tone = 'gentle';
     const gender = behavior?.pronouns
         ? pronounsToGender(behavior.pronouns)
         : legacy
@@ -435,8 +437,12 @@ client.on(Events.MessageCreate, async (message) => {
         defaultTracker.recordTrigger(message.channel.id, message.author.id);
     }
 
-    const isOwner = isServerOwner(message, settings);
-    const { tone, gender, isNonGentle } = resolveToneAndGender(guildCtx, behavior, message.member, { isOwner });
+    // The verified owner always gets the respectful mode, unless they switched
+    // on "Roast the owner too" in the dashboard: then they are roasted like anyone.
+    const isVerifiedOwner = isServerOwner(message, settings);
+    const ownerRoast = isVerifiedOwner && Boolean(guildCtx?.config?.owner_roast);
+    const isOwner = isVerifiedOwner && !ownerRoast;
+    const { tone, gender, isNonGentle } = resolveToneAndGender(guildCtx, behavior, message.member, { isOwner, ownerRoast });
     const isGentle = !isOwner && tone !== 'savage';
     const guildPrompt = guildPromptFor(guildCtx, behavior);
 
@@ -847,7 +853,7 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
             console.error(`[ZiGBoT MEMORY] Save skipped: ${memoryError.message}`);
         }
 
-        await speak(guild.id, settings, replyText);
+        await speak(guild.id, voiceSettings, replyText);
     } catch (error) {
         console.error(`[ZiGBoT VOICE ROUTE] ${error.message}`);
     }

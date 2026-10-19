@@ -49,6 +49,8 @@ function defaultGuildConfig({ guildId, legacy = false, legacySettings = null } =
         voice_pace: 100,
         voice_language: 'auto',
         voice_speak_replies: true,
+        // Off: the server owner always gets the respectful mode.
+        owner_roast: false,
         version: 1
     };
 }

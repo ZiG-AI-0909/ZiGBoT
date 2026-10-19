@@ -165,6 +165,7 @@ function validateGuildConfig(input, ctx = {}) {
         voice_pace: checkInt(errors, 'voice_pace', input.voice_pace, 50, 200, base.voice_pace),
         voice_language: checkEnum(errors, 'voice_language', input.voice_language, VOICE_LANGUAGES, base.voice_language),
         voice_speak_replies: checkBool(errors, 'voice_speak_replies', input.voice_speak_replies, base.voice_speak_replies),
+        owner_roast: checkBool(errors, 'owner_roast', input.owner_roast, base.owner_roast),
         // Server setup (also set by the bot's /setup command).
         owner_pronouns: input.owner_pronouns === undefined || input.owner_pronouns === null || input.owner_pronouns === '' ? null : checkEnum(errors, 'owner_pronouns', input.owner_pronouns, PRONOUNS, null),
         male_role_ids: checkIdList(errors, 'male_role_ids', input.male_role_ids, ctx.roleIds || null).slice(0, 10),

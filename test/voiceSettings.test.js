@@ -61,3 +61,11 @@ test('the server voice settings beat the bot-wide defaults', () => {
     assert.equal(defaults.pace, 1);
     assert.equal(defaults.language_code, 'hi-IN');
 });
+
+test('"Roast the owner too" is off by default and can be switched on', () => {
+    assert.equal(defaultGuildConfig({ guildId: G }).owner_roast, false);
+    const on = validateGuildConfig({ ...base(), owner_roast: true }, ctx);
+    assert.equal(on.ok, true);
+    assert.equal(on.value.owner_roast, true);
+    assert.equal(sanitizeStoredConfig({ ...base(), owner_roast: true }, { guildId: G }).owner_roast, true);
+});
