@@ -138,6 +138,8 @@ function loadSettings() {
         // Whisper large-v3 on Groq for speech-to-text when a key is set.
         groqApiKey: process.env.GROQ_API_KEY || '',
         groqSttModel: process.env.GROQ_STT_MODEL || 'whisper-large-v3-turbo',
+        // Voice-chat replies on Groq (text chat uses NVIDIA AI_MODEL); each backs up the other.
+        groqChatModel: process.env.GROQ_CHAT_MODEL || 'llama-3.3-70b-versatile',
         // Sarvam AI Bulbul for the speaking voice when a key is set.
         sarvamApiKey: process.env.SARVAM_API_KEY || '',
         sarvamVoice: process.env.SARVAM_VOICE || 'shubh',

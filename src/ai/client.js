@@ -1,4 +1,4 @@
-const OpenAI = require('openai');
+const { createChatClient } = require('./providers');
 const { normalizeAction, actionCatalog } = require('../tools/router');
 const { composeSystemPrompt } = require('../../dashboard/lib/shared/prompt');
 
@@ -382,6 +382,11 @@ async function classifyIntent(aiClient, model, userMessage, contextMessages = []
 
 function cleanOutput(text) {
     if (!text) return '';
+    // Reasoning models (Nemotron, DeepSeek, …) may put their private thinking
+    // in <think> tags: never show or speak it. An unclosed tag means the
+    // answer was cut off mid-thought, so everything after it goes.
+    text = String(text).replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*$/i, '').trim();
+    if (!text) return '';
     let cleaned = text.trim();
     // Remove repeated user quotes or accidental bot label prefixes
     cleaned = cleaned.replace(/^\[?[a-zA-Z0-9_-]+\]?:\s*.*?\n+(?:\[?ZiGBoT\]?:?\s*)?/is, '');
@@ -401,10 +406,10 @@ function buildReplySystemPrompt({ tone = 'savage', gender = null, isOwner = fals
 }
 
 function createAiClient(settings) {
-    const client = new OpenAI({
-        apiKey: settings.nvidiaApiKey,
-        baseURL: 'https://integrate.api.nvidia.com/v1'
-    });
+    // Text chat: NVIDIA first; voice chat asks for Groq first (see reply()).
+    // Each provider backs up the other.
+    const client = createChatClient(settings);
+    console.log(`[ZiGBoT AI] Chat providers: ${client.providers.map((p) => `${p.name} (${p.model})`).join(' -> ')}`);
 
     // Per-user AI quota protection, independent of the chat cooldowns.
     const rateLimiter = settings.rateLimiter || null;
@@ -450,12 +455,9 @@ function createAiClient(settings) {
                 { role: 'user', content: formattedUserContent }
  ];
 
-            // Voice chat (fast): reasoning models such as gpt-oss think briefly
-            // ("Reasoning: low" in their system prompt), and a slow request is
-            // retried once after 30 s instead of the SDK's long defaults.
-            if (fast && /gpt-oss/i.test(String(settings.aiModel || ''))) {
-                messages[0] = { ...messages[0], content: `Reasoning: low\n${messages[0].content}` };
-            }
+            // Voice chat (fast): reasoning models such as gpt-oss think briefly,
+            // and a slow request is retried once after 30 s instead of the
+            // SDK's long defaults.
             const response = await client.chat.completions.create({
                 model: settings.aiModel,
                 messages,
@@ -463,12 +465,13 @@ function createAiClient(settings) {
                 top_p: 1,
                 max_tokens: fast ? 1024 : 4096,
                 stream: false
-            }, fast ? { timeout: 30_000, maxRetries: 1 } : undefined);
+            }, fast ? { timeout: 30_000, maxRetries: 1, reasoningLow: true, prefer: 'Groq' } : undefined);
 
 
             const content = response.choices?.[0]?.message?.content;
             if (!content) throw new Error('AI returned an empty response.');
             const cleaned = cleanOutput(content);
+            if (!cleaned) throw new Error('AI returned only reasoning, no answer.');
 
             // Post-generation guardrail check: prompts alone are not a safety boundary.
             const moderated = moderateReplyText(cleaned);
