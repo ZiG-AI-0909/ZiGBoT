@@ -78,16 +78,31 @@ test('startup check reports a model the key cannot use, with what is available',
     const { checkProviders } = require('../src/ai/providers');
     const logs = [];
     const logger = { log: (m) => logs.push(m), error: (m) => logs.push(m) };
-    // NVIDIA lists the model, but calling it 404s (as seen in production).
-    const fetchImpl = async (url) => url.endsWith('/chat/completions')
-        ? { ok: false, status: 404, text: async () => 'Function not found for account' }
-        : {
+    // NVIDIA lists nemotron, but calling it 404s (as seen in production);
+    // gemma-4 is listed and works, the old llama2 is never test-called.
+    const called = [];
+    const fetchImpl = async (url, init) => {
+        if (url.endsWith('/chat/completions')) {
+            const { model } = JSON.parse(init.body);
+            called.push(model);
+            return model === 'nvidia/nemotron-3-super-120b-a12b'
+                ? { ok: false, status: 404, text: async () => 'Function not found for account' }
+                : { ok: true, status: 200 };
+        }
+        return {
             ok: true,
-            json: async () => ({ data: url.includes('groq') ? [{ id: 'openai/gpt-oss-20b' }, { id: 'whisper-large-v3' }] : [{ id: 'nvidia/nemotron-3-super-120b-a12b' }] })
+            json: async () => ({ data: url.includes('groq')
+                ? [{ id: 'openai/gpt-oss-20b' }, { id: 'whisper-large-v3' }]
+                : [{ id: 'meta/llama2-70b' }, { id: 'google/gemma-4-31b-it' }, { id: 'nvidia/nemotron-3-super-120b-a12b' }] })
         };
+    };
     const results = await checkProviders({ groqApiKey: 'g', groqChatModel: 'llama-3.3-70b-versatile', nvidiaApiKey: 'n', aiModel: 'nvidia/nemotron-3-super-120b-a12b' }, { fetchImpl, logger });
     assert.deepEqual(results.map((r) => [r.name, r.ok]), [['Groq', false], ['NVIDIA', false]]);
-    assert.match(logs.join('\n'), /Groq: model llama-3.3-70b-versatile is NOT .*openai\/gpt-oss-20b/);
+    assert.deepEqual(results.map((r) => r.working), [['openai/gpt-oss-20b'], ['google/gemma-4-31b-it']]);
+    assert.ok(!called.includes('meta/llama2-70b'));
+    assert.match(logs.join('\n'), /Groq: model llama-3.3-70b-versatile is NOT in this key's model list/);
+    assert.match(logs.join('\n'), /Groq: these models answered a test request — use one: openai\/gpt-oss-20b/);
     assert.match(logs.join('\n'), /NVIDIA: model nvidia\/nemotron-3-super-120b-a12b is listed but a test request failed \(HTTP 404\)/);
+    assert.match(logs.join('\n'), /NVIDIA: these models answered a test request — use one: google\/gemma-4-31b-it/);
     assert.doesNotMatch(logs.join('\n'), /whisper/);
 });

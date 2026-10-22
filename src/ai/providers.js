@@ -75,12 +75,43 @@ function createChatClient(settings, { providers = buildProviders(settings), logg
     };
 }
 
+// Newer chat models to try when the configured one is unusable, best first.
+// Matched against the key's own model list; only matches get a test request.
+const SUGGESTION_PATTERNS = [/gpt-oss/i, /deepseek-vd/i, /gemma-4/i, /llama-3.3-70b|llama-4/i, /qwen3/i, /nemotron/i, /mistral-(large|medium)/i];
+const NON_CHAT = /whisper|tts|orpheus|guard|embed|rerank|vision|parse|safety|retriever|asr|clip|coder|code|diffusion|deplot|kosmos|fuyu/i;
+
+async function answersTestRequest(check, model, fetchImpl) {
+    const probe = await fetchImpl(`${check.base}/chat/completions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${check.key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 }),
+        signal: AbortSignal.timeout(20_000)
+    });
+    return { ok: probe.ok, status: probe.status, detail: probe.ok ? '' : String(await probe.text?.() || '').slice(0, 200) };
+}
+
+/** Test-calls up to five likely chat models from the key's list; returns the ones that answered. */
+async function findWorkingModels(check, ids, fetchImpl) {
+    const candidates = [];
+    for (const pattern of SUGGESTION_PATTERNS) {
+        for (const id of ids) if (pattern.test(id) && !NON_CHAT.test(id) && id !== check.model && !candidates.includes(id)) candidates.push(id);
+    }
+    const working = [];
+    for (const model of candidates.slice(0, 5)) {
+        try {
+            if ((await answersTestRequest(check, model, fetchImpl)).ok) working.push(model);
+        } catch { /* skip */ }
+    }
+    return working;
+}
+
 /**
  * Startup check: does each key really have access to its configured model?
  * Logs the problem and the models that ARE available, so a wrong model name
  * or a restricted account shows up in the logs instead of as failed replies.
  * A listed model can still 404 when used (NVIDIA lists models an account
- * cannot call), so a listed model also gets a one-token test request.
+ * cannot call), so a listed model also gets a one-token test request, and on
+ * failure a few likely replacements are test-called and the working ones named.
  * Never throws.
  */
 async function checkProviders(settings, { fetchImpl = globalThis.fetch, logger = console } = {}) {
@@ -97,22 +128,23 @@ async function checkProviders(settings, { fetchImpl = globalThis.fetch, logger =
                 continue;
             }
             const ids = ((await response.json())?.data || []).map((m) => String(m.id));
-            let ok = ids.includes(check.model);
-            if (ok) {
-                const probe = await fetchImpl(`${check.base}/chat/completions`, {
-                    method: 'POST',
-                    headers: { Authorization: `Bearer ${check.key}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ model: check.model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 }),
-                    signal: AbortSignal.timeout(20_000)
-                });
+            let ok = false;
+            if (!ids.includes(check.model)) {
+                logger.error?.(`[ZiGBoT AI CHECK] ${check.name}: model ${check.model} is NOT in this key's model list.`);
+            } else {
+                const probe = await answersTestRequest(check, check.model, fetchImpl);
                 ok = probe.ok;
                 if (ok) logger.log?.(`[ZiGBoT AI CHECK] ${check.name}: model ${check.model} is available and answered a test request.`);
-                else logger.error?.(`[ZiGBoT AI CHECK] ${check.name}: model ${check.model} is listed but a test request failed (HTTP ${probe.status}): ${String(await probe.text?.() || '').slice(0, 200)} — pick another model.`);
-            } else {
-                const chat = ids.filter((id) => !/whisper|tts|orpheus|guard|embed|rerank|vision|parse|safety|retriever|asr|clip/i.test(id));
-                logger.error?.(`[ZiGBoT AI CHECK] ${check.name}: model ${check.model} is NOT in this key's model list. Available chat models include: ${chat.slice(0, 25).join(', ') || '(none)'}`);
+                else logger.error?.(`[ZiGBoT AI CHECK] ${check.name}: model ${check.model} is listed but a test request failed (HTTP ${probe.status}): ${probe.detail}`);
             }
-            results.push({ name: check.name, ok, ids });
+            let working = [];
+            if (!ok) {
+                working = await findWorkingModels(check, ids, fetchImpl);
+                logger.error?.(working.length
+                    ? `[ZiGBoT AI CHECK] ${check.name}: these models answered a test request — use one: ${working.join(', ')}`
+                    : `[ZiGBoT AI CHECK] ${check.name}: no suggested model answered. Chat models on this key include: ${ids.filter((id) => !NON_CHAT.test(id)).slice(0, 25).join(', ') || '(none)'}`);
+            }
+            results.push({ name: check.name, ok, ids, working });
         } catch (error) {
             logger.error?.(`[ZiGBoT AI CHECK] ${check.name}: model check failed: ${error.message}`);
             results.push({ name: check.name, ok: false });
