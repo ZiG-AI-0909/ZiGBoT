@@ -78,12 +78,16 @@ test('startup check reports a model the key cannot use, with what is available',
     const { checkProviders } = require('../src/ai/providers');
     const logs = [];
     const logger = { log: (m) => logs.push(m), error: (m) => logs.push(m) };
-    const fetchImpl = async (url) => ({
-        ok: true,
-        json: async () => ({ data: url.includes('groq') ? [{ id: 'openai/gpt-oss-20b' }, { id: 'whisper-large-v3' }] : [{ id: 'nvidia/nemotron-3-super-120b-a12b' }] })
-    });
+    // NVIDIA lists the model, but calling it 404s (as seen in production).
+    const fetchImpl = async (url) => url.endsWith('/chat/completions')
+        ? { ok: false, status: 404, text: async () => 'Function not found for account' }
+        : {
+            ok: true,
+            json: async () => ({ data: url.includes('groq') ? [{ id: 'openai/gpt-oss-20b' }, { id: 'whisper-large-v3' }] : [{ id: 'nvidia/nemotron-3-super-120b-a12b' }] })
+        };
     const results = await checkProviders({ groqApiKey: 'g', groqChatModel: 'llama-3.3-70b-versatile', nvidiaApiKey: 'n', aiModel: 'nvidia/nemotron-3-super-120b-a12b' }, { fetchImpl, logger });
-    assert.deepEqual(results.map((r) => [r.name, r.ok]), [['Groq', false], ['NVIDIA', true]]);
+    assert.deepEqual(results.map((r) => [r.name, r.ok]), [['Groq', false], ['NVIDIA', false]]);
     assert.match(logs.join('\n'), /Groq: model llama-3.3-70b-versatile is NOT .*openai\/gpt-oss-20b/);
+    assert.match(logs.join('\n'), /NVIDIA: model nvidia\/nemotron-3-super-120b-a12b is listed but a test request failed \(HTTP 404\)/);
     assert.doesNotMatch(logs.join('\n'), /whisper/);
 });

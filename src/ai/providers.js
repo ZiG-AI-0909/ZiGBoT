@@ -16,7 +16,7 @@ const OpenAI = require('openai');
 
 const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1';
-const DEFAULT_GROQ_CHAT_MODEL = 'llama-3.3-70b-versatile';
+const DEFAULT_GROQ_CHAT_MODEL = 'openai/gpt-oss-20b';
 
 function buildProviders(settings, { OpenAIClass = OpenAI } = {}) {
     const providers = [];
@@ -79,6 +79,8 @@ function createChatClient(settings, { providers = buildProviders(settings), logg
  * Startup check: does each key really have access to its configured model?
  * Logs the problem and the models that ARE available, so a wrong model name
  * or a restricted account shows up in the logs instead of as failed replies.
+ * A listed model can still 404 when used (NVIDIA lists models an account
+ * cannot call), so a listed model also gets a one-token test request.
  * Never throws.
  */
 async function checkProviders(settings, { fetchImpl = globalThis.fetch, logger = console } = {}) {
@@ -95,9 +97,18 @@ async function checkProviders(settings, { fetchImpl = globalThis.fetch, logger =
                 continue;
             }
             const ids = ((await response.json())?.data || []).map((m) => String(m.id));
-            const ok = ids.includes(check.model);
-            if (ok) logger.log?.(`[ZiGBoT AI CHECK] ${check.name}: model ${check.model} is available.`);
-            else {
+            let ok = ids.includes(check.model);
+            if (ok) {
+                const probe = await fetchImpl(`${check.base}/chat/completions`, {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${check.key}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: check.model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 }),
+                    signal: AbortSignal.timeout(20_000)
+                });
+                ok = probe.ok;
+                if (ok) logger.log?.(`[ZiGBoT AI CHECK] ${check.name}: model ${check.model} is available and answered a test request.`);
+                else logger.error?.(`[ZiGBoT AI CHECK] ${check.name}: model ${check.model} is listed but a test request failed (HTTP ${probe.status}): ${String(await probe.text?.() || '').slice(0, 200)} — pick another model.`);
+            } else {
                 const chat = ids.filter((id) => !/whisper|tts|orpheus|guard|embed|rerank|vision|parse|safety|retriever|asr|clip/i.test(id));
                 logger.error?.(`[ZiGBoT AI CHECK] ${check.name}: model ${check.model} is NOT in this key's model list. Available chat models include: ${chat.slice(0, 25).join(', ') || '(none)'}`);
             }
