@@ -247,8 +247,9 @@ async function speak(guildId, settings, rawText) {
     // Sarvam (Indian voices) first, then NVIDIA, then a local TTS command.
     if (sarvamSpeech.isSarvamEnabled(settings)) {
         try {
-            ({ pcm } = await sarvamSpeech.synthesizeSpeech(settings, text));
-            ttsProvider = 'Sarvam';
+            const result = await sarvamSpeech.synthesizeSpeech(settings, text);
+            pcm = result.pcm;
+            ttsProvider = `Sarvam "${result.speaker}"`;
         } catch (error) {
             console.error(`[ZiGBoT VOICE] Sarvam TTS failed, trying NVIDIA: ${error.message}`);
         }

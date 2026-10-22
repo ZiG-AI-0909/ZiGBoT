@@ -48,6 +48,7 @@ async function synthesizeSpeech(settings, text) {
     const clean = String(text || '').trim();
     if (!clean) throw new Error('TTS text is empty.');
 
+    const body = requestBody(settings, clean);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     let response;
@@ -55,7 +56,7 @@ async function synthesizeSpeech(settings, text) {
         response = await fetch(ENDPOINT, {
             method: 'POST',
             headers: { 'api-subscription-key': settings.sarvamApiKey, 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody(settings, clean)),
+            body: JSON.stringify(body),
             signal: controller.signal
         });
     } catch (error) {
@@ -71,7 +72,7 @@ async function synthesizeSpeech(settings, text) {
     const data = await response.json().catch(() => ({}));
     const audio = Array.isArray(data?.audios) ? data.audios[0] : null;
     if (!audio) throw new Error('Sarvam TTS returned no audio.');
-    return { pcm: pcmForPlayback(Buffer.from(audio, 'base64')) };
+    return { pcm: pcmForPlayback(Buffer.from(audio, 'base64')), speaker: body.speaker };
 }
 
 module.exports = { synthesizeSpeech, isSarvamEnabled, languageCodeFor, requestBody };
