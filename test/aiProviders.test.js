@@ -132,3 +132,29 @@ test('chat clients get a bounded timeout so a stalled NVIDIA request fails over 
     assert.ok(nvidia.client.opts.timeout <= 60_000);
     assert.ok(groq.client.opts.timeout <= 60_000);
 });
+
+test('a provider that just failed is tried last until its cooldown ends', async () => {
+    let clock = 0;
+    let nvidiaBehaviour = fail(504);
+    const nvidia = fakeProvider('NVIDIA', 'google/gemma-4-31b-it', () => nvidiaBehaviour());
+    const groq = fakeProvider('Groq', 'openai/gpt-oss-20b', ok('from groq'));
+    const client = createChatClient({}, { providers: [nvidia, groq], logger: quiet, now: () => clock });
+
+    await client.chat.completions.create({ messages: [] });
+    assert.equal(nvidia.calls.length, 1);
+    // Next message skips straight to Groq.
+    await client.chat.completions.create({ messages: [] });
+    assert.equal(nvidia.calls.length, 1);
+    assert.equal(groq.calls.length, 2);
+
+    // After the cooldown NVIDIA is first again.
+    clock += 3 * 60_000 + 1;
+    nvidiaBehaviour = ok('from nvidia');
+    const back = await client.chat.completions.create({ messages: [] });
+    assert.equal(back.choices[0].message.content, 'from nvidia');
+
+    // The startup check can demote a provider the same way.
+    client.markDown('NVIDIA');
+    const demoted = await client.chat.completions.create({ messages: [] });
+    assert.equal(demoted.choices[0].message.content, 'from groq');
+});

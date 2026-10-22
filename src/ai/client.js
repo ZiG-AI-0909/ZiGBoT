@@ -411,7 +411,14 @@ function createAiClient(settings) {
     const client = createChatClient(settings);
     console.log(`[ZiGBoT AI] Chat providers: ${client.providers.map((p) => `${p.name} (${p.model})`).join(' -> ')}`);
     // Log at startup whether each key can really use its model (not under tests).
-    if (!process.env.NODE_TEST_CONTEXT) void checkProviders(settings);
+    // A provider that failed the check goes last until it has cooled down, so
+    // the first messages after a deploy do not wait out its timeout.
+    if (!process.env.NODE_TEST_CONTEXT) {
+        void checkProviders(settings).then((results) => {
+            if (!results.some((r) => r.ok)) return;
+            for (const result of results) if (!result.ok) client.markDown(result.name);
+        });
+    }
 
     // Per-user AI quota protection, independent of the chat cooldowns.
     const rateLimiter = settings.rateLimiter || null;

@@ -53,30 +53,45 @@ function withReasoningLow(params, model) {
     return { ...params, messages: [{ ...system, content: `Reasoning: low\n${system.content}` }, ...rest] };
 }
 
+// After a provider fails, later requests try it last for this long, so one
+// stalled provider does not add its full timeout to every message.
+const PROVIDER_COOLDOWN_MS = 3 * 60_000;
+
 /** An OpenAI-compatible client that fails over between the configured providers. */
-function createChatClient(settings, { providers = buildProviders(settings), logger = console } = {}) {
+function createChatClient(settings, { providers = buildProviders(settings), logger = console, now = Date.now } = {}) {
     if (providers.length === 0) throw new Error('No chat AI configured: set GROQ_API_KEY or NVIDIA_API_KEY.');
+    const downUntil = new Map();
+    const isDown = (provider) => (downUntil.get(provider.name) || 0) > now();
+    function markDown(name, ms = PROVIDER_COOLDOWN_MS) {
+        downUntil.set(name, now() + ms);
+    }
     async function create(params, options = {}) {
         const { reasoningLow = false, prefer = null, ...requestOptions } = options || {};
-        const ordered = prefer
+        const preferred = prefer
             ? [...providers.filter((p) => p.name === prefer), ...providers.filter((p) => p.name !== prefer)]
             : providers;
+        // Cooling-down providers stay as a last resort.
+        const ordered = [...preferred.filter((p) => !isDown(p)), ...preferred.filter(isDown)];
         let lastError;
         for (const [index, provider] of ordered.entries()) {
             let request = { ...params, model: provider.model };
             if (reasoningLow) request = withReasoningLow(request, provider.model);
             try {
-                return await provider.client.chat.completions.create(request, Object.keys(requestOptions).length ? requestOptions : undefined);
+                const response = await provider.client.chat.completions.create(request, Object.keys(requestOptions).length ? requestOptions : undefined);
+                downUntil.delete(provider.name);
+                return response;
             } catch (error) {
                 lastError = error;
                 const next = ordered[index + 1];
-                logger.error?.(`[ZiGBoT AI] ${provider.name} (${provider.model}) failed: ${describeError(error)}${next ? ` — trying ${next.name}` : ''}`);
+                if (next) markDown(provider.name);
+                logger.error?.(`[ZiGBoT AI] ${provider.name} (${provider.model}) failed: ${describeError(error)}${next ? ` — trying ${next.name}; ${provider.name} goes last for ${PROVIDER_COOLDOWN_MS / 60_000} min` : ''}`);
             }
         }
         throw lastError;
     }
     return {
         providers: providers.map(({ name, model }) => ({ name, model })),
+        markDown,
         chat: { completions: { create } }
     };
 }
