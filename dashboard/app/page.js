@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import TopBar from '@/components/TopBar';
+import HomeBackground from '@/components/HomeBackground';
 import { getCurrentUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -22,7 +23,8 @@ export default async function Home({ searchParams }) {
     const error = ERRORS[params?.error];
 
     return (
-        <div className="shell">
+        <div className="shell home">
+            <HomeBackground />
             <TopBar />
             <section className="hero">
                 <img className="hero-avatar" src="/zigbot.png" alt="ZiGBoT" width="120" height="120" />
