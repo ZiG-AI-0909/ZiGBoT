@@ -46,7 +46,15 @@ export const PUT = handler(async (request, { params }) => {
     let query = supabase.from('zb_guild_configs').update(result.value).eq('guild_id', String(guild.id));
     if (Number.isInteger(body?.expectedVersion)) query = query.eq('version', body.expectedVersion);
     const { data, error } = await query.select('*');
-    if (error) throw new Error(`Config update failed: ${error.message}`);
+    if (error) {
+        // A column the dashboard writes but the database lacks = a migration
+        // in supabase/migrations was not run. Say so instead of a generic error.
+        const failure = new Error(`Config update failed: ${error.message}`);
+        if (/column|schema cache/i.test(error.message || '')) {
+            failure.publicMessage = `The database is missing new settings (${error.message}). Run the newest files in supabase/migrations in the Supabase SQL Editor, then save again.`;
+        }
+        throw failure;
+    }
     if (!data || data.length === 0) {
         throw new HttpError(409, 'Someone else saved changes to this server in the meantime. Reload to see the latest settings.');
     }
