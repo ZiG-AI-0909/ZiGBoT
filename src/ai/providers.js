@@ -75,4 +75,39 @@ function createChatClient(settings, { providers = buildProviders(settings), logg
     };
 }
 
-module.exports = { createChatClient, buildProviders, DEFAULT_GROQ_CHAT_MODEL };
+/**
+ * Startup check: does each key really have access to its configured model?
+ * Logs the problem and the models that ARE available, so a wrong model name
+ * or a restricted account shows up in the logs instead of as failed replies.
+ * Never throws.
+ */
+async function checkProviders(settings, { fetchImpl = globalThis.fetch, logger = console } = {}) {
+    const checks = [];
+    if (settings.groqApiKey) checks.push({ name: 'Groq', base: GROQ_BASE_URL, key: settings.groqApiKey, model: settings.groqChatModel || DEFAULT_GROQ_CHAT_MODEL });
+    if (settings.nvidiaApiKey) checks.push({ name: 'NVIDIA', base: NVIDIA_BASE_URL, key: settings.nvidiaApiKey, model: settings.aiModel });
+    const results = [];
+    for (const check of checks) {
+        try {
+            const response = await fetchImpl(`${check.base}/models`, { headers: { Authorization: `Bearer ${check.key}` }, signal: AbortSignal.timeout(10_000) });
+            if (!response.ok) {
+                logger.error?.(`[ZiGBoT AI CHECK] ${check.name}: could not list models (HTTP ${response.status}) — check the API key.`);
+                results.push({ name: check.name, ok: false });
+                continue;
+            }
+            const ids = ((await response.json())?.data || []).map((m) => String(m.id));
+            const ok = ids.includes(check.model);
+            if (ok) logger.log?.(`[ZiGBoT AI CHECK] ${check.name}: model ${check.model} is available.`);
+            else {
+                const chat = ids.filter((id) => !/whisper|tts|orpheus|guard|embed|rerank|vision|parse|safety|retriever|asr|clip/i.test(id));
+                logger.error?.(`[ZiGBoT AI CHECK] ${check.name}: model ${check.model} is NOT in this key's model list. Available chat models include: ${chat.slice(0, 25).join(', ') || '(none)'}`);
+            }
+            results.push({ name: check.name, ok, ids });
+        } catch (error) {
+            logger.error?.(`[ZiGBoT AI CHECK] ${check.name}: model check failed: ${error.message}`);
+            results.push({ name: check.name, ok: false });
+        }
+    }
+    return results;
+}
+
+module.exports = { createChatClient, buildProviders, checkProviders, DEFAULT_GROQ_CHAT_MODEL };

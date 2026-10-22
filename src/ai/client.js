@@ -1,4 +1,4 @@
-const { createChatClient } = require('./providers');
+const { createChatClient, checkProviders } = require('./providers');
 const { normalizeAction, actionCatalog } = require('../tools/router');
 const { composeSystemPrompt } = require('../../dashboard/lib/shared/prompt');
 
@@ -410,6 +410,8 @@ function createAiClient(settings) {
     // Each provider backs up the other.
     const client = createChatClient(settings);
     console.log(`[ZiGBoT AI] Chat providers: ${client.providers.map((p) => `${p.name} (${p.model})`).join(' -> ')}`);
+    // Log at startup whether each key can really use its model (not under tests).
+    if (!process.env.NODE_TEST_CONTEXT) void checkProviders(settings);
 
     // Per-user AI quota protection, independent of the chat cooldowns.
     const rateLimiter = settings.rateLimiter || null;

@@ -270,7 +270,10 @@ async function speak(guildId, settings, rawText) {
         directory = result.directory;
     }
 
+    const ttsMs = Date.now() - ttsStartedAt;
+
     // Queue behind any reply already playing in this guild.
+    const queuedAt = Date.now();
     const previous = playbackQueues.get(guildId) || Promise.resolve();
     let release;
     const myTurn = new Promise((resolve) => { release = resolve; });
@@ -278,7 +281,8 @@ async function speak(guildId, settings, rawText) {
     await previous.catch(() => {});
 
     try {
-        console.log(`[ZiGBoT VC] speaking reply (${text.length} chars, ${ttsProvider} voice ready in ${Date.now() - ttsStartedAt} ms)`);
+        const waitMs = Date.now() - queuedAt;
+        console.log(`[ZiGBoT VC] speaking reply (${text.length} chars, ${ttsProvider} voice ready in ${ttsMs} ms${waitMs > 50 ? `, waited ${waitMs} ms for the previous reply` : ''})`);
         const player = createAudioPlayer();
         // Without this listener, a player error is an unhandled 'error' event
         // and crashes the whole process.
@@ -288,14 +292,20 @@ async function speak(guildId, settings, rawText) {
             : createAudioResource(outputPath, { inputType: StreamType.Arbitrary });
         connection.subscribe(player);
         player.play(resource);
-        await new Promise((resolve) => {
+        // Watchdog so a stuck stream cannot block every future reply: the clip's
+        // own length (48kHz stereo s16le = 192000 bytes/s) plus slack, else 2 min.
+        const watchdogMs = pcm ? Math.ceil(pcm.length / 192) + 10_000 : 120_000;
+        const finished = await new Promise((resolve) => {
             // Idle = finished; error = give up but never wedge the queue.
-            player.once(AudioPlayerStatus.Idle, resolve);
-            player.once('error', resolve);
-            // Absolute watchdog so a stuck stream cannot block every future reply.
-            setTimeout(resolve, 120_000).unref?.();
+            player.once(AudioPlayerStatus.Idle, () => resolve(true));
+            player.once('error', () => resolve(false));
+            setTimeout(() => resolve(false), watchdogMs).unref?.();
         });
-        console.log('[ZiGBoT VC] playback finished.');
+        if (finished) console.log('[ZiGBoT VC] playback finished.');
+        else {
+            console.error(`[ZiGBoT VC] playback did not finish within ${watchdogMs} ms (player ${player.state.status}, connection ${connection.state.status}) — skipping.`);
+            player.stop(true);
+        }
     } finally {
         release?.();
         if (directory) nvidiaSpeech.removeTemporaryDirectory(directory).catch(() => {});

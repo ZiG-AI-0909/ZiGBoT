@@ -73,3 +73,17 @@ test('text chat goes to NVIDIA first; voice chat (prefer Groq) goes to Groq firs
     const fallback = await backup.chat.completions.create({ messages: [] }, { prefer: 'Groq' });
     assert.equal(fallback.choices[0].message.content, 'nvidia backup');
 });
+
+test('startup check reports a model the key cannot use, with what is available', async () => {
+    const { checkProviders } = require('../src/ai/providers');
+    const logs = [];
+    const logger = { log: (m) => logs.push(m), error: (m) => logs.push(m) };
+    const fetchImpl = async (url) => ({
+        ok: true,
+        json: async () => ({ data: url.includes('groq') ? [{ id: 'openai/gpt-oss-20b' }, { id: 'whisper-large-v3' }] : [{ id: 'nvidia/nemotron-3-super-120b-a12b' }] })
+    });
+    const results = await checkProviders({ groqApiKey: 'g', groqChatModel: 'llama-3.3-70b-versatile', nvidiaApiKey: 'n', aiModel: 'nvidia/nemotron-3-super-120b-a12b' }, { fetchImpl, logger });
+    assert.deepEqual(results.map((r) => [r.name, r.ok]), [['Groq', false], ['NVIDIA', true]]);
+    assert.match(logs.join('\n'), /Groq: model llama-3.3-70b-versatile is NOT .*openai\/gpt-oss-20b/);
+    assert.doesNotMatch(logs.join('\n'), /whisper/);
+});
