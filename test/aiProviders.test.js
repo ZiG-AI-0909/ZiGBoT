@@ -106,3 +106,29 @@ test('startup check reports a model the key cannot use, with what is available',
     assert.match(logs.join('\n'), /NVIDIA: these models answered a test request — use one: google\/gemma-4-31b-it/);
     assert.doesNotMatch(logs.join('\n'), /whisper/);
 });
+
+test('a slow model is reported as slow, not broken, and no alternatives are test-called', async () => {
+    const { checkProviders } = require('../src/ai/providers');
+    const logs = [];
+    const logger = { log: (m) => logs.push(m), error: (m) => logs.push(m) };
+    let probes = 0;
+    const fetchImpl = async (url) => {
+        if (url.endsWith('/chat/completions')) {
+            probes += 1;
+            throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+        }
+        return { ok: true, json: async () => ({ data: [{ id: 'google/gemma-4-31b-it' }, { id: 'openai/gpt-oss-120b' }] }) };
+    };
+    const results = await checkProviders({ nvidiaApiKey: 'n', aiModel: 'google/gemma-4-31b-it' }, { fetchImpl, logger });
+    assert.deepEqual(results.map((r) => [r.name, r.ok, r.slow]), [['NVIDIA', false, true]]);
+    assert.equal(probes, 1);
+    assert.match(logs.join('\n'), /NVIDIA: model google\/gemma-4-31b-it is listed but did not answer a test request within 20s/);
+});
+
+test('chat clients get a bounded timeout so a stalled NVIDIA request fails over quickly', () => {
+    class FakeOpenAI { constructor(opts) { this.opts = opts; } }
+    const [nvidia, groq] = buildProviders({ groqApiKey: 'g', nvidiaApiKey: 'n', aiModel: 'm' }, { OpenAIClass: FakeOpenAI });
+    assert.equal(nvidia.client.opts.maxRetries, 0);
+    assert.ok(nvidia.client.opts.timeout <= 60_000);
+    assert.ok(groq.client.opts.timeout <= 60_000);
+});

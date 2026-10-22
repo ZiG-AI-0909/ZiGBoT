@@ -17,6 +17,12 @@ const OpenAI = require('openai');
 const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1';
 const DEFAULT_GROQ_CHAT_MODEL = 'openai/gpt-oss-20b';
+// The SDK defaults (10 min timeout, 2 retries) would leave a user waiting for
+// a queued NVIDIA request long before Groq got a turn. NVIDIA's free endpoints
+// can stall on cold starts, so it gets no retry: failing over is faster.
+// Per-request options (voice chat) still override these.
+const NVIDIA_CLIENT_OPTIONS = { timeout: 45_000, maxRetries: 0 };
+const GROQ_CLIENT_OPTIONS = { timeout: 45_000, maxRetries: 1 };
 
 function buildProviders(settings, { OpenAIClass = OpenAI } = {}) {
     const providers = [];
@@ -24,14 +30,14 @@ function buildProviders(settings, { OpenAIClass = OpenAI } = {}) {
         providers.push({
             name: 'NVIDIA',
             model: settings.aiModel,
-            client: new OpenAIClass({ apiKey: settings.nvidiaApiKey, baseURL: NVIDIA_BASE_URL })
+            client: new OpenAIClass({ apiKey: settings.nvidiaApiKey, baseURL: NVIDIA_BASE_URL, ...NVIDIA_CLIENT_OPTIONS })
         });
     }
     if (settings.groqApiKey) {
         providers.push({
             name: 'Groq',
             model: settings.groqChatModel || DEFAULT_GROQ_CHAT_MODEL,
-            client: new OpenAIClass({ apiKey: settings.groqApiKey, baseURL: GROQ_BASE_URL })
+            client: new OpenAIClass({ apiKey: settings.groqApiKey, baseURL: GROQ_BASE_URL, ...GROQ_CLIENT_OPTIONS })
         });
     }
     return providers;
@@ -132,7 +138,17 @@ async function checkProviders(settings, { fetchImpl = globalThis.fetch, logger =
             if (!ids.includes(check.model)) {
                 logger.error?.(`[ZiGBoT AI CHECK] ${check.name}: model ${check.model} is NOT in this key's model list.`);
             } else {
-                const probe = await answersTestRequest(check, check.model, fetchImpl);
+                let probe;
+                try {
+                    probe = await answersTestRequest(check, check.model, fetchImpl);
+                } catch (error) {
+                    if (error?.name !== 'TimeoutError' && error?.name !== 'AbortError') throw error;
+                    // The model exists; it is just slow or queued right now (common on
+                    // NVIDIA's free endpoints). Test-calling alternatives would stall too.
+                    logger.error?.(`[ZiGBoT AI CHECK] ${check.name}: model ${check.model} is listed but did not answer a test request within 20s (slow or overloaded). Requests to it time out after 45s and fail over to the next provider.`);
+                    results.push({ name: check.name, ok: false, ids, working: [], slow: true });
+                    continue;
+                }
                 ok = probe.ok;
                 if (ok) logger.log?.(`[ZiGBoT AI CHECK] ${check.name}: model ${check.model} is available and answered a test request.`);
                 else logger.error?.(`[ZiGBoT AI CHECK] ${check.name}: model ${check.model} is listed but a test request failed (HTTP ${probe.status}): ${probe.detail}`);
