@@ -57,6 +57,9 @@ const { ownerMemoryStatus } = require('./memory/ownerLookup');
 const { resolvePersonalMemory, resolveSharedMemory, memoryQuestionReply } = require('./memory/retrieval');
 const { createSummaryService } = require('./memory/summaries');
 const { createSummaryChannelCommands } = require('./memory/summaryChannels');
+const { createIdentityStore } = require('./identity/store');
+const { createIdentitySync } = require('./identity/sync');
+const { createIdentityCommands } = require('./identity/commands');
 const { version: BOT_VERSION } = require('../package.json');
 
 function logAiError(error) {
@@ -175,6 +178,13 @@ const client = new Client({
     ]
 });
 
+// Custom bot identity (Premium; off unless CUSTOM_IDENTITY_ENABLED=true).
+const identityStore = createIdentityStore({ guildStore });
+const identityContext = (guild) => guildStore.getGuildContext(guild);
+const identitySync = createIdentitySync({ client, store: identityStore, getContext: identityContext, enabled: settings.customIdentityEnabled });
+const identityCommands = createIdentityCommands({ store: identityStore, getContext: identityContext, enabled: settings.customIdentityEnabled });
+console.log(`[ZiGBoT IDENTITY] Custom bot identity: ${identitySync.active ? 'ON' : settings.customIdentityEnabled ? 'OFF (needs the Supabase config store)' : 'OFF (CUSTOM_IDENTITY_ENABLED)'}`);
+
 client.once(Events.ClientReady, async (c) => {
     console.log(`✅ ${c.user.tag} is online and ready in ${c.guilds.cache.size} server(s)! (Mention-driven mode with role-based personas active)`);
     // Make sure every server the bot is in has a config row (safe defaults
@@ -188,6 +198,7 @@ client.once(Events.ClientReady, async (c) => {
         await beat();
         setInterval(beat, 60_000).unref();
         startMusicStatus(guildStore);
+        identitySync.start();
     }
     // Slash commands are a secondary interface: a registration failure must
     // never take down the whole bot — keep running in mention-driven mode.
@@ -220,6 +231,7 @@ client.on(Events.GuildCreate, async (guild) => {
     await guildStore.ensureGuild(guild).catch((error) => console.error(`[ZiGBoT CONFIG] Seed failed for ${guild.id}: ${error.message}`));
     // Ask the admins for what the bot cannot work out by itself (/setup).
     await sendWelcome(guild).catch((error) => console.error(`[ZiGBoT SETUP] Welcome message failed for ${guild.id}: ${error.message}`));
+    await identitySync.reconcile(guild);
 });
 
 // Music: pause and leave later when everyone leaves the bot's voice channel;
@@ -237,6 +249,7 @@ client.on(Events.VoiceStateUpdate, (oldState, newState) => {
 client.on(Events.GuildDelete, async (guild) => {
     console.log(`[ZiGBoT CONFIG] Removed from server ${guild.id}.`);
     await guildStore.markRemoved(guild.id).catch((error) => console.error(`[ZiGBoT CONFIG] Uninstall mark failed for ${guild.id}: ${error.message}`));
+    await identitySync.onGuildRemoved(guild.id);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -292,6 +305,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 };
             }
         }).catch((error) => console.error(`[ZiGBoT MEMORY] /memory failed: ${error?.code || error?.name || 'Error'}`));
+        return;
+    }
+    // Custom bot identity: private replies, Manage Server checked server-side.
+    if (interaction.commandName === 'identity') {
+        await identityCommands.handleSlash(interaction)
+            .catch((error) => console.error(`[ZiGBoT IDENTITY] /identity failed: ${error?.code || error?.name || 'Error'}`));
         return;
     }
     // Admin summary-channel list: private replies, authorized server-side.

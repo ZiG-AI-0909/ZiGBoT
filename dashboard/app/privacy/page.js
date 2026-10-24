@@ -51,6 +51,13 @@ export default function Privacy() {
                     <li><strong>Moderation and behaviour records</strong> for that server, such as warnings and signals of how members treat the bot, used to decide how it responds.</li>
                     <li><strong>Voice.</strong> When ZiGBoT is listening in a voice channel, what you say to it is sent for speech-to-text, and its replies are turned into speech. We do not keep the audio recordings.</li>
                     <li><strong>Music.</strong> Songs requested and the current playback status for the server.</li>
+                    <li>
+                        <strong>Custom bot identity (Premium, when available).</strong> If a server&apos;s admins give ZiGBoT its own name, picture
+                        and bio there, we store that name and bio, the uploaded picture, and which admin made each change. Pictures are cropped,
+                        re-saved as a new image with their metadata (such as location or camera details) removed, kept in private storage, and
+                        checked by the bot owner before they are used. The name, bio and approved picture are sent to Discord to show on
+                        ZiGBoT&apos;s profile in that server only.
+                    </li>
                 </ul>
 
                 <h3>In YouTube live chats</h3>
@@ -80,7 +87,7 @@ export default function Privacy() {
                     <li><strong>NVIDIA</strong> and <strong>Groq</strong>: AI models that write replies and turn speech into text. They receive the message or speech being answered plus recent context.</li>
                     <li><strong>Groq</strong>: also writes conversation summaries for members who opted in. It receives only that member&apos;s own messages described above.</li>
                     <li><strong>Sarvam AI</strong> and <strong>NVIDIA</strong>: turn ZiGBoT&apos;s replies into speech.</li>
-                    <li><strong>Supabase</strong> and <strong>MongoDB</strong>: databases for settings, accounts, memories and records.</li>
+                    <li><strong>Supabase</strong> and <strong>MongoDB</strong>: databases for settings, accounts, memories and records. Supabase also stores custom bot identity pictures, privately.</li>
                     <li><strong>Render</strong>: hosting.</li>
                     <li><strong>Razorpay</strong>: payments.</li>
                     <li><strong>YouTube (Google)</strong>: live-chat features.</li>
@@ -93,6 +100,11 @@ export default function Privacy() {
                     <li>YouTube live-chat records: 1 to 3 days.</li>
                     <li>Voice audio: not stored.</li>
                     <li>Server settings and change logs: while ZiGBoT is used in that server, or until an admin resets them or asks us to delete them.</li>
+                    <li>
+                        Custom bot identity: until an admin resets it, or ZiGBoT is removed from the server. A rejected or replaced picture is
+                        deleted straight away. If the server stops being Premium, ZiGBoT goes back to its default profile and the saved identity is
+                        deleted 30 days later.
+                    </li>
                     <li>Dashboard account: until you ask us to delete it.</li>
                     <li>Payment records: as long as needed for accounting and the law.</li>
                 </ul>
@@ -105,7 +117,7 @@ export default function Privacy() {
                         <code>/memory summaries state:off</code> stops new summaries and stops ZiGBoT using existing ones;{' '}
                         <code>/memory forget</code> or <code>/memory clear</code> deletes them.
                     </li>
-                    <li>Server admins can change or reset ZiGBoT&apos;s settings at any time, or remove it from the server.</li>
+                    <li>Server admins can change or reset ZiGBoT&apos;s settings at any time, or remove it from the server. A custom bot identity can be reset at any time from the dashboard or with <code>/identity reset</code>.</li>
                     <li>You can ask us for a copy of your data, or to correct or delete it, by contacting us below.</li>
                 </ul>
 

@@ -35,8 +35,11 @@ export const GET = handler(async (_request, { params }) => {
             id: row.id,
             at: row.created_at,
             action: row.action,
-            target: row.table_name === 'zb_role_mappings' ? `role mapping ${row.after?.role_name || row.before?.role_name || row.record_key}` : 'server settings',
-            actor: row.actor_user_id ? (names.get(row.actor_user_id) || 'dashboard user') : 'ZiGBoT (automatic)',
+            target: row.table_name === 'zb_role_mappings' ? `role mapping ${row.after?.role_name || row.before?.role_name || row.record_key}`
+                : row.table_name === 'zb_guild_identity' ? 'bot identity' : 'server settings',
+            actor: row.actor_role === 'bot_owner' ? 'ZiGBoT review'
+                : row.actor_role === 'discord_admin' ? 'A server admin (/identity)'
+                    : row.actor_user_id ? (names.get(row.actor_user_id) || 'dashboard user') : 'ZiGBoT (automatic)',
             fields: changedFields(row.before, row.after)
         }))
     });

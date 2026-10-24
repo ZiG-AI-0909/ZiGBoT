@@ -81,17 +81,71 @@ const INVITE_PERMISSIONS = [10n, 11n, 14n, 16n, 6n, 20n, 21n, 13n, 1n, 2n, 4n, 2
     .reduce((acc, bit) => acc | (1n << bit), 0n)
     .toString();
 
+// Change Nickname: only asked for while custom bot identity is switched on
+// (Discord requires it for the nickname; avatar and bio need no permission).
+const CHANGE_NICKNAME = 1n << 26n;
+
 export function inviteUrl(guildId) {
     const params = new URLSearchParams({
         client_id: env.discordClientId,
         scope: 'bot applications.commands',
-        permissions: INVITE_PERMISSIONS
+        permissions: env.customIdentityEnabled ? (BigInt(INVITE_PERMISSIONS) | CHANGE_NICKNAME).toString() : INVITE_PERMISSIONS
     });
     if (guildId && SNOWFLAKE.test(String(guildId))) {
         params.set('guild_id', String(guildId));
         params.set('disable_guild_select', 'true');
     }
     return `https://discord.com/oauth2/authorize?${params.toString()}`;
+}
+
+/** The first readable message from a Discord error body (e.g. why a nickname was refused). */
+function discordErrorMessage(body) {
+    const walk = (node) => {
+        if (!node || typeof node !== 'object') return null;
+        if (Array.isArray(node._errors) && node._errors[0]?.message) return node._errors[0].message;
+        for (const value of Object.values(node)) {
+            const found = walk(value);
+            if (found) return found;
+        }
+        return null;
+    };
+    return walk(body?.errors) || body?.message || null;
+}
+
+async function write(path, { method, body, reason }) {
+    const headers = { Authorization: `Bot ${botToken()}`, 'Content-Type': 'application/json' };
+    if (reason) headers['X-Audit-Log-Reason'] = encodeURIComponent(reason);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+        const response = await fetch(`${API}${path}`, { method, headers, body: JSON.stringify(body), cache: 'no-store' });
+        const data = await response.json().catch(() => ({}));
+        if (response.status === 429 && attempt === 0) {
+            await new Promise((resolve) => setTimeout(resolve, Math.min(5000, Math.ceil((Number(data.retry_after) || 1) * 1000))));
+            continue;
+        }
+        if (!response.ok) {
+            const error = new DiscordError(`Discord API ${response.status} on ${method} ${path.split('?')[0]}`, response.status);
+            error.code = data?.code;
+            error.discordMessage = discordErrorMessage(data);
+            throw error;
+        }
+        return data;
+    }
+    throw new DiscordError(`Discord API rate limited on ${method} ${path.split('?')[0]}`, 429);
+}
+
+/**
+ * Change the bot's own profile in one server (Modify Current Member):
+ * { nick?, bio?, avatar? } where avatar is a data URI or null; null resets a
+ * field to the default ZiGBoT profile. `reason` goes to Discord's audit log.
+ */
+export function modifyCurrentMember(guildId, fields, reason) {
+    return write(`/guilds/${assertId(guildId)}/members/@me`, { method: 'PATCH', body: fields, reason });
+}
+
+/** DM a user from the bot (no mentions are ever parsed). */
+export async function sendDirectMessage(userId, content) {
+    const channel = await write('/users/@me/channels', { method: 'POST', body: { recipient_id: assertId(userId) } });
+    return write(`/channels/${assertId(channel.id)}/messages`, { method: 'POST', body: { content: String(content).slice(0, 1900), allowed_mentions: { parse: [] } } });
 }
 
 /** Link to the bot creator's Discord profile (Message button), or null if unset. */

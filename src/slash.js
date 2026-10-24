@@ -54,7 +54,7 @@ const MEMORY_TYPE_CHOICES = [
     { name: 'Context', value: 'context' }
 ];
 
-function buildDefinitions() {
+function buildDefinitions({ identity = false } = {}) {
     return [
         new SlashCommandBuilder()
             .setName('play')
@@ -222,7 +222,16 @@ function buildDefinitions() {
         new SlashCommandBuilder()
             .setName('ytretry')
             .setDescription('Owner: re-run YouTube initialization now (e.g. after a quota reset)')
-            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+        // Custom bot identity (Premium): only registered while
+        // CUSTOM_IDENTITY_ENABLED is on. Also checked server-side.
+        ...(identity ? [new SlashCommandBuilder()
+            .setName('identity')
+            .setDescription('Admins: ZiGBoT’s custom name, picture and bio in this server')
+            .addSubcommand((sub) => sub.setName('show').setDescription('Show ZiGBoT’s identity in this server'))
+            .addSubcommand((sub) => sub.setName('reset').setDescription('Put back the default ZiGBoT name, picture and bio')
+                .addBooleanOption((option) => option.setName('confirm').setDescription('True = reset and delete the saved identity').setRequired(true)))
+            .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)] : [])
     ].map((command) => command.toJSON());
 }
 
@@ -252,7 +261,7 @@ function logRegistrationFailure(scope, error, settings) {
 }
 
 async function registerSlashCommands(client, settings) {
-    const json = buildDefinitions();
+    const json = buildDefinitions({ identity: Boolean(settings.customIdentityEnabled) });
     const general = json.filter((command) => !YOUTUBE_COMMANDS.has(command.name));
     const youtube = json.filter((command) => YOUTUBE_COMMANDS.has(command.name));
     if (settings.slashCommandGuildIds.length > 0) {

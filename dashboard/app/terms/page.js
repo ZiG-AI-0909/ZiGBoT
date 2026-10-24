@@ -10,7 +10,7 @@ export const metadata = {
 // Dynamic so the contact link uses the runtime env, like the other pages.
 export const dynamic = 'force-dynamic';
 
-const UPDATED = '22 October 2026';
+const UPDATED = '24 October 2026';
 
 export default function Terms() {
     const contact = contactUrl();
@@ -65,6 +65,19 @@ export default function Terms() {
                     <li>spam, overload, reverse-engineer, or attack the bot, the dashboard, or the services they rely on;</li>
                     <li>break Discord&apos;s or YouTube&apos;s rules, or the law where you live.</li>
                 </ul>
+                <h3>Custom bot identity</h3>
+                <p>If your server gives ZiGBoT its own name, picture or bio (a Premium feature, when available), they must not:</p>
+                <ul>
+                    <li>pretend to be Discord, Discord staff, ZiGBoT staff, another well-known bot, or a real person;</li>
+                    <li>try to hide that ZiGBoT is a bot or be used to trick members, for example to collect passwords, payments or personal details;</li>
+                    <li>contain sexual, hateful, violent or illegal content, or anything you don&apos;t have the right to use;</li>
+                    <li>contain links, invites or mentions in the bio.</li>
+                </ul>
+                <p>
+                    Pictures are checked by us before they go live, and we can reject them without giving a reason. Discord always shows
+                    ZiGBoT&apos;s APP tag. If Premium ends, or we turn the feature off for a server or an admin who breaks these rules,
+                    ZiGBoT goes back to its default profile.
+                </p>
                 <p>We may limit, block, or remove ZiGBoT from any user or server that breaks these rules.</p>
 
                 <h2>6. Premium</h2>

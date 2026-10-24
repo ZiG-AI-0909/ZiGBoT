@@ -28,6 +28,15 @@ const PREMIUM_PERKS = Object.freeze([
     { key: 'voice_music', title: 'Voice & music', text: 'Voice conversations and music playback in your voice channels.' }
 ]);
 
+// Custom bot identity (lib/shared/identity.js). Kept out of PREMIUM_PERKS
+// until the feature ships (CUSTOM_IDENTITY_ENABLED), so nothing advertises it
+// early; premiumPerks() adds it only where the feature is switched on.
+const CUSTOM_IDENTITY_PERK = Object.freeze({ key: 'custom_identity', title: 'Custom bot identity', text: 'Give ZiGBoT its own name, picture and bio in your server. Discord’s APP tag always stays.' });
+
+function premiumPerks({ customIdentity = false } = {}) {
+    return customIdentity ? [...PREMIUM_PERKS, CUSTOM_IDENTITY_PERK] : PREMIUM_PERKS;
+}
+
 // Razorpay subscription statuses we store.
 const SUBSCRIPTION_STATUSES = Object.freeze(['created', 'authenticated', 'active', 'pending', 'halted', 'cancelled', 'completed', 'expired', 'paused']);
 
@@ -142,6 +151,8 @@ module.exports = {
     FREE_LIMITS,
     PREMIUM_ONLY_FEATURES,
     PREMIUM_PERKS,
+    CUSTOM_IDENTITY_PERK,
+    premiumPerks,
     SUBSCRIPTION_STATUSES,
     isPremiumActive,
     subscriptionRowFromRazorpay,

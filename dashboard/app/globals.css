@@ -313,3 +313,18 @@ textarea:disabled, input:disabled { opacity: 0.55; cursor: not-allowed; }
     .topbar-actions .btn { min-height: 34px; padding: 0 10px; font-size: 13px; }
     .cmd-card { padding: 16px; }
 }
+
+/* Custom bot identity (components/IdentityTab.js, IdentityReview.js) */
+.identity-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 820px) { .identity-grid { grid-template-columns: 1fr; } }
+.identity-preview { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: #1e1f22; color: #dbdee1; }
+.identity-message { display: flex; gap: 12px; align-items: flex-start; }
+.identity-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex-shrink: 0; background: #2b2d31; }
+.identity-avatar-lg { width: 72px; height: 72px; }
+.identity-review .identity-avatar-lg { width: 128px; height: 128px; border-radius: 16px; }
+.identity-name-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; overflow-wrap: anywhere; }
+.identity-name-row strong { color: #f2f3f5; }
+.identity-app-tag { font-size: 10px; font-weight: 700; line-height: 1; padding: 3px 4px; border-radius: 4px; background: #5865f2; color: #fff; }
+.identity-text { margin: 2px 0 0; overflow-wrap: anywhere; }
+.identity-card { display: grid; gap: 8px; padding: 14px; border-radius: 10px; background: #111214; }
+.identity-card .help { white-space: pre-line; overflow-wrap: anywhere; }

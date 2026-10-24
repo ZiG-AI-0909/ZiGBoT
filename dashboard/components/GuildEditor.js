@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import IdentityTab from './IdentityTab';
 
 const TABS = [
     { id: 'behaviour', label: 'AI behaviour' },
@@ -9,6 +10,7 @@ const TABS = [
     { id: 'features', label: 'Features' },
     { id: 'music', label: '🎵 Music' },
     { id: 'voice', label: '🎙️ Voice' },
+    { id: 'identity', label: '🪪 Identity' },
     { id: 'test', label: 'Test' },
     { id: 'premium', label: '💎 Premium' },
     { id: 'history', label: 'History' }
@@ -239,7 +241,7 @@ export default function GuildEditor({ initial, meta }) {
             ) : null}
 
             <div className="tabs" role="tablist" aria-label="Settings sections">
-                {TABS.map((t) => (
+                {TABS.filter((t) => t.id !== 'identity' || meta.identityEnabled).map((t) => (
                     <button key={t.id} role="tab" className="tab" aria-selected={tab === t.id} aria-controls={`panel-${t.id}`} id={`tab-${t.id}`} onClick={() => setTab(t.id)}>{t.label}</button>
                 ))}
             </div>
@@ -253,6 +255,7 @@ export default function GuildEditor({ initial, meta }) {
                 {tab === 'features' ? <FeaturesTab draft={draft} set={set} isHome={initial.guild.isHome} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'music' ? <MusicTab guildId={initial.guild.id} draft={draft} set={set} errors={fieldErrors} roles={roles} channels={channels} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'premium' ? <PremiumTab guildId={initial.guild.id} plan={plan} setPlan={setPlan} perks={meta.perks} contactUrl={meta.contactUrl} toast={toast} /> : null}
+                {tab === 'identity' && meta.identityEnabled ? <IdentityTab guildId={initial.guild.id} guildName={initial.guild.name} premium={premium} onUpgrade={() => setTab('premium')} toast={toast} /> : null}
                 {tab === 'test' ? <TestTab guildId={initial.guild.id} draft={draft} tones={meta.tones} toast={toast} /> : null}
                 {tab === 'history' ? <HistoryTab guildId={initial.guild.id} /> : null}
             </div>
@@ -837,6 +840,8 @@ function TestTab({ guildId, draft, tones, toast }) {
     );
 }
 
+const AUDIT_VERBS = { INSERT: 'created', DELETE: 'removed', RESET: 'reset', APPLY: 'applied', REVERT: 'reverted', REVIEW: 'reviewed', BLOCK: 'changed a block on' };
+
 function HistoryTab({ guildId }) {
     const [state, setState] = useState({ loading: true, entries: [], error: null });
     useEffect(() => {
@@ -856,7 +861,7 @@ function HistoryTab({ guildId }) {
         <div className="card audit">
             {state.entries.map((e) => (
                 <div key={e.id} className="audit-row">
-                    <span><strong>{e.actor}</strong> {e.action === 'INSERT' ? 'created' : e.action === 'DELETE' ? 'removed' : 'updated'} {e.target}</span>
+                    <span><strong>{e.actor}</strong> {AUDIT_VERBS[e.action] || 'updated'} {e.target}</span>
                     <span className="help">{new Date(e.at).toLocaleString()}{e.fields.length ? ` · ${e.fields.slice(0, 6).join(', ')}${e.fields.length > 6 ? '…' : ''}` : ''}</span>
                 </div>
             ))}

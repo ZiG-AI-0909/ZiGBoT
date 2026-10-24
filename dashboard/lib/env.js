@@ -28,6 +28,8 @@ export const env = {
     get siteUrl() { return (process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/+$/, ''); },
     get homeGuildIds() { return (process.env.HOME_GUILD_IDS || '').split(',').map((s) => s.trim()).filter(Boolean); },
     get botCreatorId() { return process.env.BOT_CREATOR_ID || ''; },
+    // Custom bot identity (Premium). Off unless exactly 'true'; the bot reads the same variable.
+    get customIdentityEnabled() { return process.env.CUSTOM_IDENTITY_ENABLED === 'true'; },
 
     // ZiGBoT Premium via Razorpay Subscriptions (optional; all of these enable billing).
     // Test-mode keys (rzp_test_…) and live keys (rzp_live_…) work the same way.

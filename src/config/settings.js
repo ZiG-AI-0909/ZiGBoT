@@ -144,6 +144,9 @@ function loadSettings() {
         // /summarychannels list. OFF unless explicitly 'true'; needs the
         // summaries switch above too.
         memorySummariesChannelsEnabled: process.env.MEMORY_SUMMARIES_CHANNELS_ENABLED === 'true',
+        // Custom bot identity (Premium; src/identity/). OFF unless explicitly
+        // 'true': no sync, no /identity command. The dashboard reads the same variable.
+        customIdentityEnabled: process.env.CUSTOM_IDENTITY_ENABLED === 'true',
         groqSummaryModel: process.env.GROQ_SUMMARY_MODEL || 'llama-3.1-8b-instant',
         sttCommand: process.env.STT_COMMAND || '',
         sttArgs: parseArgs(process.env.STT_ARGS),

@@ -55,6 +55,8 @@ test.before(async () => {
         create table auth.users (id uuid primary key);
         create function auth.uid() returns uuid language sql stable as
             $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+        create schema storage;
+        create table storage.buckets (id text primary key, name text not null, public boolean default false, file_size_limit bigint, allowed_mime_types text[]);
         grant usage on schema auth to anon, authenticated, service_role;
         grant usage on schema public to anon, authenticated, service_role;
         alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
@@ -196,4 +198,51 @@ test('premium: the database rejects malformed subscription rows even from the se
     await rejects("update public.zb_guild_subscriptions set provider = 'paypal' where guild_id = $1", [G1], /check constraint/);
     await rejects("update public.zb_guild_subscriptions set pending_subscription_id = 'I-PAYPAL0001' where guild_id = $1", [G1], /check constraint/);
     await rejects("update public.zb_guild_subscriptions set status = 'paid' where guild_id = $1", [G1], /check constraint/);
+});
+
+const SHA = 'a'.repeat(64);
+
+test('custom identity: browsers can never read or write identity rows or blocks', async () => {
+    await asService();
+    await db.query(`insert into public.zb_guild_identity (guild_id, nick, avatar_path, avatar_sha256) values ($1, 'Zed', $2, $3)
+        on conflict (guild_id) do nothing`, [G1, `${G1}/${SHA}.png`, SHA]);
+    for (const user of [A, null]) {
+        await as(user);
+        await rejects('select * from public.zb_guild_identity', [], /permission denied/);
+        await rejects("update public.zb_guild_identity set nick = 'hacked' where guild_id = $1", [G1], /permission denied/);
+        await rejects("insert into public.zb_guild_identity (guild_id, nick) values ($1, 'x')", [G2], /permission denied/);
+        await rejects('select * from public.zb_identity_blocks', [], /permission denied/);
+        await rejects("insert into public.zb_identity_blocks (kind, target_id, context_guild_id) values ('guild', $1, $1)", [G1], /permission denied/);
+    }
+});
+
+test('custom identity: the database rejects malformed identity rows even from the service role', async () => {
+    await asService();
+    await rejects("update public.zb_guild_identity set nick = $1 where guild_id = $2", ['x'.repeat(33), G1], /check constraint/);
+    await rejects("update public.zb_guild_identity set nick = '' where guild_id = $1", [G1], /check constraint/);
+    await rejects("update public.zb_guild_identity set bio = $1 where guild_id = $2", ['x'.repeat(191), G1], /check constraint/);
+    await rejects("update public.zb_guild_identity set avatar_path = '../etc/passwd' where guild_id = $1", [G1], /check constraint/);
+    await rejects("update public.zb_guild_identity set pending_avatar_path = $1, pending_avatar_sha256 = null where guild_id = $2", [`${G1}/${SHA}.png`, G1], /check constraint/);
+    await rejects("update public.zb_guild_identity set pending_avatar_path = null, pending_avatar_sha256 = $1 where guild_id = $2", [SHA, G1], /check constraint/);
+    // A picture path must be in this server's own folder.
+    await rejects("update public.zb_guild_identity set avatar_path = $1 where guild_id = $2", [`${G2}/${SHA}.png`, G1], /check constraint/);
+    await rejects("insert into public.zb_identity_blocks (kind, target_id, context_guild_id) values ('channel', $1, $1)", [G1], /check constraint/);
+    await db.query("insert into public.zb_identity_blocks (kind, target_id, context_guild_id) values ('user', '100000000000000009', $1)", [G1]);
+    await rejects("insert into public.zb_identity_blocks (kind, target_id, context_guild_id) values ('user', '100000000000000009', $1)", [G1], /duplicate key/);
+});
+
+test('custom identity: audit accepts the identity actions, still rejects unknown ones; the bucket is private PNG-only', async () => {
+    await asService();
+    for (const action of ['APPLY', 'REVERT', 'REVIEW', 'BLOCK', 'RESET', 'INSERT']) {
+        await db.query("insert into public.zb_config_audit_log (guild_id, action, table_name) values ($1, $2, 'zb_guild_identity')", [G1, action]);
+    }
+    await rejects("insert into public.zb_config_audit_log (guild_id, action, table_name) values ($1, 'HACK', 'zb_guild_identity')", [G1], /check constraint/);
+    await db.exec('reset role'); // the stub storage schema is owned by the test superuser
+    const bucket = await db.query("select public, file_size_limit, allowed_mime_types from storage.buckets where id = 'zb-identity'");
+    assert.deepEqual(bucket.rows, [{ public: false, file_size_limit: 1048576, allowed_mime_types: ['image/png'] }]);
+    // Removing the server's guild row removes its identity too.
+    await db.query("insert into public.zb_guilds (guild_id, name) values ('333333333333333333', 'Gone')");
+    await db.query("insert into public.zb_guild_identity (guild_id, nick) values ('333333333333333333', 'Bye')");
+    await db.query("delete from public.zb_guilds where guild_id = '333333333333333333'");
+    assert.equal((await db.query("select 1 from public.zb_guild_identity where guild_id = '333333333333333333'")).rows.length, 0);
 });

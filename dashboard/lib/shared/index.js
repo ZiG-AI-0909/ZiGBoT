@@ -8,5 +8,6 @@ module.exports = {
     ...require('./safety'),
     ...require('./personas'),
     ...require('./access'),
-    ...require('./premium')
+    ...require('./premium'),
+    ...require('./identity')
 };
