@@ -96,6 +96,7 @@ const guildStore = new GuildConfigStore({
     supabaseUrl: settings.supabaseUrl,
     serviceRoleKey: settings.supabaseServiceRoleKey
 });
+console.log(`[ZiGBoT MEMORY] Automatic memory capture: ${settings.memoryAutoCapture ? 'ON' : 'OFF'} (MEMORY_AUTO_CAPTURE)`);
 console.log(`[ZiGBoT CONFIG] Per-server config mode: ${guildStore.mode}${guildStore.mode === 'legacy' ? ' (set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to enable the dashboard)' : ''}`);
 
 // Resolve everything the handlers need for one guild event. Never throws.
@@ -403,7 +404,8 @@ client.on(Events.MessageCreate, async (message) => {
     // a server, whether or not ZiGBoT is configured to reply in that channel.
     // This is selective memory, not a transcript: ordinary chat and crisis
     // content are skipped, and brain.remember refuses credentials.
-    if (message.guild && memoryAllowed && userMessage && !isCrisisMessage(userMessage)) {
+    // Off unless MEMORY_AUTO_CAPTURE=true (no passive saves without consent).
+    if (settings.memoryAutoCapture && message.guild && memoryAllowed && userMessage && !isCrisisMessage(userMessage)) {
         try {
             const passive = extractPassiveMemory(userMessage);
             const selective = shouldRemember(userMessage);
@@ -412,7 +414,8 @@ client.on(Events.MessageCreate, async (message) => {
                 const authorName = message.member?.displayName || message.author.username;
                 await brain.remember(message.guild.id, message.author.id, candidate.content, candidate.type, {
                     authorName,
-                    keyword: candidate.keyword || extractTopicKeyword(candidate.content)
+                    keyword: candidate.keyword || extractTopicKeyword(candidate.content),
+                    source: 'auto-text'
                 });
             }
         } catch (memoryError) {
@@ -851,10 +854,11 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
         // Selective long-term save from voice, same rules as text.
         try {
             const candidate = shouldRemember(transcript);
-            if (candidate.should && voiceMemoryAllowed && brain.isMemoryAvailable()) {
+            if (settings.memoryAutoCapture && candidate.should && voiceMemoryAllowed && brain.isMemoryAvailable()) {
                 await brain.remember(guild.id, userId, candidate.content, candidate.type, {
                     authorName,
-                    keyword: extractTopicKeyword(candidate.content)
+                    keyword: extractTopicKeyword(candidate.content),
+                    source: 'auto-voice'
                 });
             }
         } catch (memoryError) {

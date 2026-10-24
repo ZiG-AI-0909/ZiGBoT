@@ -124,6 +124,9 @@ function loadSettings() {
             : defaultNonGentleRoles,
         voiceMode: process.env.VOICE_MODE || 'push-to-talk',
         storeTranscripts: process.env.STORE_TRANSCRIPTS === 'true',
+        // Passive long-term memory capture from ordinary text/voice messages.
+        // OFF unless explicitly set: no automatic saves without consent controls.
+        memoryAutoCapture: process.env.MEMORY_AUTO_CAPTURE === 'true',
         sttCommand: process.env.STT_COMMAND || '',
         sttArgs: parseArgs(process.env.STT_ARGS),
         ttsCommand: process.env.TTS_COMMAND || '',

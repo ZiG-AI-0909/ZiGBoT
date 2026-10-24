@@ -78,7 +78,7 @@ function fakeMongoClient() {
                         }
                     };
                 },
-                async findOneAndUpdate(filter, update) {
+                async findOneAndUpdate(filter, update, options = {}) {
                     let doc = docs.find((d) => Object.entries(filter).every(([k, v]) => d[k] === v));
                     if (!doc) {
                         doc = { ...filter };
@@ -87,7 +87,8 @@ function fakeMongoClient() {
                     if (update.$inc) {
                         for (const [k, v] of Object.entries(update.$inc)) doc[k] = (doc[k] || 0) + v;
                     }
-                    return { value: { ...doc } };
+                    // Driver v6+/v7: the document itself, not { value }.
+                    return options.includeResultMetadata ? { value: { ...doc }, ok: 1 } : { ...doc };
                 }
             };
             collections.set(name, store);

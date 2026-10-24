@@ -109,16 +109,26 @@ function fakeMongoClient() {
                         }
                     };
                 },
-                async findOneAndUpdate(filter, update) {
+                // MongoDB driver v6+/v7 semantics: resolves to the document
+                // itself (or null), NOT { value } — unless includeResultMetadata.
+                async findOneAndUpdate(filter, update, options = {}) {
                     let doc = docs.find((d) => matchesFilter(d, filter));
+                    const before = doc ? { ...doc } : null;
                     if (!doc) {
+                        if (!options.upsert) {
+                            return options.includeResultMetadata ? { value: null, ok: 1 } : null;
+                        }
                         doc = { ...filter };
                         docs.push(doc);
                     }
                     if (update.$inc) {
                         for (const [k, v] of Object.entries(update.$inc)) doc[k] = (doc[k] || 0) + v;
                     }
-                    return { value: { ...doc } };
+                    if (update.$set) {
+                        for (const [k, v] of Object.entries(update.$set)) doc[k] = v;
+                    }
+                    const value = options.returnDocument === 'after' ? { ...doc } : before;
+                    return options.includeResultMetadata ? { value, ok: 1 } : value;
                 }
             };
             collections.set(name, store);
@@ -212,11 +222,13 @@ test('remember refuses credentials and never stores them', async () => {
     assert.equal(await brain.countMemories('g', 'u'), 0, 'secrets must never be stored');
 });
 
-test('remember rejects empty content and unknown types fall back to fact', async () => {
+test('remember rejects empty content and unknown types (no silent coercion)', async () => {
     await connectTestBrain();
     await assert.rejects(() => brain.remember('g', 'u', '   '), /non-empty content/);
-    const stored = await brain.remember('g', 'u', 'valid memory', 'not-a-type');
-    assert.equal(stored.type, 'fact');
+    await assert.rejects(() => brain.remember('g', 'u', 'valid memory', 'not-a-type'), brain.MemoryValidationError);
+    assert.equal(await brain.countMemories('g', 'u'), 0);
+    const stored = await brain.remember('g', 'u', 'valid memory');
+    assert.equal(stored.type, 'fact', 'the default type is still fact');
 });
 
 test('deleteMemoryById deletes only the matching memory and reports truthfully', async () => {

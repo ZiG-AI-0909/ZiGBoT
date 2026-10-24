@@ -22,6 +22,10 @@ let ytNoRoast = null;
 let ytQuota = null;
 let lastMemoryError = null;
 let lastBehaviorError = null;
+// "Connected" is not "working": these record the last operation that really
+// succeeded, so status can tell a live handle from a working store.
+let lastMemoryWriteOkAt = null;
+let lastMemoryReadOkAt = null;
 
 // ---- Long-term memory store constants ----
 
@@ -32,6 +36,12 @@ const MEMORY_MAX_LIMIT = 20;
 // All conversational memories expire 30 days after they are created.
 const MEMORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const MEMORY_RECALL_RECENT_CAP = 200;
+// Schema v2 (additive): new writes carry these fields. v1 documents (written
+// before them) are never rewritten; normalizeMemory() fills defaults on read.
+const MEMORY_SCHEMA_VERSION = 2;
+const MEMORY_SOURCES = new Set(['explicit', 'auto-text', 'auto-voice']);
+const MEMORY_SCOPES = new Set(['personal']);
+const MEMORY_ID_FIELD_MAX = 64;
 
 // ---- Behavior accountability (who did what, and how the bot treats them) ----
 // Sliding-window reputation: positive signals +1, negative -2, only events
@@ -70,16 +80,43 @@ function containsCredential(text) {
         || CREDENTIAL_LABEL_PATTERN.test(text);
 }
 
-async function connectBrain(uri, { client: injectedClient = null } = {}) {
+// Thrown for input that must never reach the database. The message never
+// echoes the content itself, so it is safe to log.
+class MemoryValidationError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'MemoryValidationError';
+        this.code = 'MEMORY_INVALID';
+    }
+}
+
+// Atomic sequence for integer ids. Driver v6+ returns the document itself
+// from findOneAndUpdate (not { value }), so read seq straight off it.
+async function nextSequence(name) {
+    const counter = await counters.findOneAndUpdate(
+        { _id: name },
+        { $inc: { seq: 1 } },
+        { upsert: true, returnDocument: 'after', includeResultMetadata: false }
+    );
+    if (!counter || !Number.isInteger(counter.seq)) {
+        throw new Error(`Counter "${name}" returned no sequence value.`);
+    }
+    return counter.seq;
+}
+
+async function connectBrain(uri, { client: injectedClient = null, dbName = 'zigbot' } = {}) {
     if (!uri) {
         throw new Error('connectBrain requires a MongoDB URI (set MONGODB_URI)');
+    }
+    if (typeof dbName !== 'string' || !/^[A-Za-z0-9_-]{1,63}$/.test(dbName)) {
+        throw new Error('connectBrain dbName must be 1-63 letters, digits, "_" or "-".');
     }
     // Connect fully BEFORE publishing any module state: a failed connect must
     // never leave half-initialized collections behind.
     const newClient = injectedClient || new MongoClient(uri);
     await newClient.connect();
 
-    const db = newClient.db('zigbot');
+    const db = newClient.db(dbName);
     const nextUsers = db.collection('users');
     const nextWarnings = db.collection('warnings');
     const nextCounters = db.collection('counters');
@@ -126,6 +163,8 @@ async function connectBrain(uri, { client: injectedClient = null } = {}) {
     ytQuota = nextYtQuota;
     lastMemoryError = null;
     lastBehaviorError = null;
+    lastMemoryWriteOkAt = null;
+    lastMemoryReadOkAt = null;
 
     return users;
 }
@@ -152,13 +191,8 @@ async function updateUser(userId, patch) {
 async function addWarning(guildId, userId, reason, issuedBy) {
     requireBrain();
     // Atomic sequence, mirrors the old SQLite AUTOINCREMENT ids.
-    const { value } = await counters.findOneAndUpdate(
-        { _id: 'warning_id' },
-        { $inc: { seq: 1 } },
-        { upsert: true, returnDocument: 'after' }
-    );
     const record = {
-        id: value.seq,
+        id: await nextSequence('warning_id'),
         guildId,
         userId,
         reason: reason || 'No reason provided',
@@ -189,47 +223,169 @@ function noteMemoryError(error) {
     lastMemoryError = error?.message || String(error);
 }
 
-// meta: { authorName, keyword } — passive-capture enrichment so cross-user
-// context can say WHOSE memory it is and WHAT topic it belongs to.
+function noteMemoryWriteOk() {
+    lastMemoryError = null;
+    lastMemoryWriteOkAt = Date.now();
+}
+
+function noteMemoryReadOk() {
+    lastMemoryError = null;
+    lastMemoryReadOkAt = Date.now();
+}
+
+// Owner key for every memory query. IDs always come from trusted Discord
+// objects at the call site; this only guarantees they are plain short strings
+// so no caller can smuggle a query operator into the filter.
+function ownerKey(guildId, userId) {
+    const guild = guildId === null || guildId === undefined ? '' : String(guildId);
+    const user = userId === null || userId === undefined ? '' : String(userId);
+    if (!guild || !user || guild.length > MEMORY_ID_FIELD_MAX || user.length > MEMORY_ID_FIELD_MAX) {
+        throw new MemoryValidationError('Memory operations require a valid guildId and userId.');
+    }
+    return { guildId: guild, userId: user };
+}
+
+function validateMemoryId(id) {
+    const numericId = Number(id);
+    if (!Number.isInteger(numericId) || numericId <= 0) {
+        throw new MemoryValidationError('Memory id must be a positive number.');
+    }
+    return numericId;
+}
+
+// Content + type rules shared by create and update. Oversized content is
+// rejected, never silently truncated.
+function validateMemoryContent(content, type) {
+    const text = String(content ?? '').trim();
+    if (!text) {
+        throw new MemoryValidationError('remember requires guildId, userId, and non-empty content.');
+    }
+    if (text.length > MEMORY_MAX_LENGTH) {
+        throw new MemoryValidationError(`Memory content is too long (max ${MEMORY_MAX_LENGTH} characters).`);
+    }
+    if (!MEMORY_TYPES.has(type)) {
+        throw new MemoryValidationError(`Memory type must be one of: ${[...MEMORY_TYPES].join(', ')}.`);
+    }
+    if (containsCredential(text)) {
+        throw new MemoryValidationError('Refusing to store passwords, API keys, tokens, or credentials in memory.');
+    }
+    return text;
+}
+
+function isExpired(row, now = Date.now()) {
+    return !Number.isFinite(row.created_at) || row.created_at < now - MEMORY_RETENTION_MS;
+}
+
+// One consistent shape for v1 and v2 documents. v1 rows predate provenance,
+// so their source is reported as 'legacy' and they are never "verified".
+function normalizeMemory(row) {
+    return {
+        id: row.id,
+        guildId: row.guildId,
+        userId: row.userId,
+        content: row.content,
+        type: row.type,
+        scope: row.scope || 'personal',
+        source: row.source || 'legacy',
+        verified: row.verified === true,
+        created_at: row.created_at,
+        updated_at: Number.isFinite(row.updated_at) ? row.updated_at : row.created_at,
+        schema_version: row.schema_version || 1
+    };
+}
+
+// meta: { authorName, keyword, source } — passive-capture enrichment so
+// cross-user context can say WHOSE memory it is and WHAT topic it belongs to.
+// source: 'explicit' (the member asked) | 'auto-text' | 'auto-voice'.
 async function remember(guildId, userId, content, type = 'fact', meta = {}) {
     requireBrain();
-    const raw = String(content || '').trim();
-    if (!guildId || !userId || !raw) {
-        throw new Error('remember requires guildId, userId, and non-empty content.');
+    const owner = ownerKey(guildId, userId);
+    const text = validateMemoryContent(content, type);
+    const source = meta.source === undefined ? 'auto-text' : meta.source;
+    if (!MEMORY_SOURCES.has(source)) {
+        throw new MemoryValidationError(`Memory source must be one of: ${[...MEMORY_SOURCES].join(', ')}.`);
     }
-    if (containsCredential(raw)) {
-        throw new Error('Refusing to store passwords, API keys, tokens, or credentials in memory.');
-    }
-    const doc = {
-        guildId: String(guildId),
-        userId: String(userId),
-        content: raw.slice(0, MEMORY_MAX_LENGTH),
-        type: MEMORY_TYPES.has(type) ? type : 'fact',
-        author_name: meta.authorName ? String(meta.authorName).slice(0, 80) : null,
-        keyword: meta.keyword ? String(meta.keyword).slice(0, 40) : null,
-        created_at: Date.now()
-    };
-    doc.expires_at = new Date(doc.created_at + MEMORY_RETENTION_MS);
     try {
+        // Idempotent for repeats: the same live text for the same member is
+        // returned as-is instead of stored twice. (Two concurrent identical
+        // writes can still both insert; there is no unique index on content.)
+        const existing = await memories.findOne({ ...owner, content: text });
+        if (existing && !isExpired(existing)) {
+            noteMemoryReadOk();
+            return { ...normalizeMemory(existing), duplicate: true };
+        }
+
+        const now = Date.now();
+        const doc = {
+            ...owner,
+            content: text,
+            type,
+            author_name: meta.authorName ? String(meta.authorName).slice(0, 80) : null,
+            keyword: meta.keyword ? String(meta.keyword).slice(0, 40) : null,
+            created_at: now,
+            expires_at: new Date(now + MEMORY_RETENTION_MS),
+            updated_at: now,
+            scope: 'personal',
+            source,
+            verified: source === 'explicit',
+            schema_version: MEMORY_SCHEMA_VERSION
+        };
         // Atomic sequence, same pattern as warning ids.
-        const { value } = await counters.findOneAndUpdate(
-            { _id: 'memory_id' },
-            { $inc: { seq: 1 } },
-            { upsert: true, returnDocument: 'after' }
-        );
-        doc.id = value.seq;
+        doc.id = await nextSequence('memory_id');
         await memories.insertOne(doc);
-        lastMemoryError = null;
+        noteMemoryWriteOk();
         // Retention: prune anything older than the window. A prune failure
         // must never fail the save that just succeeded.
         try {
-            await pruneOldMemories(guildId);
+            await pruneOldMemories(owner.guildId);
         } catch (pruneError) {
             console.error(`[ZiGBoT MEMORY] Prune skipped: ${pruneError.message}`);
         }
-        return { id: doc.id, content: doc.content, type: doc.type, created_at: doc.created_at };
+        return { ...normalizeMemory(doc), duplicate: false };
     } catch (error) {
         noteMemoryError(error);
+        throw error;
+    }
+}
+
+// One memory, only if it belongs to this member in this guild and is still
+// inside retention. Not found (or someone else's) is null, never an error.
+async function getMemory(guildId, userId, id) {
+    requireBrain();
+    const owner = ownerKey(guildId, userId);
+    const numericId = validateMemoryId(id);
+    try {
+        const row = await memories.findOne({ ...owner, id: numericId });
+        noteMemoryReadOk();
+        return row && !isExpired(row) ? normalizeMemory(row) : null;
+    } catch (error) {
+        noteMemoryError(error);
+        throw error;
+    }
+}
+
+// Correct a memory's content/type in one atomic update. The owner filter is
+// part of the query, so another member's id simply matches nothing (null).
+// Provenance (source, created_at, verified) is preserved as written.
+async function updateMemory(guildId, userId, id, { content, type } = {}) {
+    requireBrain();
+    const owner = ownerKey(guildId, userId);
+    const numericId = validateMemoryId(id);
+    try {
+        const current = await getMemory(owner.guildId, owner.userId, numericId);
+        if (!current) return null;
+        const nextType = type === undefined ? current.type : type;
+        const nextContent = validateMemoryContent(content === undefined ? current.content : content, nextType);
+        const updated = await memories.findOneAndUpdate(
+            { ...owner, id: numericId, created_at: { $gte: Date.now() - MEMORY_RETENTION_MS } },
+            { $set: { content: nextContent, type: nextType, updated_at: Date.now() } },
+            { returnDocument: 'after', includeResultMetadata: false }
+        );
+        if (!updated) return null; // expired or deleted between the two calls
+        noteMemoryWriteOk();
+        return normalizeMemory(updated);
+    } catch (error) {
+        if (!(error instanceof MemoryValidationError)) noteMemoryError(error);
         throw error;
     }
 }
@@ -244,7 +400,7 @@ async function recall(guildId, userId, limit = MEMORY_DEFAULT_LIMIT) {
             .sort({ created_at: -1, id: -1 })
             .limit(capped)
             .toArray();
-        lastMemoryError = null;
+        noteMemoryReadOk();
         // Returned oldest-first so the AI reads them like a timeline.
         return rows.reverse().map(({ id, content, type, created_at }) => ({ id, content, type, created_at }));
     } catch (error) {
@@ -261,7 +417,7 @@ async function countMemories(guildId, userId) {
             userId: String(userId),
             created_at: { $gte: Date.now() - MEMORY_RETENTION_MS }
         });
-        lastMemoryError = null;
+        noteMemoryReadOk();
         return count;
     } catch (error) {
         noteMemoryError(error);
@@ -281,7 +437,7 @@ async function pruneOldMemories(guildId = null) {
         : { created_at: { $lt: cutoff } };
     try {
         const result = await memories.deleteMany(filter);
-        lastMemoryError = null;
+        noteMemoryWriteOk();
         return result.deletedCount || 0;
     } catch (error) {
         noteMemoryError(error);
@@ -303,7 +459,7 @@ async function recallRecent(guildId, { limit = 15, windowMs = MEMORY_RETENTION_M
             .sort({ created_at: -1, id: -1 })
             .limit(MEMORY_RECALL_RECENT_CAP)
             .toArray();
-        lastMemoryError = null;
+        noteMemoryReadOk();
         return rows
             .filter((row) => !excludeUserId || String(row.userId) !== String(excludeUserId))
             .slice(0, capped)
@@ -323,13 +479,11 @@ async function recallRecent(guildId, { limit = 15, windowMs = MEMORY_RETENTION_M
 
 async function deleteMemoryById(guildId, userId, id) {
     requireBrain();
-    const numericId = Number(id);
-    if (!Number.isInteger(numericId) || numericId <= 0) {
-        throw new Error('Memory id must be a positive number.');
-    }
+    const owner = ownerKey(guildId, userId);
+    const numericId = validateMemoryId(id);
     try {
-        const result = await memories.deleteOne({ guildId: String(guildId), userId: String(userId), id: numericId });
-        lastMemoryError = null;
+        const result = await memories.deleteOne({ ...owner, id: numericId });
+        noteMemoryWriteOk();
         return result.deletedCount > 0;
     } catch (error) {
         noteMemoryError(error);
@@ -340,11 +494,11 @@ async function deleteMemoryById(guildId, userId, id) {
 async function deleteAllMemories(guildId, userId) {
     requireBrain();
     try {
-        const result = await memories.deleteMany({ guildId: String(guildId), userId: String(userId) });
-        lastMemoryError = null;
+        const result = await memories.deleteMany(ownerKey(guildId, userId));
+        noteMemoryWriteOk();
         return result.deletedCount || 0;
     } catch (error) {
-        noteMemoryError(error);
+        if (!(error instanceof MemoryValidationError)) noteMemoryError(error);
         throw error;
     }
 }
@@ -574,7 +728,9 @@ function getMemoryStatus() {
         ...getMemoryCapabilities(),
         connected: Boolean(client),
         collection: 'memories',
-        lastError: lastMemoryError
+        lastError: lastMemoryError,
+        lastWriteOkAt: lastMemoryWriteOkAt,
+        lastReadOkAt: lastMemoryReadOkAt
     };
 }
 
@@ -594,6 +750,8 @@ function _disconnectForTests() {
     ytQuota = null;
     lastMemoryError = null;
     lastBehaviorError = null;
+    lastMemoryWriteOkAt = null;
+    lastMemoryReadOkAt = null;
 }
 
 module.exports = {
@@ -604,6 +762,8 @@ module.exports = {
     listWarnings,
     countWarnings,
     remember,
+    getMemory,
+    updateMemory,
     recall,
     recallRecent,
     pruneOldMemories,
@@ -631,5 +791,8 @@ module.exports = {
     markYtQuotaExhausted,
     tierFromScore,
     scoreEvents,
+    MemoryValidationError,
+    MEMORY_MAX_LENGTH,
+    MEMORY_SCHEMA_VERSION,
     _disconnectForTests
 };
