@@ -178,12 +178,16 @@ const client = new Client({
     ]
 });
 
-// Custom bot identity (Premium; off unless CUSTOM_IDENTITY_ENABLED=true).
+// Custom bot identity (Premium; CUSTOM_IDENTITY_ENABLED=true). While off, a
+// revert-only sync puts any applied identity back to default ZiGBoT.
 const identityStore = createIdentityStore({ guildStore });
 const identityContext = (guild) => guildStore.getGuildContext(guild);
-const identitySync = createIdentitySync({ client, store: identityStore, getContext: identityContext, enabled: settings.customIdentityEnabled });
-const identityCommands = createIdentityCommands({ store: identityStore, getContext: identityContext, enabled: settings.customIdentityEnabled });
-console.log(`[ZiGBoT IDENTITY] Custom bot identity: ${identitySync.active ? 'ON' : settings.customIdentityEnabled ? 'OFF (needs the Supabase config store)' : 'OFF (CUSTOM_IDENTITY_ENABLED)'}`);
+const identityOptions = { store: identityStore, getContext: identityContext, enabled: settings.customIdentityEnabled, guilds: settings.customIdentityGuilds };
+const identitySync = createIdentitySync({ client, ...identityOptions });
+const identityCommands = createIdentityCommands(identityOptions);
+console.log(`[ZiGBoT IDENTITY] Custom bot identity: ${identitySync.mode === 'full'
+    ? `ON (${settings.customIdentityGuilds.length ? `${settings.customIdentityGuilds.length} listed server(s)` : 'all servers'})`
+    : identitySync.mode === 'revert-only' ? 'OFF (CUSTOM_IDENTITY_ENABLED; revert-only sync)' : 'OFF (needs the Supabase config store)'}`);
 
 client.once(Events.ClientReady, async (c) => {
     console.log(`✅ ${c.user.tag} is online and ready in ${c.guilds.cache.size} server(s)! (Mention-driven mode with role-based personas active)`);

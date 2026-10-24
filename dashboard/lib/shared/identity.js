@@ -169,16 +169,27 @@ function detectImageType(bytes) {
 
 const DEFAULT_IDENTITY = Object.freeze({ nick: null, bio: null, avatarSha: null });
 
+/** CUSTOM_IDENTITY_GUILDS: comma-separated server ids (invalid entries ignored). */
+function parseIdentityGuilds(value) {
+    return [...new Set(String(value || '').split(',').map((id) => id.trim()).filter((id) => /^\d{17,20}$/.test(id)))];
+}
+
+/** An empty list means every server; otherwise only the listed ones. */
+function identityAllowedInGuild(guildId, guilds) {
+    return !Array.isArray(guilds) || guilds.length === 0 || guilds.includes(String(guildId));
+}
+
 /**
  * What the bot's profile in this server should be.
  *  - null: leave the server alone (it never saved an identity).
- *  - DEFAULT_IDENTITY: plain ZiGBoT (not Premium, or blocked).
+ *  - DEFAULT_IDENTITY: plain ZiGBoT (not Premium, blocked, or not one of
+ *    the CUSTOM_IDENTITY_GUILDS).
  *  - otherwise the saved nickname/bio and the APPROVED avatar (a pending
  *    one is never applied).
  */
-function identityDesired({ row, premium, blocked }) {
+function identityDesired({ row, premium, blocked, allowed = true }) {
     if (!row) return null;
-    if (!premium || blocked) return DEFAULT_IDENTITY;
+    if (!premium || blocked || !allowed) return DEFAULT_IDENTITY;
     return {
         nick: row.nick || null,
         bio: row.bio || null,
@@ -227,6 +238,8 @@ module.exports = {
     IDENTITY_IMAGE_PATH,
     identityImagePath,
     DEFAULT_IDENTITY,
+    parseIdentityGuilds,
+    identityAllowedInGuild,
     validateIdentityName,
     validateIdentityBio,
     detectImageType,

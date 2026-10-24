@@ -10,7 +10,9 @@ const ACCEPT = ['image/png', 'image/jpeg', 'image/webp'];
 const REVERT_REASONS = {
     premium_lapsed: 'this server’s Premium ended',
     premium_inactive: 'this server isn’t Premium right now',
-    blocked: 'custom identity was turned off for this server'
+    blocked: 'custom identity was turned off for this server',
+    not_enabled_here: 'custom identity isn’t available in this server yet',
+    feature_disabled: 'custom identity was switched off for a while'
 };
 
 async function request(path, { method = 'GET', form } = {}) {

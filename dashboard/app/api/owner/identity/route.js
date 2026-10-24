@@ -2,10 +2,9 @@ import shared from '@/lib/shared';
 import { handler, json, readJson, HttpError } from '@/lib/http';
 import { requireUser } from '@/lib/auth';
 import { createServiceClient } from '@/lib/supabase/server';
-import { env } from '@/lib/env';
 import {
     getIdentityRow, saveIdentityRow, getBlocks, removeAvatars, pushIdentity, revertIdentity,
-    writeAudit, auditView, guildPremium, isBotOwner
+    writeAudit, auditView, guildPremium, isBotOwner, identityEnabledFor
 } from '@/lib/identity';
 
 const { SNOWFLAKE } = shared;
@@ -39,7 +38,7 @@ export const POST = handler(async (request) => {
         }
         let next = { ...row, ...cleared, avatar_path: row.pending_avatar_path, avatar_sha256: row.pending_avatar_sha256, review_note: null };
         let warning = null;
-        if (env.customIdentityEnabled) {
+        if (identityEnabledFor(guildId)) {
             // Apply now if the server qualifies; otherwise the bot's sync applies it later.
             try {
                 const [{ guild, premium }, blocks] = await Promise.all([guildPremium(guildId), getBlocks({ guildId })]);

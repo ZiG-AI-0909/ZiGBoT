@@ -49,10 +49,16 @@ function fakeGuild({ joinedTimestamp = NOW - 365 * DAY, failWith = null } = {}) 
     };
 }
 
-function makeSync({ store, guild, premium = true, enabled = true }) {
+function makeSync({ store, guild, premium = true, enabled = true, guilds = [], onContext = () => {} }) {
     const client = { guilds: { cache: new Map(guild ? [[G, guild]] : []) }, isReady: () => true };
-    return createIdentitySync({ client, store, getContext: async () => ({ premium }), enabled, logger: { log() {}, error() {} }, now: () => NOW });
+    const getContext = async () => {
+        onContext();
+        return { premium };
+    };
+    return createIdentitySync({ client, store, getContext, enabled, guilds, logger: { log() {}, error() {} }, now: () => NOW });
 }
+
+const appliedRow = (extra = {}) => savedRow({ applied_nick: 'Zed', applied_bio: 'chai bot', applied_avatar_sha256: SHA, applied_at: new Date(NOW - DAY).toISOString(), ...extra });
 
 const savedRow = (extra = {}) => ({ guild_id: G, nick: 'Zed', bio: 'chai bot', avatar_path: PATH, avatar_sha256: SHA, updated_at: new Date(NOW - DAY).toISOString(), ...extra });
 
@@ -109,17 +115,80 @@ test('servers that never saved an identity are never touched', async () => {
     assert.deepEqual(guild.edits, []);
 });
 
-test('the feature flag off means no sync at all', async () => {
-    const store = fakeStore({ rows: [savedRow()] });
+test('flag off: the revert-only sync puts an applied identity back to default, with an audit reason', async () => {
+    const store = fakeStore({ rows: [appliedRow()] });
+    const guild = fakeGuild();
+    let contextReads = 0;
+    const sync = makeSync({ store, guild, enabled: false, premium: true, onContext: () => { contextReads += 1; } });
+    assert.equal(sync.mode, 'revert-only');
+    assert.equal(sync.active, true);
+    await sync.sweep();
+    assert.equal(guild.edits.length, 1);
+    assert.deepEqual({ ...guild.edits[0], reason: undefined }, { nick: null, bio: null, avatar: null, reason: undefined });
+    assert.match(guild.edits[0].reason, /ZiGBoT custom identity: revert: feature_disabled/);
+    const row = store.state.rows.get(G);
+    assert.deepEqual([row.applied_nick, row.applied_bio, row.applied_avatar_sha256], [null, null, null]);
+    assert.equal(row.revert_reason, 'feature_disabled');
+    assert.equal(row.nick, 'Zed', 'the saved identity is kept');
+    assert.equal(store.state.audits.at(-1).action, 'REVERT');
+    assert.equal(store.state.audits.at(-1).after.revert_reason, 'feature_disabled');
+    assert.equal(contextReads, 0, 'no Premium lookups: it only ever reverts');
+    await sync.sweep();
+    assert.equal(guild.edits.length, 1, 'nothing more once reverted');
+});
+
+test('flag off: nothing is ever applied or deleted', async () => {
+    // Saved and approved but never applied (e.g. approved while the flag was off): stays default.
+    const store = fakeStore({ rows: [savedRow({ pending_avatar_path: `${G}/${'e'.repeat(64)}.png`, pending_avatar_sha256: 'e'.repeat(64) })] });
     const guild = fakeGuild();
     const sync = makeSync({ store, guild, enabled: false });
-    assert.equal(sync.active, false);
-    assert.equal(await sync.reconcile(guild), 'off');
-    assert.equal(sync.start(), null);
-    await sync.sweep();
-    await sync.onGuildRemoved(G);
+    assert.equal(await sync.reconcile(guild), 'ok');
     assert.deepEqual(guild.edits, []);
-    assert.ok(store.state.rows.has(G));
+    // No 30-day cleanup, no deletion on removal or for servers the bot left.
+    const old = fakeStore({ rows: [savedRow({ reverted_at: new Date(NOW - 90 * DAY).toISOString(), revert_reason: 'premium_lapsed' })] });
+    assert.equal(await makeSync({ store: old, guild, enabled: false, premium: false }).reconcile(guild), 'ok');
+    await makeSync({ store: old, guild: null, enabled: false }).sweep();
+    await makeSync({ store: old, guild, enabled: false }).onGuildRemoved(G);
+    assert.ok(old.state.rows.has(G));
+    assert.deepEqual(old.state.removed, []);
+    assert.deepEqual(old.state.audits, []);
+});
+
+test('flag off and without the Supabase store: nothing runs at all', async () => {
+    const store = { ...fakeStore({ rows: [appliedRow()] }), enabled: false };
+    const guild = fakeGuild();
+    const sync = makeSync({ store, guild, enabled: false });
+    assert.equal(sync.mode, 'off');
+    assert.equal(sync.start(), null);
+    assert.equal(await sync.reconcile(guild), 'off');
+    assert.deepEqual(guild.edits, []);
+});
+
+test('CUSTOM_IDENTITY_GUILDS set: a listed server gets its identity', async () => {
+    const store = fakeStore({ rows: [savedRow()] });
+    const guild = fakeGuild();
+    assert.equal(await makeSync({ store, guild, guilds: [G, '999999999999999999'] }).reconcile(guild), 'applied');
+    assert.equal(guild.edits[0].nick, 'Zed');
+});
+
+test('CUSTOM_IDENTITY_GUILDS set: an unlisted server is reverted (data kept, no 30-day cleanup)', async () => {
+    const store = fakeStore({ rows: [appliedRow()] });
+    const guild = fakeGuild();
+    const sync = makeSync({ store, guild, guilds: ['999999999999999999'] });
+    assert.equal(await sync.reconcile(guild), 'reverted');
+    assert.deepEqual({ ...guild.edits[0], reason: undefined }, { nick: null, bio: null, avatar: null, reason: undefined });
+    assert.match(guild.edits[0].reason, /not_enabled_here/);
+    assert.equal(store.state.rows.get(G).revert_reason, 'not_enabled_here');
+    // A Premium server that is merely unlisted keeps its saved identity indefinitely.
+    const later = fakeStore({ rows: [savedRow({ reverted_at: new Date(NOW - 90 * DAY).toISOString(), revert_reason: 'not_enabled_here' })] });
+    assert.equal(await makeSync({ store: later, guild, guilds: ['999999999999999999'] }).reconcile(guild), 'ok');
+    assert.ok(later.state.rows.has(G));
+});
+
+test('CUSTOM_IDENTITY_GUILDS empty: every Premium server qualifies', async () => {
+    const store = fakeStore({ rows: [savedRow()] });
+    const guild = fakeGuild();
+    assert.equal(await makeSync({ store, guild, guilds: [] }).reconcile(guild), 'applied');
 });
 
 test('re-added after our last change: the identity is applied again', async () => {
@@ -177,7 +246,18 @@ function fakeInteraction({ subcommand, confirm = true, admin = true, guild = fak
     };
 }
 
-const commands = (store, { premium = true, enabled = true } = {}) => createIdentityCommands({ store, getContext: async () => ({ premium }), enabled });
+const commands = (store, { premium = true, enabled = true, guilds = [] } = {}) => createIdentityCommands({ store, getContext: async () => ({ premium }), enabled, guilds });
+
+test('/identity show in a server outside CUSTOM_IDENTITY_GUILDS; reset still works there', async () => {
+    const store = fakeStore({ rows: [savedRow()] });
+    const show = fakeInteraction({ subcommand: 'show' });
+    await commands(store, { guilds: ['999999999999999999'] }).handleSlash(show);
+    assert.match(show.replies[1].content, /isn’t available in this server yet/);
+    assert.match(show.replies[1].content, /\/identity reset confirm:True/);
+    const reset = fakeInteraction({ subcommand: 'reset' });
+    await commands(store, { guilds: ['999999999999999999'] }).handleSlash(reset);
+    assert.equal(store.state.rows.has(G), false);
+});
 
 test('/identity: admins only, private replies, no mentions', async () => {
     const store = fakeStore({ rows: [savedRow()] });

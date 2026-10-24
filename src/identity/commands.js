@@ -6,18 +6,24 @@
  * mention nobody.
  */
 const { MessageFlags, PermissionFlagsBits, escapeMarkdown } = require('discord.js');
-const { identityAuditReason } = require('../../dashboard/lib/shared');
+const { identityAuditReason, identityAllowedInGuild } = require('../../dashboard/lib/shared');
 
 const NO_MENTIONS = { parse: [] };
 const REVERT_REASONS = {
     premium_lapsed: 'this server’s Premium ended',
     premium_inactive: 'this server isn’t Premium right now',
-    blocked: 'custom identity was turned off for this server'
+    blocked: 'custom identity was turned off for this server',
+    not_enabled_here: 'custom identity isn’t available in this server yet',
+    feature_disabled: 'custom identity is switched off for now'
 };
 
-function createIdentityCommands({ store, getContext, enabled, dashboardUrl = '' }) {
+function createIdentityCommands({ store, getContext, enabled, guilds = [], dashboardUrl = '' }) {
     async function show(interaction) {
         const guild = interaction.guild;
+        if (!identityAllowedInGuild(guild.id, guilds)) {
+            const row = await store.getRow(guild.id);
+            return `🪪 Custom bot identity isn’t available in this server yet, so ZiGBoT uses its default name, picture and bio here.${row ? '\nA saved identity is kept; `/identity reset confirm:True` deletes it.' : ''}`;
+        }
         const [row, ctx, blocked] = await Promise.all([store.getRow(guild.id), getContext(guild), store.isGuildBlocked(guild.id)]);
         const link = dashboardUrl ? `\nChange it in the dashboard: ${dashboardUrl}/dashboard/${guild.id}` : '\nChange it in the ZiGBoT dashboard (🪪 Identity tab).';
         if (!row) return `🪪 ZiGBoT uses its default name, picture and bio in this server.${ctx?.premium ? link : '\nCustom bot identity is a Premium feature.'}`;

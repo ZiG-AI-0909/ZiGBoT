@@ -6,7 +6,7 @@ import shared from '@/lib/shared';
 import { getCurrentUser, requireGuildAdmin } from '@/lib/auth';
 import { loadGuildBundle, prefetchGuildExtras } from '@/lib/guildData';
 import { inviteUrl, contactUrl } from '@/lib/discord';
-import { env } from '@/lib/env';
+import { identityEnabledFor } from '@/lib/identity';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,7 +48,7 @@ export default async function GuildPage({ params }) {
             ) : (
                 <GuildEditor
                     initial={bundle}
-                    meta={{ features: FEATURES, limits: LIMITS, tones: TONES, tiers: TIERS, pronouns: PRONOUNS, perks: premiumPerks({ customIdentity: env.customIdentityEnabled }), identityEnabled: env.customIdentityEnabled, freeRoleMappings: FREE_LIMITS.roleMappings, voiceSpeakers: VOICE_SPEAKERS, contactUrl: contactUrl() }}
+                    meta={{ features: FEATURES, limits: LIMITS, tones: TONES, tiers: TIERS, pronouns: PRONOUNS, perks: premiumPerks({ customIdentity: identityEnabledFor(guildId) }), identityEnabled: identityEnabledFor(guildId), freeRoleMappings: FREE_LIMITS.roleMappings, voiceSpeakers: VOICE_SPEAKERS, contactUrl: contactUrl() }}
                 />
             )}
         </div>

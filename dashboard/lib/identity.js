@@ -12,10 +12,15 @@ import { HttpError } from './http';
  * everything here uses the service role. Image bytes are never written to
  * the audit log, only their SHA-256.
  */
-const { IDENTITY_BUCKET, identityImagePath, identityDesired, identityApplied, identityPatch, isDefaultIdentity, identityAuditReason, SNOWFLAKE } = shared;
+const { IDENTITY_BUCKET, identityImagePath, identityDesired, identityApplied, identityPatch, isDefaultIdentity, identityAuditReason, identityAllowedInGuild, SNOWFLAKE } = shared;
 
 const TABLE = 'zb_guild_identity';
 const db = () => createServiceClient();
+
+/** Is custom identity switched on for this server (CUSTOM_IDENTITY_ENABLED + CUSTOM_IDENTITY_GUILDS)? */
+export function identityEnabledFor(guildId) {
+    return env.customIdentityEnabled && identityAllowedInGuild(guildId, env.customIdentityGuilds);
+}
 
 export async function getIdentityRow(guildId) {
     const { data, error } = await db().from(TABLE).select('*').eq('guild_id', String(guildId)).maybeSingle();

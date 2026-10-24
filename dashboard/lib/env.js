@@ -1,4 +1,5 @@
 import 'server-only';
+import identityRules from './shared/identity';
 
 /**
  * Server-side environment. Secrets are read here and ONLY here; this module
@@ -30,6 +31,8 @@ export const env = {
     get botCreatorId() { return process.env.BOT_CREATOR_ID || ''; },
     // Custom bot identity (Premium). Off unless exactly 'true'; the bot reads the same variable.
     get customIdentityEnabled() { return process.env.CUSTOM_IDENTITY_ENABLED === 'true'; },
+    // Optional server allowlist (comma-separated ids); empty = every server.
+    get customIdentityGuilds() { return identityRules.parseIdentityGuilds(process.env.CUSTOM_IDENTITY_GUILDS); },
 
     // ZiGBoT Premium via Razorpay Subscriptions (optional; all of these enable billing).
     // Test-mode keys (rzp_test_…) and live keys (rzp_live_…) work the same way.

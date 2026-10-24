@@ -1,3 +1,5 @@
+const { parseIdentityGuilds } = require('../../dashboard/lib/shared/identity');
+
 const required = ['DISCORD_TOKEN'];
 // Chat AI providers (src/ai/providers.js). Each one runs only when its key is
 // set, so only the configured provider's key is needed — at least one must be.
@@ -145,8 +147,12 @@ function loadSettings() {
         // summaries switch above too.
         memorySummariesChannelsEnabled: process.env.MEMORY_SUMMARIES_CHANNELS_ENABLED === 'true',
         // Custom bot identity (Premium; src/identity/). OFF unless explicitly
-        // 'true': no sync, no /identity command. The dashboard reads the same variable.
+        // 'true': then no /identity command and a revert-only sync that puts
+        // any applied identity back to default ZiGBoT. CUSTOM_IDENTITY_GUILDS
+        // (server ids) limits it to those servers; others are reverted.
+        // The dashboard reads the same variables.
         customIdentityEnabled: process.env.CUSTOM_IDENTITY_ENABLED === 'true',
+        customIdentityGuilds: parseIdentityGuilds(process.env.CUSTOM_IDENTITY_GUILDS),
         groqSummaryModel: process.env.GROQ_SUMMARY_MODEL || 'llama-3.1-8b-instant',
         sttCommand: process.env.STT_COMMAND || '',
         sttArgs: parseArgs(process.env.STT_ARGS),

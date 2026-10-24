@@ -2,11 +2,10 @@ import shared from '@/lib/shared';
 import { handler, json, HttpError } from '@/lib/http';
 import { requireGuildAdmin } from '@/lib/auth';
 import { loadPlan } from '@/lib/billing';
-import { env } from '@/lib/env';
 import { processAvatar, IdentityImageError } from '@/lib/identityImage';
 import {
     getIdentityRow, saveIdentityRow, getBlocks, countRecentSaves, uploadAvatar, removeAvatars,
-    pushIdentity, resetIdentity, writeAudit, auditView, notifyOwnerOfPending, identityDiscordError
+    pushIdentity, resetIdentity, writeAudit, auditView, notifyOwnerOfPending, identityDiscordError, identityEnabledFor
 } from '@/lib/identity';
 
 const { IDENTITY_LIMITS, validateIdentityName, validateIdentityBio, decideIdentitySave, identityImagePath } = shared;
@@ -18,7 +17,7 @@ const MAX_BODY_BYTES = IDENTITY_LIMITS.imageMaxBytes + 64 * 1024;
 
 function view(row, { premium, blocks }) {
     return {
-        enabled: env.customIdentityEnabled,
+        enabled: true,
         premium,
         blocked: blocks.guildBlocked || blocks.userBlocked,
         limits: IDENTITY_LIMITS,
@@ -37,11 +36,12 @@ function view(row, { premium, blocks }) {
     };
 }
 
-// GET: this server's identity (admins only; a disabled feature reports enabled: false).
+// GET: this server's identity (admins only; reports enabled: false when the
+// feature is off, or this server is not in CUSTOM_IDENTITY_GUILDS).
 export const GET = handler(async (_request, { params }) => {
     const { guildId } = await params;
     const { guild, discordId } = await requireGuildAdmin(guildId);
-    if (!env.customIdentityEnabled) return json({ enabled: false });
+    if (!identityEnabledFor(guild.id)) return json({ enabled: false });
     const [row, plan, blocks] = await Promise.all([getIdentityRow(guild.id), loadPlan(guild), getBlocks({ guildId: guild.id, discordUserId: discordId })]);
     return json(view(row, { premium: plan.premium, blocks }));
 });
@@ -51,7 +51,7 @@ export const GET = handler(async (_request, { params }) => {
 // Discord refuses is never saved). A new avatar waits for the owner's review.
 export const PUT = handler(async (request, { params }) => {
     const { guildId } = await params;
-    if (!env.customIdentityEnabled) throw new HttpError(404, 'Custom bot identity isn’t available yet.', { code: 'identity_disabled' });
+    if (!identityEnabledFor(guildId)) throw new HttpError(404, 'Custom bot identity isn’t available in this server yet.', { code: 'identity_disabled' });
     const access = await requireGuildAdmin(guildId);
     const { guild, discordId, user } = access;
 

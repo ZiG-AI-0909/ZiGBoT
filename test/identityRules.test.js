@@ -6,6 +6,8 @@ const assert = require('node:assert/strict');
 const {
     IDENTITY_LIMITS,
     DEFAULT_IDENTITY,
+    parseIdentityGuilds,
+    identityAllowedInGuild,
     validateIdentityName,
     validateIdentityBio,
     detectImageType,
@@ -104,6 +106,15 @@ test('desired state: untouched without a row; default when not Premium or blocke
     assert.equal(identityDesired({ row, premium: false, blocked: false }), DEFAULT_IDENTITY);
     assert.equal(identityDesired({ row, premium: true, blocked: true }), DEFAULT_IDENTITY);
     assert.deepEqual(identityDesired({ row: { guild_id: G, nick: 'Zed', pending_avatar_sha256: SHA }, premium: true, blocked: false }), { nick: 'Zed', bio: null, avatarSha: null });
+    assert.equal(identityDesired({ row, premium: true, blocked: false, allowed: false }), DEFAULT_IDENTITY, 'not in CUSTOM_IDENTITY_GUILDS');
+});
+
+test('CUSTOM_IDENTITY_GUILDS: parsed strictly; empty means every server', () => {
+    assert.deepEqual(parseIdentityGuilds(` ${G}, 999999999999999999,,${G}, abc, 123 `), [G, '999999999999999999']);
+    assert.deepEqual(parseIdentityGuilds(undefined), []);
+    assert.equal(identityAllowedInGuild(G, []), true);
+    assert.equal(identityAllowedInGuild(G, [G]), true);
+    assert.equal(identityAllowedInGuild(G, ['999999999999999999']), false);
 });
 
 test('patch: only changed fields are sent; nothing when already in sync', () => {
