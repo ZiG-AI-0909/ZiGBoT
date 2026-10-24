@@ -10,6 +10,7 @@ export default function TopBar({ profile }) {
                 <span><span className="zig">ZIG</span>BOT</span>
             </Link>
             <div className="topbar-actions">
+                <Link className="btn btn-ghost" href="/commands">📖 Commands</Link>
                 {contact ? <a className="btn btn-ghost" href={contact} target="_blank" rel="noreferrer" title="Message ZiG on Discord">💬 Contact</a> : null}
                 {profile ? (
                     <div className="user-chip">

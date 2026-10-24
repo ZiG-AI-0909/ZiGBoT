@@ -1,0 +1,591 @@
+{
+  "generatedBy": "scripts/export-commands.js (npm run export-commands) from src/slash.js — do not edit by hand",
+  "talk": [
+    {
+      "message": "@ZiGBoT exams are stressing me out, any tips?",
+      "what": "Chat about anything. ZiGBoT replies in the personality this server chose."
+    },
+    {
+      "message": "@ZiGBoT play Believer by Imagine Dragons",
+      "what": "Plays a song in your voice channel, when music is on in this server."
+    },
+    {
+      "message": "@ZiGBoT what can you do?",
+      "what": "Lists what ZiGBoT can do."
+    },
+    {
+      "message": "@ZiGBoT what do you remember about me?",
+      "what": "Says how many memories it has saved for you here, as a count only. Use /memory view to see them privately."
+    },
+    {
+      "message": "@ZiGBoT what's my reputation?",
+      "what": "Shows your recent behaviour record in this server, if the server has it turned on."
+    },
+    {
+      "message": "@ZiGBoT who made you?",
+      "what": "Explains who made ZiGBoT."
+    }
+  ],
+  "categories": [
+    {
+      "id": "memory",
+      "name": "Memory",
+      "commands": [
+        {
+          "name": "memory",
+          "description": "Your ZiGBoT memory in this server (private replies)",
+          "audience": "everyone",
+          "permission": null,
+          "about": "Everything ZiGBoT remembers about you in a server, in your hands: see it, search it, save or correct a note, share one with the server, export it, delete it, or turn memory off. Replies are private. Conversation summaries are off unless you opt in.",
+          "privacyLink": true,
+          "subcommands": [
+            {
+              "name": "status",
+              "description": "Is memory on for you, and what can be stored",
+              "audience": "everyone",
+              "options": [],
+              "example": "/memory status"
+            },
+            {
+              "name": "view",
+              "description": "List your stored memories",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "page",
+                  "type": "number",
+                  "required": false,
+                  "description": "Page number",
+                  "min": 1,
+                  "max": 100
+                }
+              ],
+              "example": "/memory view"
+            },
+            {
+              "name": "search",
+              "description": "Search your stored memories",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "query",
+                  "type": "text",
+                  "required": true,
+                  "description": "Text to look for",
+                  "maxLength": 100
+                }
+              ],
+              "example": "/memory search query:chess"
+            },
+            {
+              "name": "remember",
+              "description": "Save something about you",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "text",
+                  "type": "text",
+                  "required": true,
+                  "description": "What to remember (max 500 characters)",
+                  "maxLength": 500
+                },
+                {
+                  "name": "type",
+                  "type": "text",
+                  "required": false,
+                  "description": "Kind of memory (default: fact)",
+                  "choices": [
+                    "Fact",
+                    "Preference",
+                    "Event",
+                    "Context"
+                  ]
+                },
+                {
+                  "name": "share",
+                  "type": "yes/no",
+                  "required": false,
+                  "description": "Share it with this server so it can come up with other members (default: no)"
+                }
+              ],
+              "example": "/memory remember text:my favourite game is chess"
+            },
+            {
+              "name": "correct",
+              "description": "Fix one of your memories",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "id",
+                  "type": "number",
+                  "required": true,
+                  "description": "Its #id from /memory view",
+                  "min": 1
+                },
+                {
+                  "name": "text",
+                  "type": "text",
+                  "required": true,
+                  "description": "The corrected text (max 500 characters)",
+                  "maxLength": 500
+                },
+                {
+                  "name": "type",
+                  "type": "text",
+                  "required": false,
+                  "description": "Kind of memory",
+                  "choices": [
+                    "Fact",
+                    "Preference",
+                    "Event",
+                    "Context"
+                  ]
+                }
+              ],
+              "example": "/memory correct id:3 text:my favourite game is Go"
+            },
+            {
+              "name": "forget",
+              "description": "Delete one of your memories",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "id",
+                  "type": "number",
+                  "required": true,
+                  "description": "Its #id from /memory view",
+                  "min": 1
+                }
+              ],
+              "example": "/memory forget id:3"
+            },
+            {
+              "name": "share",
+              "description": "Share one of your memories with this server, or make it personal again",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "id",
+                  "type": "number",
+                  "required": true,
+                  "description": "Its #id from /memory view",
+                  "min": 1
+                },
+                {
+                  "name": "shared",
+                  "type": "yes/no",
+                  "required": true,
+                  "description": "True = shared with this server, False = personal"
+                }
+              ],
+              "example": "/memory share id:3 shared:True"
+            },
+            {
+              "name": "summaries",
+              "description": "Opt in or out of automatic summaries of your chats with ZiGBoT here",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "state",
+                  "type": "text",
+                  "required": true,
+                  "description": "on = opt in, off = stop and hide existing summaries",
+                  "choices": [
+                    "on",
+                    "off"
+                  ]
+                }
+              ],
+              "example": "/memory summaries state:on"
+            },
+            {
+              "name": "clear",
+              "description": "Delete all your memories in this server (asks to confirm)",
+              "audience": "everyone",
+              "options": [],
+              "example": "/memory clear"
+            },
+            {
+              "name": "on",
+              "description": "Let ZiGBoT save and use your memories here",
+              "audience": "everyone",
+              "options": [],
+              "example": "/memory on"
+            },
+            {
+              "name": "off",
+              "description": "Stop ZiGBoT saving or using your memories here",
+              "audience": "everyone",
+              "options": [],
+              "example": "/memory off"
+            },
+            {
+              "name": "export",
+              "description": "Download your memories from this server as a file",
+              "audience": "everyone",
+              "options": [],
+              "example": "/memory export"
+            },
+            {
+              "name": "diagnostics",
+              "description": "Owner/admin: memory system diagnostics",
+              "audience": "admin",
+              "note": "Members can see /memory, but this subcommand is refused unless you are the server owner or an admin.",
+              "options": [
+                {
+                  "name": "member",
+                  "type": "member",
+                  "required": false,
+                  "description": "Optional: check this member"
+                }
+              ],
+              "example": "/memory diagnostics"
+            }
+          ]
+        },
+        {
+          "name": "summarychannels",
+          "description": "Admins: choose channels where opted-in members' own messages may be summarised",
+          "audience": "admin",
+          "permission": "Manage Server",
+          "about": "Admins choose up to 10 channels where members who opted in to conversation summaries may also have their own messages summarised. A member is only read in a channel they were shown when they opted in. Age-restricted channels and threads are never allowed.",
+          "privacyLink": true,
+          "subcommands": [
+            {
+              "name": "add",
+              "description": "Add a summary channel",
+              "audience": "admin",
+              "options": [
+                {
+                  "name": "channel",
+                  "type": "channel",
+                  "required": true,
+                  "description": "Text, announcement, or voice-chat channel"
+                }
+              ],
+              "example": "/summarychannels add channel:#general"
+            },
+            {
+              "name": "remove",
+              "description": "Remove a summary channel",
+              "audience": "admin",
+              "options": [
+                {
+                  "name": "channel",
+                  "type": "channel",
+                  "required": true,
+                  "description": "The channel to remove"
+                }
+              ],
+              "example": "/summarychannels remove channel:#general"
+            },
+            {
+              "name": "list",
+              "description": "Show the summary channels",
+              "audience": "admin",
+              "options": [],
+              "example": "/summarychannels list"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "music",
+      "name": "Music & voice",
+      "commands": [
+        {
+          "name": "play",
+          "description": "Play a song in your voice channel",
+          "audience": "everyone",
+          "permission": null,
+          "options": [
+            {
+              "name": "song",
+              "type": "text",
+              "required": true,
+              "description": "Song name, or a YouTube / SoundCloud link",
+              "maxLength": 500
+            }
+          ],
+          "example": "/play song:Believer by Imagine Dragons"
+        },
+        {
+          "name": "search",
+          "description": "Search for a song and pick which result to play",
+          "audience": "everyone",
+          "permission": null,
+          "options": [
+            {
+              "name": "song",
+              "type": "text",
+              "required": true,
+              "description": "Song name",
+              "maxLength": 200
+            }
+          ],
+          "example": "/search song:lofi beats"
+        },
+        {
+          "name": "pause",
+          "description": "Pause the music",
+          "audience": "everyone",
+          "permission": null,
+          "options": [],
+          "example": "/pause"
+        },
+        {
+          "name": "resume",
+          "description": "Resume the music",
+          "audience": "everyone",
+          "permission": null,
+          "options": [],
+          "example": "/resume"
+        },
+        {
+          "name": "skip",
+          "description": "Skip the current song",
+          "audience": "everyone",
+          "permission": null,
+          "options": [],
+          "example": "/skip"
+        },
+        {
+          "name": "stop",
+          "description": "Stop the music and clear the queue",
+          "audience": "everyone",
+          "permission": null,
+          "options": [],
+          "example": "/stop"
+        },
+        {
+          "name": "queue",
+          "description": "Show the current song and what plays next",
+          "audience": "everyone",
+          "permission": null,
+          "options": [],
+          "example": "/queue"
+        },
+        {
+          "name": "nowplaying",
+          "description": "Show the song that is playing now",
+          "audience": "everyone",
+          "permission": null,
+          "options": [],
+          "example": "/nowplaying"
+        },
+        {
+          "name": "volume",
+          "description": "Set the music volume",
+          "audience": "everyone",
+          "permission": null,
+          "options": [
+            {
+              "name": "level",
+              "type": "number",
+              "required": true,
+              "description": "1-100",
+              "min": 1,
+              "max": 100
+            }
+          ],
+          "example": "/volume level:60"
+        },
+        {
+          "name": "shuffle",
+          "description": "Shuffle the upcoming songs",
+          "audience": "everyone",
+          "permission": null,
+          "options": [],
+          "example": "/shuffle"
+        },
+        {
+          "name": "loop",
+          "description": "Loop the current song, the whole queue, or turn looping off",
+          "audience": "everyone",
+          "permission": null,
+          "options": [
+            {
+              "name": "mode",
+              "type": "text",
+              "required": true,
+              "description": "What to loop",
+              "choices": [
+                "Current song",
+                "Whole queue",
+                "Off"
+              ]
+            }
+          ],
+          "example": "/loop mode:Current song"
+        },
+        {
+          "name": "remove",
+          "description": "Remove a song from the queue",
+          "audience": "everyone",
+          "permission": null,
+          "options": [
+            {
+              "name": "position",
+              "type": "number",
+              "required": true,
+              "description": "Its number in /queue",
+              "min": 1,
+              "max": 50
+            }
+          ],
+          "example": "/remove position:2"
+        },
+        {
+          "name": "clearqueue",
+          "description": "Clear the upcoming songs (the current one keeps playing)",
+          "audience": "everyone",
+          "permission": null,
+          "options": [],
+          "example": "/clearqueue"
+        },
+        {
+          "name": "join",
+          "description": "Call ZiGBoT into your voice channel to talk",
+          "audience": "everyone",
+          "permission": null,
+          "options": [],
+          "example": "/join"
+        },
+        {
+          "name": "leave",
+          "description": "Make ZiGBoT leave the voice channel",
+          "audience": "everyone",
+          "permission": null,
+          "options": [],
+          "example": "/leave"
+        }
+      ]
+    },
+    {
+      "id": "moderation",
+      "name": "Moderation",
+      "commands": [
+        {
+          "name": "kick",
+          "description": "Kick a member (owner confirmation required)",
+          "audience": "admin",
+          "permission": "Kick Members",
+          "options": [
+            {
+              "name": "member",
+              "type": "member",
+              "required": true,
+              "description": "Member to kick"
+            }
+          ],
+          "example": "/kick member:@member"
+        },
+        {
+          "name": "ban",
+          "description": "Ban a member (owner confirmation required)",
+          "audience": "admin",
+          "permission": "Ban Members",
+          "options": [
+            {
+              "name": "member",
+              "type": "member",
+              "required": true,
+              "description": "Member to ban"
+            }
+          ],
+          "example": "/ban member:@member"
+        },
+        {
+          "name": "reputation",
+          "description": "Owner/admin: view a member's behavior record and standing",
+          "audience": "admin",
+          "permission": "Administrator",
+          "options": [
+            {
+              "name": "member",
+              "type": "member",
+              "required": false,
+              "description": "Optional: defaults to yourself"
+            }
+          ],
+          "example": "/reputation"
+        }
+      ]
+    },
+    {
+      "id": "setup",
+      "name": "Server setup",
+      "commands": [
+        {
+          "name": "setup",
+          "description": "Admins: tell ZiGBoT the language, owner gender, and gender/age roles",
+          "audience": "admin",
+          "permission": "Manage Server",
+          "options": [
+            {
+              "name": "language",
+              "type": "text",
+              "required": true,
+              "description": "English (English humour) or Hinglish (desi humour)",
+              "choices": [
+                "English",
+                "Hinglish"
+              ]
+            },
+            {
+              "name": "owner_gender",
+              "type": "text",
+              "required": true,
+              "description": "The server owner's gender",
+              "choices": [
+                "Male (he/him)",
+                "Female (she/her)",
+                "Prefer not to say (they/them)"
+              ]
+            },
+            {
+              "name": "male_role",
+              "type": "role",
+              "required": false,
+              "description": "Role that means male (he/him)"
+            },
+            {
+              "name": "female_role",
+              "type": "role",
+              "required": false,
+              "description": "Role that means female (she/her)"
+            },
+            {
+              "name": "adult_role",
+              "type": "role",
+              "required": false,
+              "description": "Role for members 18+ (roast mode)"
+            },
+            {
+              "name": "under18_role",
+              "type": "role",
+              "required": false,
+              "description": "Role for members under 18 (always gentle, never roasted)"
+            }
+          ],
+          "example": "/setup language:English owner_gender:Male (he/him)"
+        }
+      ]
+    },
+    {
+      "id": "help",
+      "name": "Help",
+      "commands": [
+        {
+          "name": "help",
+          "description": "List everything ZiGBoT can do",
+          "audience": "everyone",
+          "permission": null,
+          "options": [],
+          "example": "/help"
+        }
+      ]
+    }
+  ]
+}

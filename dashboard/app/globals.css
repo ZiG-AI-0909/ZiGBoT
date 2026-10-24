@@ -278,3 +278,38 @@ textarea:disabled, input:disabled { opacity: 0.55; cursor: not-allowed; }
     .bg-blob, .bg-grid, .home .hero-avatar, .home .hero h1 .zig { animation: none; }
     .bg-sticker { display: none; }
 }
+
+/* Commands page (app/commands, components/CommandsBrowser.js). */
+.topbar-actions { flex-wrap: wrap; justify-content: flex-end; }
+.commands { padding: 8px 0 24px; }
+.commands-head h1 { font-family: var(--font-display), sans-serif; font-weight: 400; font-size: clamp(36px, 7vw, 48px); letter-spacing: 0.04em; margin: 0 0 4px; }
+.commands code, .cmd-example { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+.commands p code, .cmd-options code, .cmd-sub-name code { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; }
+.talk-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.talk-list li { display: grid; gap: 4px; }
+.cmd-jump .pill { text-decoration: none; }
+.cmd-jump .pill:hover { color: var(--text); border-color: var(--muted); }
+.cmd-category { font-family: var(--font-display), sans-serif; font-weight: 400; font-size: 28px; letter-spacing: 0.05em; margin-top: 12px; scroll-margin-top: 16px; }
+.cmd-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); align-items: start; }
+.cmd-card { display: grid; gap: 10px; min-width: 0; scroll-margin-top: 16px; }
+.cmd-card h3 { margin: 0; font-size: 17px; }
+.cmd-card h3 code { color: var(--focus); }
+.cmd-card p { margin: 0; }
+.cmd-about { color: var(--muted); }
+.cmd-about a { color: var(--focus); }
+.pill-admin { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); }
+.pill-required { color: var(--accent-2); }
+.cmd-options { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.cmd-options li { line-height: 1.6; }
+.cmd-subs { display: grid; gap: 0; }
+.cmd-sub { display: grid; gap: 6px; padding: 10px 0; border-top: 1px solid var(--border); }
+.cmd-example-row { display: flex; gap: 8px; align-items: flex-start; }
+.cmd-example {
+    display: block; flex: 1; min-width: 0; padding: 8px 10px; border-radius: 10px;
+    background: var(--panel-2); border: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.cmd-copy { min-height: 34px; padding: 0 10px; font-size: 13px; flex-shrink: 0; }
+@media (max-width: 480px) {
+    .topbar-actions .btn { min-height: 34px; padding: 0 10px; font-size: 13px; }
+    .cmd-card { padding: 16px; }
+}
