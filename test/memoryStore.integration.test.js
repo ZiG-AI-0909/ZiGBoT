@@ -120,6 +120,18 @@ test('memory data layer against a real MongoDB test database', { skip: skipReaso
         assert.equal(wildcard.items.length, 0);
     });
 
+    await t.test('opt-in sharing honors scope, server, and the author\'s preference on the real server', async () => {
+        await brain.remember('g1', 'share-a', 'integration shared note', 'event', { source: 'explicit', scope: 'guild' });
+        await brain.remember('g1', 'share-a', 'integration personal note', 'fact', { source: 'explicit' });
+        await brain.remember('g2', 'share-c', 'integration other server note', 'event', { source: 'explicit', scope: 'guild' });
+        const forB = await brain.recallShared('g1', { excludeUserId: 'share-b' });
+        assert.deepEqual(forB.map((m) => m.content), ['integration shared note']);
+        await brain.setMemoryPreference('g1', 'share-a', false);
+        assert.deepEqual(await brain.recallShared('g1', { excludeUserId: 'share-b' }), []);
+        await brain.setMemoryPreference('g1', 'share-a', true);
+        assert.equal((await brain.recallShared('g1', { excludeUserId: 'share-b' })).length, 1);
+    });
+
     await t.test('deletes are real and counted truthfully', async () => {
         const target = await brain.remember('g1', 'u1', 'integration delete me');
         assert.equal(await brain.deleteMemoryById('g1', 'u1', target.id), true);

@@ -31,7 +31,7 @@ async function setup({ autoCapture = false, writeMax = 1000, readMax = 1000 } = 
     return { client, commands, clock, timers, memories: () => client.collections.get('memories').docs };
 }
 
-function slashInteraction({ guildId = 'g1', userId = 'u1', subcommand, strings = {}, integers = {}, users = {}, inGuild = true }) {
+function slashInteraction({ guildId = 'g1', userId = 'u1', subcommand, strings = {}, integers = {}, booleans = {}, users = {}, inGuild = true }) {
     const calls = { deferred: null, edits: [] };
     const read = (bag) => (name, required) => {
         const value = bag[name] ?? null;
@@ -48,6 +48,7 @@ function slashInteraction({ guildId = 'g1', userId = 'u1', subcommand, strings =
             getSubcommand: () => subcommand,
             getString: read(strings),
             getInteger: read(integers),
+            getBoolean: read(booleans),
             getUser: (name) => users[name] ?? null
         },
         async deferReply(options) { calls.deferred = options; },
@@ -543,7 +544,7 @@ test('status reports the real preference, auto-capture state, and count without 
     assert.match(body, /Your personal memory: ✅ \*\*ON\*\*/);
     assert.match(body, /Automatic saving: OFF/);
     assert.match(body, /Your stored memories here: 1/);
-    assert.match(body, /Sharing: off/);
+    assert.match(body, /Shared with this server: 0 — memories are personal unless you share one/);
     assert.doesNotMatch(body, /private status content/);
 });
 
@@ -590,7 +591,7 @@ test('admin diagnostics hide an opted-out member\'s count and are denied to memb
     assert.match(hidden, /Stored memories for Target: hidden — this member turned personal memory off/);
     assert.doesNotMatch(hidden, /target memory one/);
     assert.match(hidden, /automatic capture OFF/);
-    assert.match(hidden, /Cross-member memory sharing: disabled/);
+    assert.match(hidden, /Cross-member memory sharing: opt-in only/);
 
     await brain.setMemoryPreference('g1', '555000000000000001', true);
     const shown = await executeTool(owner, settings, { action: 'memory_status', target: '<@555000000000000001>' });
@@ -629,12 +630,12 @@ test('memory text never appears in logs when commands fail', async () => {
 
 // ---------- slash definition compatibility ----------
 
-test('/memory is a member-facing command with the eleven subcommands', () => {
+test('/memory is a member-facing command with its twelve subcommands', () => {
     const memory = buildDefinitions().find((command) => command.name === 'memory');
     assert.equal(memory.default_member_permissions ?? null, null, 'members must be able to see /memory');
     assert.deepEqual(
         memory.options.map((option) => option.name),
-        ['status', 'view', 'search', 'remember', 'correct', 'forget', 'clear', 'on', 'off', 'export', 'diagnostics']
+        ['status', 'view', 'search', 'remember', 'correct', 'forget', 'share', 'clear', 'on', 'off', 'export', 'diagnostics']
     );
     for (const sub of memory.options) assert.equal(sub.type, 1, `${sub.name} must be a subcommand`);
     const remember = memory.options.find((option) => option.name === 'remember');

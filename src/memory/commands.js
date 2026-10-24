@@ -23,7 +23,7 @@ const CLEAR_PREFIX = 'zigmem_clear_';
 const REPLY_MAX = 1900;
 const LINE_CONTENT_MAX = 180;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
-const WRITE_SUBCOMMANDS = new Set(['remember', 'correct', 'forget', 'clear', 'on', 'off']);
+const WRITE_SUBCOMMANDS = new Set(['remember', 'correct', 'forget', 'clear', 'on', 'off', 'share']);
 const NO_MENTIONS = { parse: [] };
 
 const UNAVAILABLE = '⚠️ Persistent memory is temporarily unavailable (database unreachable). Nothing was read or changed.';
@@ -48,7 +48,8 @@ function sourceLabel(memory) {
 
 function formatMemoryLine(memory) {
     const when = Number.isFinite(memory.created_at) ? ` · <t:${Math.floor(memory.created_at / 1000)}:d>` : '';
-    return `\`#${memory.id}\` [${memory.type}] ${safeText(memory.content)} — _${sourceLabel(memory)}_${when}`;
+    const shared = memory.scope === 'guild' ? ' · 🌐 shared with this server' : '';
+    return `\`#${memory.id}\` [${memory.type}] ${safeText(memory.content)} — _${sourceLabel(memory)}_${shared}${when}`;
 }
 
 // Joins lines under Discord's limit; says how many did not fit.
@@ -153,6 +154,7 @@ function createMemoryCommands({
             case 'clear': return clearPrompt(ctx);
             case 'on': return { content: await setPreferenceText(ctx, true) };
             case 'off': return { content: await setPreferenceText(ctx, false) };
+            case 'share': return { content: await shareText(ctx) };
             case 'export': return exportPayload(ctx);
             default: return { content: '❌ Unknown memory command.' };
         }
@@ -163,6 +165,7 @@ function createMemoryCommands({
         const available = brain.isMemoryAvailable();
         let preferenceLine = '⚠️ could not be checked, so it is treated as **OFF** until it can be verified';
         let countLine = '⚠️ could not be checked';
+        let sharedLine = '⚠️ could not be checked';
         if (available) {
             try {
                 const preference = await brain.getMemoryPreference(guildId, userId);
@@ -172,6 +175,7 @@ function createMemoryCommands({
             }
             try {
                 countLine = String(await brain.countMemories(guildId, userId));
+                sharedLine = String(await brain.countMemories(guildId, userId, { scope: 'guild' }));
             } catch (error) {
                 logFailure('status count', error);
             }
@@ -182,7 +186,7 @@ function createMemoryCommands({
         lines.push(`• Database: ${available ? '✅ connected' : '❌ unavailable'} · last successful write ${relativeTime(status.lastWriteOkAt)} · last successful read ${relativeTime(status.lastReadOkAt)}`);
         lines.push(`• Automatic saving: ${autoCapture ? 'ON' : 'OFF — I only save what you add with `/memory remember`'}`);
         lines.push(`• Your stored memories here: ${countLine}`);
-        lines.push('• Sharing: off — your memories are only ever used in replies to you, never shown to other members or the server owner.');
+        lines.push(`• Shared with this server: ${sharedLine} — memories are personal unless you share one with \`/memory share\`. Shared ones can come up in replies to other members here while your memory is on; the server owner never sees contents.`);
         lines.push('• What can be stored: facts, preferences, events, and context, up to 500 characters each, kept for 30 days. Never passwords, keys, tokens, or instructions aimed at the bot.');
         return lines.join('\n');
     }
@@ -231,10 +235,14 @@ function createMemoryCommands({
         if (!memoryAllowedByServer) return '❌ Memory is turned off in this server (or for your roles), so nothing was saved.';
         const text = options.getString('text', true);
         const type = options.getString('type') || 'fact';
+        const share = options.getBoolean('share') === true;
         try {
-            const saved = await brain.remember(guildId, userId, text, type, { source: 'explicit', authorName: displayName });
-            if (saved.duplicate) return `ℹ️ That is already saved as \`#${saved.id}\` — nothing new was stored.`;
-            return `✅ Saved as \`#${saved.id}\` (${saved.type}). MongoDB confirmed the write. It is kept for 30 days.`;
+            const saved = await brain.remember(guildId, userId, text, type, { source: 'explicit', authorName: displayName, scope: share ? 'guild' : 'personal' });
+            if (saved.duplicate) return `ℹ️ That is already saved as \`#${saved.id}\` — nothing new was stored. Use \`/memory share\` to change whether it is shared.`;
+            const visibility = saved.scope === 'guild'
+                ? 'Shared with this server: it can come up in replies to other members here.'
+                : 'Personal: only used in replies to you.';
+            return `✅ Saved as \`#${saved.id}\` (${saved.type}). MongoDB confirmed the write. ${visibility} It is kept for 30 days.`;
         } catch (error) {
             if (isKnownError(error, 'MemoryDisabledError')) return '⏸️ Your memory is OFF in this server, so nothing was saved. Use `/memory on` first.';
             if (isKnownError(error, 'MemoryValidationError')) return `❌ Not saved: ${error.message}`;
@@ -308,7 +316,23 @@ function createMemoryCommands({
         } catch {
             kept = ' Use `/memory view` to see what is still stored.';
         }
-        return `⏸️ Memory is **OFF** for you in this server. I will not save new memories or use stored ones in replies (text or voice), and the owner's memory lookup shows nothing about you.${kept}`;
+        return `⏸️ Memory is **OFF** for you in this server. I will not save new memories or use stored ones in replies (text or voice), memories you shared stop appearing to other members, and the owner's memory lookup shows nothing about you.${kept}`;
+    }
+
+    async function shareText({ guildId, userId, options }) {
+        const id = options.getInteger('id', true);
+        const shared = options.getBoolean('shared', true);
+        try {
+            const updated = await brain.setMemoryScope(guildId, userId, id, shared ? 'guild' : 'personal');
+            if (!updated) return `❌ You have no memory \`#${id}\` in this server (it may have expired or been deleted). Nothing was changed.`;
+            return shared
+                ? `🌐 \`#${id}\` is now shared with this server. It can come up in replies to other members here while your memory is on. Run \`/memory share\` with shared: False to make it personal again.`
+                : `🔒 \`#${id}\` is personal again and no longer appears to other members.`;
+        } catch (error) {
+            if (isKnownError(error, 'MemoryValidationError')) return `❌ ${error.message}`;
+            logFailure('share', error);
+            return '❌ The database did not confirm the change, so the sharing setting may not have changed. Check `/memory view`.';
+        }
     }
 
     async function exportPayload({ guildId, userId }) {

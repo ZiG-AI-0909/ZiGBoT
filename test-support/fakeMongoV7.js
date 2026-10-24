@@ -3,14 +3,15 @@
  * (findOneAndUpdate resolves to the document itself, not { value }). Lives
  * outside test/ so `node --test` does not run it as a test file.
  *
- * Supports the operator subset brain.js uses: equality, $lt, $gte,
+ * Supports the operator subset brain.js uses: equality, $lt, $gte, $in,
  * $regex/$options, $set, $setOnInsert, $inc, upsert, sort/skip/limit.
  */
 function matches(doc, filter) {
     return Object.entries(filter).every(([key, expected]) => {
         if (expected !== null && typeof expected === 'object' && !(expected instanceof Date)) {
             const ops = Object.keys(expected);
-            if (!ops.every((op) => ['$lt', '$gte', '$regex', '$options'].includes(op))) return false;
+            if (!ops.every((op) => ['$lt', '$gte', '$regex', '$options', '$in'].includes(op))) return false;
+            if (expected.$in !== undefined && !expected.$in.includes(doc[key])) return false;
             if (expected.$lt !== undefined && !(doc[key] < expected.$lt)) return false;
             if (expected.$gte !== undefined && !(doc[key] >= expected.$gte)) return false;
             if (expected.$regex !== undefined && !new RegExp(expected.$regex, expected.$options || '').test(String(doc[key] ?? ''))) return false;

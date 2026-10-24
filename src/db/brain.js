@@ -41,7 +41,10 @@ const MEMORY_RECALL_RECENT_CAP = 200;
 // before them) are never rewritten; normalizeMemory() fills defaults on read.
 const MEMORY_SCHEMA_VERSION = 2;
 const MEMORY_SOURCES = new Set(['explicit', 'auto-text', 'auto-voice']);
-const MEMORY_SCOPES = new Set(['personal']);
+// personal: used only in replies to its owner. guild: the owner explicitly
+// shared it with this one server ("server happenings").
+const MEMORY_SCOPES = new Set(['personal', 'guild']);
+const MEMORY_SHARED_SCAN_CAP = 100;
 const MEMORY_ID_FIELD_MAX = 64;
 const MEMORY_PAGE_SIZE = 10;
 const MEMORY_SEARCH_MAX_LENGTH = 100;
@@ -349,6 +352,14 @@ async function remember(guildId, userId, content, type = 'fact', meta = {}) {
     if (source === 'explicit' && containsInstructionPayload(text)) {
         throw new MemoryValidationError('That reads like instructions to the bot, not a fact about you, so it was not saved.');
     }
+    const scope = meta.scope === undefined ? 'personal' : meta.scope;
+    if (!MEMORY_SCOPES.has(scope)) {
+        throw new MemoryValidationError(`Memory scope must be one of: ${[...MEMORY_SCOPES].join(', ')}.`);
+    }
+    // Sharing is always the member's own explicit choice, never automatic.
+    if (scope === 'guild' && source !== 'explicit') {
+        throw new MemoryValidationError('Only memories you save yourself can be shared with the server.');
+    }
     // Every save path honors the member's preference. A lookup failure throws
     // here, so nothing is written unless "on" is actually confirmed.
     const preference = await getMemoryPreference(owner.guildId, owner.userId);
@@ -373,7 +384,7 @@ async function remember(guildId, userId, content, type = 'fact', meta = {}) {
             created_at: now,
             expires_at: new Date(now + MEMORY_RETENTION_MS),
             updated_at: now,
-            scope: 'personal',
+            scope,
             source,
             verified: source === 'explicit',
             schema_version: MEMORY_SCHEMA_VERSION
@@ -496,10 +507,89 @@ async function setMemoryPreference(guildId, userId, enabled) {
 // Personal memories for a reply, ONLY when the member has memory on. The one
 // gate for every reply retrieval path (text, voice, memory questions).
 // Off -> { enabled: false, memories: null }; lookup failure -> throws.
+// Records carry the full normalized metadata (id, scope, source, verified,
+// created/updated time) so callers can label them truthfully.
 async function recallIfEnabled(guildId, userId, limit = MEMORY_DEFAULT_LIMIT) {
     const preference = await getMemoryPreference(guildId, userId);
     if (!preference.enabled) return { enabled: false, memories: null };
-    return { enabled: true, memories: await recall(guildId, userId, limit) };
+    return { enabled: true, memories: await recallRecords(guildId, userId, limit) };
+}
+
+// The member's newest live memories, returned oldest-first, normalized.
+async function recallRecords(guildId, userId, limit = MEMORY_DEFAULT_LIMIT) {
+    requireBrain();
+    const owner = ownerKey(guildId, userId);
+    const capped = Math.max(1, Math.min(Number(limit) || MEMORY_DEFAULT_LIMIT, MEMORY_MAX_LIMIT));
+    try {
+        const rows = await memories.find(liveOwnerFilter(owner))
+            .sort({ created_at: -1, id: -1 })
+            .limit(capped)
+            .toArray();
+        noteMemoryReadOk();
+        return rows.reverse().map(normalizeMemory);
+    } catch (error) {
+        noteMemoryError(error);
+        throw error;
+    }
+}
+
+// Mark one of the member's own live memories as shared with this server
+// ('guild') or personal again. Owner-scoped like every other write: another
+// member's id matches nothing (null). Unsharing takes effect immediately.
+async function setMemoryScope(guildId, userId, id, scope) {
+    requireBrain();
+    const owner = ownerKey(guildId, userId);
+    const numericId = validateMemoryId(id);
+    if (!MEMORY_SCOPES.has(scope)) {
+        throw new MemoryValidationError(`Memory scope must be one of: ${[...MEMORY_SCOPES].join(', ')}.`);
+    }
+    try {
+        const updated = await memories.findOneAndUpdate(
+            { ...liveOwnerFilter(owner), id: numericId },
+            { $set: { scope, updated_at: Date.now() } },
+            { returnDocument: 'after', includeResultMetadata: false }
+        );
+        noteMemoryWriteOk();
+        return updated ? normalizeMemory(updated) : null;
+    } catch (error) {
+        noteMemoryError(error);
+        throw error;
+    }
+}
+
+// Memories other members explicitly shared with THIS server, newest first.
+// Excluded: personal memories, other servers, the asking member, and every
+// author whose memory preference is not confirmed on. Preferences are read at
+// query time, so turning memory off, unsharing, or forgetting takes effect on
+// the very next lookup. A preference lookup failure throws (fail closed).
+async function recallShared(guildId, { excludeUserId = null, limit = 8 } = {}) {
+    requireBrain();
+    const guild = String(guildId ?? '');
+    if (!guild || guild.length > MEMORY_ID_FIELD_MAX) {
+        throw new MemoryValidationError('Shared memory lookups require a valid guildId.');
+    }
+    const capped = Math.max(1, Math.min(Math.floor(Number(limit)) || 8, 20));
+    try {
+        const rows = await memories
+            .find({ guildId: guild, scope: 'guild', created_at: { $gte: Date.now() - MEMORY_RETENTION_MS } })
+            .sort({ created_at: -1, id: -1 })
+            .limit(MEMORY_SHARED_SCAN_CAP)
+            .toArray();
+        const candidates = rows.filter((row) => !excludeUserId || String(row.userId) !== String(excludeUserId));
+        const authorIds = [...new Set(candidates.map((row) => String(row.userId)))];
+        const prefs = authorIds.length > 0
+            ? await memoryPrefs.find({ guildId: guild, userId: { $in: authorIds } }).toArray()
+            : [];
+        const optedOut = new Set(prefs.filter((pref) => pref.enabled !== true).map((pref) => String(pref.userId)));
+        noteMemoryReadOk();
+        return candidates
+            .filter((row) => !optedOut.has(String(row.userId)))
+            .slice(0, capped)
+            .map((row) => ({ ...normalizeMemory(row), authorName: row.author_name || null }));
+    } catch (error) {
+        noteMemoryError(error);
+        throw error;
+    }
 }
 
 function liveOwnerFilter(owner) {
@@ -601,14 +691,17 @@ async function recall(guildId, userId, limit = MEMORY_DEFAULT_LIMIT) {
     }
 }
 
-async function countMemories(guildId, userId) {
+// scope: optional 'guild' to count only the member's shared memories.
+async function countMemories(guildId, userId, { scope = null } = {}) {
     requireBrain();
     try {
-        const count = await memories.countDocuments({
+        const filter = {
             guildId: String(guildId),
             userId: String(userId),
             created_at: { $gte: Date.now() - MEMORY_RETENTION_MS }
-        });
+        };
+        if (scope) filter.scope = scope;
+        const count = await memories.countDocuments(filter);
         noteMemoryReadOk();
         return count;
     } catch (error) {
@@ -960,6 +1053,9 @@ module.exports = {
     getMemoryPreference,
     setMemoryPreference,
     recallIfEnabled,
+    recallRecords,
+    recallShared,
+    setMemoryScope,
     listMemories,
     searchMemories,
     exportMemories,

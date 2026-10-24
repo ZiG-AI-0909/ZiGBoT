@@ -276,7 +276,7 @@ async function executeTool(message, settings, intent, context = {}) {
                 result = '**ZiGBoT actions:**\n' + [...actionCatalog.values()]
                     .map(({ description }) => `• ${description}`)
                     .join('\n')
-                    + '\n• Everyone: `/memory` to see, search, add, correct, export, or delete your own memories, or turn memory off (private replies).'
+                    + '\n• Everyone: `/memory` to see, search, add, correct, share, export, or delete your own memories, or turn memory off (private replies).'
                     + '\n• Verified server owner: ask “what do you know about” and mention a member for their memory status (counts only, never contents).';
                 break;
             }
@@ -566,7 +566,7 @@ async function executeTool(message, settings, intent, context = {}) {
                     `• Memory retrieval before replies: ${status.memoryRetrieval ? '✅ yes' : '⚠️ no — recall skipped'}`,
                     `• Memory writes after replies: ${!status.memoryWrite ? '❌ no — saves disabled' : settings.memoryAutoCapture ? '✅ yes (selective, credentials refused)' : '⏸️ automatic capture OFF (MEMORY_AUTO_CAPTURE) — only explicit /memory remember saves'}`,
                     `• Last successful write: ${status.lastWriteOkAt ? `<t:${Math.floor(status.lastWriteOkAt / 1000)}:R>` : 'none since start'} · last successful read: ${status.lastReadOkAt ? `<t:${Math.floor(status.lastReadOkAt / 1000)}:R>` : 'none since start'}`,
-                    '• Cross-member memory sharing: disabled'
+                    '• Cross-member memory sharing: opt-in only (members choose with /memory share; members with memory off are excluded)'
                 ];
                 if (status.lastError) lines.push(`• Last memory error: ${status.lastError}`);
                 else lines.push('• Last memory error: none');

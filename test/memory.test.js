@@ -8,8 +8,8 @@ const assert = require('node:assert/strict');
 const brain = require('../src/db/brain');
 const { executeTool, isAuthorizedActor } = require('../src/tools/router');
 const {
-    buildMemoryContextBlock,
-    buildServerContextBlock,
+    buildMemoryStatusBlock,
+    buildMemoryDataBlock,
     extractTopicKeyword,
     extractPassiveMemory,
     isMemoryQuestion,
@@ -343,25 +343,20 @@ test('memory questions are detected, imperative save requests are not', () => {
     }
 });
 
-test('buildMemoryAnswer never claims memories that do not exist', () => {
+test('buildMemoryAnswer reports a real count only, never memory text', () => {
     const caps = { persistentMemory: true, memoryDatabase: 'MongoDB', conversationMemory: true, memoryRetrieval: true, memoryWrite: true };
 
-    // Empty memory: must admit nothing is stored, while confirming memory exists.
-    const empty = buildMemoryAnswer({ capabilities: caps, memories: [] });
-    assert.match(empty, /nothing stored|no.*memor|don't remember/i);
-    assert.match(empty, /MongoDB|persistent/i);
+    // Zero: must admit nothing is saved, while confirming memory exists.
+    const empty = buildMemoryAnswer({ capabilities: caps, count: 0 });
+    assert.match(empty, /nothing is saved for you|Zero memories/i);
+    assert.match(empty, /persistent memory/i);
 
-    // Non-empty: must list exactly the real memories and nothing else.
-    const full = buildMemoryAnswer({
-        capabilities: caps,
-        memories: [
-            { id: 1, content: 'user loves chess', type: 'preference', created_at: 1 },
-            { id: 2, content: 'user lives in Pune', type: 'fact', created_at: 2 }
-        ]
-    });
-    assert.match(full, /user loves chess/);
-    assert.match(full, /user lives in Pune/);
-    assert.doesNotMatch(full, /birthday|favorite food|pet/, 'no invented memories allowed');
+    // Non-zero: the count and a pointer to the private view, nothing else.
+    const some = buildMemoryAnswer({ capabilities: caps, count: 2, memories: [{ content: 'user loves chess' }] });
+    assert.match(some, /I have 2 memories saved for you in this server/);
+    assert.match(some, /\/memory view/);
+    assert.doesNotMatch(some, /chess/, 'memory text is never part of the public answer');
+    assert.match(buildMemoryAnswer({ capabilities: caps, count: 1 }), /I have 1 memory saved/);
 });
 
 test('buildMemoryAnswer denies persistent memory only when it is actually unavailable', () => {
@@ -377,23 +372,16 @@ test('buildMemoryAnswer denies persistent memory only when it is actually unavai
     assert.match(failed, /lookup failed|won't pretend/i);
 });
 
-test('memory context block grounds the AI in real state', () => {
-    const capsUp = { persistentMemory: true, memoryDatabase: 'MongoDB', conversationMemory: true, memoryRetrieval: true, memoryWrite: true };
+test('memory status block grounds the AI in real state without any stored text', () => {
+    const up = buildMemoryStatusBlock({ state: 'retrieved', personalCount: 1 });
+    assert.match(up, /lookup succeeded. 1 saved memory about this member is in the data block/);
+    assert.match(up, /Never say you saved, stored, noted, or will remember anything/);
+    assert.doesNotMatch(up, /automatically and silently/);
 
-    const up = buildMemoryContextBlock({ capabilities: capsUp, memories: [{ id: 1, content: 'likes chess', type: 'preference' }] });
-    assert.match(up, /DO have persistent long-term memory/);
-    assert.match(up, /likes chess/);
-    assert.match(up, /NEVER claim "I stored that"/);
-
-    const empty = buildMemoryContextBlock({ capabilities: capsUp, memories: [] });
-    assert.match(empty, /none stored for this user yet/);
-
-    const down = buildMemoryContextBlock({ capabilities: { persistentMemory: false } });
-    assert.match(down, /TEMPORARILY UNAVAILABLE/);
-    assert.match(down, /NEVER claim to remember/);
-
-    const failedRecall = buildMemoryContextBlock({ capabilities: capsUp, memories: null, retrievalFailed: true });
-    assert.match(failedRecall, /retrieval FAILED/i);
+    assert.match(buildMemoryStatusBlock({ state: 'none' }), /found no saved memories/);
+    assert.match(buildMemoryStatusBlock({ state: 'unavailable' }), /temporarily unavailable/);
+    assert.match(buildMemoryStatusBlock({ state: 'failed' }), /lookup FAILED/);
+    assert.equal(buildMemoryStatusBlock({ state: 'not-a-state' }), '');
 });
 
 // ---------- Selective saves ----------
@@ -602,20 +590,16 @@ test('passive capture refuses crisis content so it is never persisted', () => {
     assert.equal(extractPassiveMemory('my exam is happening and I want to die'), null);
 });
 
-test('buildServerContextBlock lists who + topic + content for the AI', () => {
-    const block = buildServerContextBlock({
-        recentMemories: [
-            { authorName: 'Rohit', keyword: 'exam', content: 'my exam is happening', type: 'event' },
-            { authorName: null, keyword: null, content: 'anonymous note', type: 'fact' }
-        ]
+test('shared server memories go in the data block with the sharer named, not in system text', () => {
+    const { text, sharedCount } = buildMemoryDataBlock({
+        sharedMemories: [{ id: 3, authorName: 'Rohit', content: 'my exam is on monday', type: 'event', scope: 'guild', source: 'explicit', verified: true, created_at: Date.now() }]
     });
-    assert.match(block, /SERVER HAPPENINGS/);
-    assert.match(block, /Rohit \[topic: exam\]: my exam is happening/);
-    assert.match(block, /someone: anonymous note/);
-
-    // Empty/missing recent memories -> empty block (no noise in the prompt).
-    assert.equal(buildServerContextBlock({ recentMemories: [] }), '');
-    assert.equal(buildServerContextBlock({}), '');
+    assert.equal(sharedCount, 1);
+    assert.match(text, /^<memory_data>/);
+    assert.match(text, /"member":"Rohit"/);
+    assert.match(text, /my exam is on monday/);
+    assert.equal(buildMemoryDataBlock({ sharedMemories: [] }).text, '');
+    assert.equal(buildMemoryDataBlock({}).text, '');
 });
 
 // ---------- Owner-only diagnostics via the router ----------

@@ -8,7 +8,6 @@ const {
     isCrisisMessage,
     crisisResponse,
     isMemoryQuestion,
-    buildMemoryAnswer,
     shouldRemember,
     isReputationQuestion,
     buildReputationAnswer
@@ -26,7 +25,8 @@ const { speak, isListening } = require('./voice/voiceConversation');
 const {
     shouldSkipReply,
     pickReactionEmoji,
-    deliverAiReply
+    deliverAiReply,
+    neutralizeMassMentions
 } = require('./reply/delivery');
 const { detectProfanityAtBot } = require('./ai/profanityDetector');
 const { detectBehaviorSignals, defaultBehaviorTracker } = require('./ai/behaviorDetector');
@@ -58,6 +58,7 @@ const {
 } = require('./guildConfig/context');
 const { createMemoryCommands } = require('./memory/commands');
 const { ownerMemoryStatus } = require('./memory/ownerLookup');
+const { resolvePersonalMemory, resolveSharedMemory, memoryQuestionReply } = require('./memory/retrieval');
 const { version: BOT_VERSION } = require('../package.json');
 
 function logAiError(error) {
@@ -100,8 +101,6 @@ const guildStore = new GuildConfigStore({
 console.log(`[ZiGBoT MEMORY] Automatic memory capture: ${settings.memoryAutoCapture ? 'ON' : 'OFF'} (MEMORY_AUTO_CAPTURE)`);
 const memoryCommands = createMemoryCommands({ brain, autoCapture: settings.memoryAutoCapture });
 
-// Shown when a member who turned memory off asks what the bot remembers.
-const MEMORY_OFF_REPLY = 'You turned personal memory off in this server, so I am not using anything stored about you. `/memory view` shows what is still stored (it expires after 30 days), `/memory clear` deletes it, and `/memory on` turns memory back on.';
 console.log(`[ZiGBoT CONFIG] Per-server config mode: ${guildStore.mode}${guildStore.mode === 'legacy' ? ' (set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to enable the dashboard)' : ''}`);
 
 // Resolve everything the handlers need for one guild event. Never throws.
@@ -558,27 +557,11 @@ client.on(Events.MessageCreate, async (message) => {
     // from REAL MongoDB state (deterministic, no LLM) so the bot can never
     // fabricate memories or deny real ones. Imperative save requests
     // ("remember that...") fall through to the normal chat + save path.
+    // This reply is public, so it carries a count only (src/memory/retrieval.js);
+    // the member reads contents privately with /memory view.
     if (isMemoryQuestion(userMessage) && message.guild) {
-        if (!memoryAllowed) {
-            await message.reply('Long-term memory is turned off for you in this server, so I am not storing or recalling anything about you here.');
-            return;
-        }
-        const capabilities = brain.getMemoryCapabilities();
-        if (!capabilities.persistentMemory) {
-            await message.reply(buildMemoryAnswer({ capabilities }));
-            return;
-        }
-        try {
-            const personal = await brain.recallIfEnabled(message.guild.id, message.author.id, 10);
-            if (!personal.enabled) {
-                await message.reply(MEMORY_OFF_REPLY);
-                return;
-            }
-            await message.reply(buildMemoryAnswer({ capabilities, memories: personal.memories }));
-        } catch {
-            // Retrieval failed: report that honestly instead of guessing.
-            await message.reply(buildMemoryAnswer({ capabilities, memories: null }));
-        }
+        const answer = await memoryQuestionReply({ brain, guildId: message.guild.id, userId: message.author.id, memoryAllowed });
+        await message.reply({ content: neutralizeMassMentions(answer), allowedMentions: { parse: [], repliedUser: true } });
         return;
     }
 
@@ -690,20 +673,29 @@ client.on(Events.MessageCreate, async (message) => {
         const history = defaultMemory.getHistory(message.channel.id);
 
         // Persistent memory retrieval: real MongoDB records for THIS user in
-        // THIS guild, injected into the AI context, only when the member has
-        // memory on. A retrieval or preference failure must degrade the reply,
-        // not kill it — the AI is told recall failed (fail closed).
-        const capabilities = brain.getMemoryCapabilities();
-        let userMemories = null;
-        let retrievalFailed = false;
-        if (capabilities.persistentMemory && message.guild && memoryAllowed) {
-            try {
-                userMemories = (await brain.recallIfEnabled(message.guild.id, message.author.id, 5)).memories;
-            } catch (memoryError) {
-                console.error(`[ZiGBoT MEMORY] Recall failed: ${memoryError?.code || memoryError?.name || 'Error'}`);
-                retrievalFailed = true;
+        // THIS guild, only when the member has memory on. Every outcome
+        // (retrieved / none / failed / off / server_off / unavailable) is
+        // reported to the AI as-is; failures fail closed.
+        const personal = await resolvePersonalMemory({
+            brain,
+            guildId: message.guild?.id,
+            userId: message.author.id,
+            memoryAllowed
+        });
+        // Opt-in server happenings: only memories other members explicitly
+        // shared with THIS server, from authors who still have memory on, are
+        // still in the server, and whose roles still allow memory.
+        const shared = await resolveSharedMemory({
+            brain,
+            guildId: message.guild?.id,
+            excludeUserId: message.author.id,
+            allowed: memoryAllowed,
+            isAuthorAllowed: (authorId) => {
+                const author = message.guild.members.cache.get(authorId);
+                if (!author) return false;
+                return !guildCtx || hasFeature(behaviorForMember(guildCtx, author), 'memory');
             }
-        }
+        });
 
         // Behavior accountability: the AI's treatment adapts to the member's
         // RECORDED standing. Lookup failure must never block the reply.
@@ -716,10 +708,6 @@ client.on(Events.MessageCreate, async (message) => {
             }
         }
 
-        // Cross-member "server happenings" retrieval is disabled: one member's
-        // memories never reach a reply to another member. Explicit opt-in
-        // sharing is planned for Phase 3.
-
         const replyText = await ai.reply({
             userMessage,
             authorName,
@@ -731,9 +719,11 @@ client.on(Events.MessageCreate, async (message) => {
             comebackMode,
             declineMode,
             userId: message.author.id,
-            capabilities,
-            memories: userMemories,
-            retrievalFailed,
+            memoryState: personal.state,
+            memories: personal.memories,
+            sharedState: shared.state,
+            sharedMemories: shared.memories,
+            autoCapture: settings.memoryAutoCapture,
             reputation,
             guildPrompt,
             rateLimitMax: gSettings.aiRateLimitMax
@@ -811,17 +801,9 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
         const memoryKey = `voice:${guild.id}`;
         const history = defaultMemory.getHistory(memoryKey);
 
-        // Same grounded memory context as the text path, plus reputation.
-        const capabilities = brain.getMemoryCapabilities();
-        let userMemories = null;
-        let retrievalFailed = false;
-        if (capabilities.persistentMemory && voiceMemoryAllowed) {
-            try {
-                userMemories = (await brain.recallIfEnabled(guild.id, userId, 5)).memories;
-            } catch {
-                retrievalFailed = true;
-            }
-        }
+        // Same truthful personal-memory states as the text path, plus
+        // reputation. Shared server memories stay text-only.
+        const personal = await resolvePersonalMemory({ brain, guildId: guild.id, userId, memoryAllowed: voiceMemoryAllowed });
         let reputation = null;
         if (brain.isBehaviorAvailable() && voiceReputationAllowed) {
             try {
@@ -841,9 +823,9 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
             gender: voiceGender,
             isNonGentle,
             userId,
-            capabilities,
-            memories: userMemories,
-            retrievalFailed,
+            memoryState: personal.state,
+            memories: personal.memories,
+            autoCapture: settings.memoryAutoCapture,
             reputation,
             guildPrompt: guildPromptFor(voiceCtx, voiceBehavior),
             rateLimitMax: voiceSettings.aiRateLimitMax
