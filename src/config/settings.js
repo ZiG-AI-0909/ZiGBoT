@@ -1,4 +1,10 @@
-const required = ['DISCORD_TOKEN', 'NVIDIA_API_KEY'];
+const required = ['DISCORD_TOKEN'];
+// Chat AI providers (src/ai/providers.js). Each one runs only when its key is
+// set, so only the configured provider's key is needed — at least one must be.
+const CHAT_PROVIDER_KEYS = [
+    { provider: 'Groq', env: 'GROQ_API_KEY' },
+    { provider: 'NVIDIA', env: 'NVIDIA_API_KEY' }
+];
 
 const defaultGentleRoles = [
     // Female Gentle Roles
@@ -42,6 +48,11 @@ function loadSettings() {
     if (missing.length > 0) {
         throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
     }
+    const hasKey = (name) => Boolean(String(process.env[name] || '').trim());
+    if (!CHAT_PROVIDER_KEYS.some(({ env }) => hasKey(env))) {
+        const options = CHAT_PROVIDER_KEYS.map(({ provider, env }) => `${env} (${provider})`).join(' or ');
+        throw new Error(`No chat AI provider configured: set ${options}. At least one is required; set only the key for the provider you use.`);
+    }
 
     const parseArgs = (value) => {
         try {
@@ -81,7 +92,7 @@ function loadSettings() {
 
     return {
         discordToken: process.env.DISCORD_TOKEN,
-        nvidiaApiKey: process.env.NVIDIA_API_KEY,
+        nvidiaApiKey: process.env.NVIDIA_API_KEY || '',
         serverOwnerId: process.env.SERVER_OWNER_ID || '',
         // Multi-server dashboard (optional). The service-role key is a
         // server-side secret: only this worker and the dashboard's server
