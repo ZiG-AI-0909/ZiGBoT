@@ -340,22 +340,29 @@ test('memory content never appears in logs, including on failures', async () => 
     assert.ok(logged.every((line) => !line.includes('9f3a')), 'memory text leaked into logs');
 });
 
-// ---------- MEMORY_AUTO_CAPTURE ----------
+// ---------- Automatic raw-text capture is removed ----------
 
-test('MEMORY_AUTO_CAPTURE defaults to off and only "true" turns it on', () => {
+test('automatic capture is gone: MEMORY_AUTO_CAPTURE=true has no effect and no capture code remains', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
     const { loadSettings } = require('../src/config/settings');
     const saved = { token: process.env.DISCORD_TOKEN, key: process.env.NVIDIA_API_KEY, capture: process.env.MEMORY_AUTO_CAPTURE };
     process.env.DISCORD_TOKEN = process.env.DISCORD_TOKEN || 'mock-token';
     process.env.NVIDIA_API_KEY = process.env.NVIDIA_API_KEY || 'mock-key';
     try {
-        delete process.env.MEMORY_AUTO_CAPTURE;
-        assert.equal(loadSettings().memoryAutoCapture, false);
-        for (const value of ['', 'false', '1', 'yes', 'TRUE ']) {
-            process.env.MEMORY_AUTO_CAPTURE = value;
-            assert.equal(loadSettings().memoryAutoCapture, false, `"${value}" must not enable capture`);
-        }
         process.env.MEMORY_AUTO_CAPTURE = 'true';
-        assert.equal(loadSettings().memoryAutoCapture, true);
+        assert.equal('memoryAutoCapture' in loadSettings(), false, 'the setting no longer exists');
+
+        const client = require('../src/ai/client');
+        for (const removed of ['shouldRemember', 'extractPassiveMemory', 'extractTopicKeyword']) {
+            assert.equal(client[removed], undefined, `${removed} was removed`);
+        }
+        const root = path.join(__dirname, '..');
+        const index = fs.readFileSync(path.join(root, 'src', 'index.js'), 'utf8');
+        for (const marker of ['memoryAutoCapture', 'MEMORY_AUTO_CAPTURE', 'extractPassiveMemory', 'shouldRemember', "source: 'auto-text'", "source: 'auto-voice'"]) {
+            assert.equal(index.includes(marker), false, `src/index.js still contains ${marker}`);
+        }
+        assert.equal(fs.readFileSync(path.join(root, '.env.example'), 'utf8').includes('MEMORY_AUTO_CAPTURE'), false);
     } finally {
         for (const [name, value] of [['DISCORD_TOKEN', saved.token], ['NVIDIA_API_KEY', saved.key], ['MEMORY_AUTO_CAPTURE', saved.capture]]) {
             if (value === undefined) delete process.env[name];

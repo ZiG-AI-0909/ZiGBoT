@@ -135,9 +135,6 @@ function loadSettings() {
             : defaultNonGentleRoles,
         voiceMode: process.env.VOICE_MODE || 'push-to-talk',
         storeTranscripts: process.env.STORE_TRANSCRIPTS === 'true',
-        // Passive long-term memory capture from ordinary text/voice messages.
-        // OFF unless explicitly set: no automatic saves without consent controls.
-        memoryAutoCapture: process.env.MEMORY_AUTO_CAPTURE === 'true',
         // Opt-in conversation summaries (src/memory/summaries.js). OFF unless
         // explicitly 'true'. MEMORY_SUMMARIES_GUILDS (server IDs) limits them
         // to those servers; empty = every server the global switch allows.

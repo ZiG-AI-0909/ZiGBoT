@@ -573,7 +573,7 @@ async function executeTool(message, settings, intent, context = {}) {
                     `• Persistent memory enabled: ${status.persistentMemory ? '✅ yes' : '❌ no'}`,
                     `• Conversation (short-term) memory: ${status.conversationMemory ? '✅ active (in-process, per-channel)' : '❌ off'}`,
                     `• Memory retrieval before replies: ${status.memoryRetrieval ? '✅ yes' : '⚠️ no — recall skipped'}`,
-                    `• Memory writes after replies: ${!status.memoryWrite ? '❌ no — saves disabled' : settings.memoryAutoCapture ? '✅ yes (selective, credentials refused)' : '⏸️ automatic capture OFF (MEMORY_AUTO_CAPTURE) — only explicit /memory remember saves'}`,
+                    `• Memory writes after replies: ${!status.memoryWrite ? '❌ no — saves disabled' : '⏸️ no automatic capture — only explicit /memory remember saves (plus opt-in conversation summaries)'}`,
                     `• Last successful write: ${status.lastWriteOkAt ? `<t:${Math.floor(status.lastWriteOkAt / 1000)}:R>` : 'none since start'} · last successful read: ${status.lastReadOkAt ? `<t:${Math.floor(status.lastReadOkAt / 1000)}:R>` : 'none since start'}`,
                     '• Cross-member memory sharing: opt-in only (members choose with /memory share; members with memory off are excluded)',
                     `• Conversation summaries: ${summariesDiagnostic(settings, guild.id)}`

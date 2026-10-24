@@ -43,17 +43,18 @@ function dataPayload(userContent) {
 
 // ---------- 1. Truthful prompts ----------
 
-test('with automatic capture off, no prompt claims that saving happens automatically', () => {
+test('no prompt claims that saving happens automatically (automatic capture no longer exists)', () => {
     for (const state of ['retrieved', 'none', 'failed', 'off', 'server_off', 'unavailable']) {
-        const block = buildMemoryStatusBlock({ state, personalCount: 2, autoCapture: false });
+        const block = buildMemoryStatusBlock({ state, personalCount: 2 });
         assert.doesNotMatch(block, /automatic(ally)? (and silently )?(after|save)|saves happen/i, state);
         assert.match(block, /Nothing from this conversation is saved automatically/, state);
         assert.match(block, /Never say you saved, stored, noted, or will remember anything/, state);
         assert.match(block, /\/memory remember/, state);
     }
-    const on = buildMemoryStatusBlock({ state: 'none', autoCapture: true });
-    assert.match(on, /cannot see whether a save worked/);
-    assert.doesNotMatch(on, /Nothing from this conversation is saved automatically/);
+    // The removed autoCapture flag is ignored if anything still passes it.
+    const stale = buildMemoryStatusBlock({ state: 'none', autoCapture: true });
+    assert.match(stale, /Nothing from this conversation is saved automatically/);
+    assert.doesNotMatch(stale, /cannot see whether a save worked/);
 });
 
 test('retrieved, none, failed, and off are four distinct, truthful statuses', () => {

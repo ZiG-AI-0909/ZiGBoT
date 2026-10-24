@@ -10,12 +10,9 @@ const { executeTool, isAuthorizedActor } = require('../src/tools/router');
 const {
     buildMemoryStatusBlock,
     buildMemoryDataBlock,
-    extractTopicKeyword,
-    extractPassiveMemory,
     isMemoryQuestion,
     buildMemoryAnswer,
-    buildOwnerMemoryAnswer,
-    shouldRemember
+    buildOwnerMemoryAnswer
 } = require('../src/ai/client');
 
 // ---------- Fake Mongo client (same surface the p3 suite uses) ----------
@@ -384,38 +381,6 @@ test('memory status block grounds the AI in real state without any stored text',
     assert.equal(buildMemoryStatusBlock({ state: 'not-a-state' }), '');
 });
 
-// ---------- Selective saves ----------
-
-test('shouldRemember saves durable facts and preferences, skips chat noise', () => {
-    const saves = [
-        ['my favorite game is chess', 'preference'],
-        ['I love late night coding sessions', 'preference'],
-        ['my name is Ravi', 'fact'],
-        ['remember that my exam is on Friday', 'fact'],
-        ["don't forget I have a meeting at 6", 'fact'],
-        ['i live in Pune btw', 'fact'],
-        ['mujhe pasand hai chai', 'preference']
-    ];
-    for (const [message, expectedType] of saves) {
-        const result = shouldRemember(message);
-        assert.equal(result.should, true, `"${message}" should be remembered`);
-        assert.equal(result.type, expectedType);
-    }
-
-    const skips = [
-        'hey',
-        'lol',
-        'what time is the meeting?',   // question, transient
-        'i am bored today',            // transient state
-        'play https://example.com/x.mp3',
-        'kick him',
-        'help'
-    ];
-    for (const message of skips) {
-        assert.equal(shouldRemember(message).should, false, `"${message}" must NOT be remembered`);
-    }
-});
-
 // ---------- Cross-user recent context + 1-month retention ----------
 
 test('remember accepts keyword/author metadata and stores it', async () => {
@@ -540,54 +505,6 @@ test('owner memory lookup reports counts and status only, never contents', () =>
     assert.doesNotMatch(unknown, /5/);
 
     assert.match(buildOwnerMemoryAnswer({ targetName: '**Bold**', totalCount: 0, preference: 'on' }), /\\\*\\\*Bold\\\*\\\*/);
-});
-
-// ---------- Passive capture + topic keywords ----------
-
-test('extractTopicKeyword tags exams, jobs, gym, health and more', () => {
-    const cases = [
-        ['my exam is happening tomorrow', 'exam'],
-        ['semester test ka time aa gaya', 'exam'],
-        ['I have an interview on monday', 'job'],
-        ['boss gave a deadline today', 'work'],
-        ['leg day at the gym', 'gym'],
-        ['down with fever since morning', 'health'],
-        ['results came out and I passed', 'exam-result']
-    ];
-    for (const [text, keyword] of cases) {
-        assert.equal(extractTopicKeyword(text), keyword, `"${text}" -> ${keyword}`);
-    }
-    assert.equal(extractTopicKeyword('just vibing'), null);
-});
-
-test('extractPassiveMemory captures durable events and skips chat noise', () => {
-    const captures = [
-        ['my exam is happening next week', 'event', 'exam'],
-        ['remember that I have a game night on saturday', 'fact', 'game'],
-        ['mera interview kal hai wish me luck', 'event', 'job']
-    ];
-    for (const [text, type, keyword] of captures) {
-        const result = extractPassiveMemory(text);
-        assert.ok(result, `"${text}" should be captured passively`);
-        assert.equal(result.type, type);
-        assert.equal(result.keyword, keyword);
-    }
-
-    const skips = [
-        'lol',
-        'hey bro what is up',
-        'anyone here?',
-        'i am bored',
-        'play https://example.com/song.mp3',
-        'kick him'
-    ];
-    for (const text of skips) {
-        assert.equal(extractPassiveMemory(text), null, `"${text}" must NOT be captured`);
-    }
-});
-
-test('passive capture refuses crisis content so it is never persisted', () => {
-    assert.equal(extractPassiveMemory('my exam is happening and I want to die'), null);
 });
 
 test('shared server memories go in the data block with the sharer named, not in system text', () => {

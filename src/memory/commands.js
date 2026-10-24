@@ -126,7 +126,6 @@ function isMemoryComponent(interaction) {
 
 function createMemoryCommands({
     brain,
-    autoCapture = false,
     readLimiter = new RateLimiter({ max: 30, windowMs: RATE_WINDOW_MS }),
     writeLimiter = new RateLimiter({ max: 10, windowMs: RATE_WINDOW_MS }),
     clearRequests = new ClearRequests(),
@@ -203,7 +202,7 @@ function createMemoryCommands({
         lines.push(`• Your personal memory: ${preferenceLine}`);
         lines.push(`• Server setting: ${memoryAllowedByServer ? 'memory allowed' : 'memory is turned off by this server\'s admins or for your roles'}`);
         lines.push(`• Database: ${available ? '✅ connected' : '❌ unavailable'} · last successful write ${relativeTime(status.lastWriteOkAt)} · last successful read ${relativeTime(status.lastReadOkAt)}`);
-        lines.push(`• Automatic saving: ${autoCapture ? 'ON' : 'OFF — I only save what you add with `/memory remember`'}`);
+        lines.push('• Automatic saving: OFF — I only save what you add with `/memory remember`');
         lines.push(`• Conversation summaries: ${summariesLine}`);
         lines.push(`• Your stored memories here: ${countLine}`);
         lines.push(`• Shared with this server: ${sharedLine} — memories are personal unless you share one with \`/memory share\`. Shared ones can come up in replies to other members here while your memory is on; the server owner never sees contents.`);
@@ -327,7 +326,7 @@ function createMemoryCommands({
             return '❌ The database did not confirm the change, so your memory setting may not have changed. While it cannot be verified, your memories are not used.';
         }
         if (enabled) {
-            return `✅ Memory is **ON** for you in this server. ${autoCapture ? '' : 'Automatic saving is off, so I only save what you add with `/memory remember`.'}`.trim();
+            return '✅ Memory is **ON** for you in this server. Automatic saving is off, so I only save what you add with `/memory remember`.';
         }
         let kept = '';
         try {

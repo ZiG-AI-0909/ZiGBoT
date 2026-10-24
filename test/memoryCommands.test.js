@@ -13,7 +13,7 @@ const { v7Client } = require('../test-support/fakeMongoV7');
 
 // ---------- harness ----------
 
-async function setup({ autoCapture = false, writeMax = 1000, readMax = 1000 } = {}) {
+async function setup({ writeMax = 1000, readMax = 1000 } = {}) {
     const client = v7Client();
     brain._disconnectForTests();
     await brain.connectBrain('mongodb://fake', { client });
@@ -21,7 +21,6 @@ async function setup({ autoCapture = false, writeMax = 1000, readMax = 1000 } = 
     const timers = [];
     const commands = createMemoryCommands({
         brain,
-        autoCapture,
         readLimiter: new RateLimiter({ max: readMax, windowMs: 60_000 }),
         writeLimiter: new RateLimiter({ max: writeMax, windowMs: 60_000 }),
         clearRequests: new ClearRequests(),
@@ -591,7 +590,8 @@ test('admin diagnostics hide an opted-out member\'s count and are denied to memb
     const hidden = await executeTool(owner, settings, { action: 'memory_status', target: '<@555000000000000001>' });
     assert.match(hidden, /Stored memories for Target: hidden — this member turned personal memory off/);
     assert.doesNotMatch(hidden, /target memory one/);
-    assert.match(hidden, /automatic capture OFF/);
+    assert.match(hidden, /no automatic capture — only explicit \/memory remember saves/);
+    assert.doesNotMatch(hidden, /MEMORY_AUTO_CAPTURE/);
     assert.match(hidden, /Cross-member memory sharing: opt-in only/);
 
     await brain.setMemoryPreference('g1', '555000000000000001', true);

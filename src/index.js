@@ -8,7 +8,6 @@ const {
     isCrisisMessage,
     crisisResponse,
     isMemoryQuestion,
-    shouldRemember,
     isReputationQuestion,
     buildReputationAnswer
 } = require('./ai/client');
@@ -30,10 +29,6 @@ const {
 } = require('./reply/delivery');
 const { detectProfanityAtBot } = require('./ai/profanityDetector');
 const { detectBehaviorSignals, defaultBehaviorTracker } = require('./ai/behaviorDetector');
-const {
-    extractPassiveMemory,
-    extractTopicKeyword
-} = require('./ai/client');
 const { registerSlashCommands, interactionToIntent, runYouTubeInteraction } = require('./slash');
 const { handleSetupCommand, sendWelcome } = require('./guildConfig/setup');
 const { isMusicComponent, handleMusicComponent } = require('./music/panel');
@@ -99,8 +94,7 @@ const guildStore = new GuildConfigStore({
     supabaseUrl: settings.supabaseUrl,
     serviceRoleKey: settings.supabaseServiceRoleKey
 });
-console.log(`[ZiGBoT MEMORY] Automatic memory capture: ${settings.memoryAutoCapture ? 'ON' : 'OFF'} (MEMORY_AUTO_CAPTURE)`);
-const memoryCommands = createMemoryCommands({ brain, autoCapture: settings.memoryAutoCapture });
+const memoryCommands = createMemoryCommands({ brain });
 // Opt-in conversation summaries (off unless MEMORY_SUMMARIES_ENABLED=true).
 const summaryService = createSummaryService({ brain, settings });
 {
@@ -434,28 +428,6 @@ client.on(Events.MessageCreate, async (message) => {
     const userMessage = message.content
         .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '')
         .trim();
-    // Capture durable facts/events from every message the gateway delivers in
-    // a server, whether or not ZiGBoT is configured to reply in that channel.
-    // This is selective memory, not a transcript: ordinary chat and crisis
-    // content are skipped, and brain.remember refuses credentials.
-    // Off unless MEMORY_AUTO_CAPTURE=true (no passive saves without consent).
-    if (settings.memoryAutoCapture && message.guild && memoryAllowed && userMessage && !isCrisisMessage(userMessage)) {
-        try {
-            const passive = extractPassiveMemory(userMessage);
-            const selective = shouldRemember(userMessage);
-            const candidate = passive || (selective.should ? selective : null);
-            if (candidate && brain.isMemoryAvailable()) {
-                const authorName = message.member?.displayName || message.author.username;
-                await brain.remember(message.guild.id, message.author.id, candidate.content, candidate.type, {
-                    authorName,
-                    keyword: candidate.keyword || extractTopicKeyword(candidate.content),
-                    source: 'auto-text'
-                });
-            }
-        } catch (memoryError) {
-            console.error(`[ZiGBoT MEMORY] Automatic capture skipped: ${memoryError.message}`);
-        }
-    }
 
     const ownerMemoryTarget = getOwnerMemoryTarget(message, client.user.id, settings);
     // Reply to explicit interactions, configured chat channels, or enabled keywords.
@@ -735,7 +707,6 @@ client.on(Events.MessageCreate, async (message) => {
             memories: personal.memories,
             sharedState: shared.state,
             sharedMemories: shared.memories,
-            autoCapture: settings.memoryAutoCapture,
             summaries: personal.summaries || null,
             summariesActive: personal.summariesActive === true,
             reputation,
@@ -854,7 +825,6 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
             userId,
             memoryState: personal.state,
             memories: personal.memories,
-            autoCapture: settings.memoryAutoCapture,
             reputation,
             guildPrompt: guildPromptFor(voiceCtx, voiceBehavior),
             rateLimitMax: voiceSettings.aiRateLimitMax
@@ -874,20 +844,6 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
             const voiceSignals = detectBehaviorSignals(transcript);
             await recordBehaviorSignals(guild.id, userId, voiceSignals.negative, 'voice-scan');
             await recordBehaviorSignals(guild.id, userId, voiceSignals.positive, 'voice-scan');
-        }
-
-        // Selective long-term save from voice, same rules as text.
-        try {
-            const candidate = shouldRemember(transcript);
-            if (settings.memoryAutoCapture && candidate.should && voiceMemoryAllowed && brain.isMemoryAvailable()) {
-                await brain.remember(guild.id, userId, candidate.content, candidate.type, {
-                    authorName,
-                    keyword: extractTopicKeyword(candidate.content),
-                    source: 'auto-voice'
-                });
-            }
-        } catch (memoryError) {
-            console.error(`[ZiGBoT MEMORY] Save skipped: ${memoryError.message}`);
         }
 
         await speaking;
