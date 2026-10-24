@@ -420,7 +420,7 @@ test('off persists across a restart and blocks retrieval; on re-enables it', asy
 test('preference defaults to on, and a corrupt stored value counts as off', async () => {
     await setup();
     // Summaries are opt-in: a fresh member is memory ON, summaries OFF.
-    assert.deepEqual(await brain.getMemoryPreference('g1', 'fresh'), { enabled: true, summaries: false, stored: false, updated_at: null });
+    assert.deepEqual(await brain.getMemoryPreference('g1', 'fresh'), { enabled: true, summaries: false, summariesChannels: [], summariesConsentVersion: 0, stored: false, updated_at: null });
     brain._disconnectForTests();
     const client = v7Client();
     client.collection('memory_prefs').docs.push({ guildId: 'g1', userId: 'odd', enabled: 'yes' });

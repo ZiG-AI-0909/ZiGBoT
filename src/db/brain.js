@@ -22,6 +22,7 @@ let ytBans = null;
 let ytNoRoast = null;
 let ytQuota = null;
 let summaryUsage = null;
+let summaryChannels = null;
 let lastMemoryError = null;
 let lastBehaviorError = null;
 // "Connected" is not "working": these record the last operation that really
@@ -50,6 +51,12 @@ const MEMORY_SUMMARY_BATCH_MAX = 3;
 const MEMORY_SUMMARY_DEDUPE_THRESHOLD = 0.8;
 const MEMORY_SUMMARY_DEDUPE_SCAN = 200;
 const SUMMARY_USAGE_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+// Where a summary's source messages came from: chats with the bot, the
+// admin-chosen summary channels, or both.
+const SUMMARY_ORIGINS = new Set(['chat', 'channel', 'mixed']);
+const SUMMARY_CHANNELS_MAX = 10;
+// 2 = the member opted in after being shown the channel list (Phase 5).
+const SUMMARIES_CONSENT_VERSION = 2;
 // personal: used only in replies to its owner. guild: the owner explicitly
 // shared it with this one server ("server happenings").
 const MEMORY_SCOPES = new Set(['personal', 'guild']);
@@ -176,6 +183,7 @@ async function connectBrain(uri, { client: injectedClient = null, dbName = 'zigb
     const nextYtNoRoast = db.collection('ytNoRoast');
     const nextYtQuota = db.collection('ytQuota');
     const nextSummaryUsage = db.collection('summary_usage');
+    const nextSummaryChannels = db.collection('summary_channels');
 
     // Clean up records created before the TTL field was added, and enforce the
     // retention boundary immediately when the bot starts.
@@ -204,6 +212,8 @@ async function connectBrain(uri, { client: injectedClient = null, dbName = 'zigb
     // Daily summariser call/save counters (one row per day+key, auto-expiring).
     await nextSummaryUsage.createIndex({ day: 1, key: 1 }, { unique: true });
     await nextSummaryUsage.createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 });
+    // Admin-chosen summary channels: one document per server.
+    await nextSummaryChannels.createIndex({ guildId: 1 }, { unique: true });
 
     // Everything succeeded — swap the live state over in one go.
     client = newClient;
@@ -218,6 +228,7 @@ async function connectBrain(uri, { client: injectedClient = null, dbName = 'zigb
     ytNoRoast = nextYtNoRoast;
     ytQuota = nextYtQuota;
     summaryUsage = nextSummaryUsage;
+    summaryChannels = nextSummaryChannels;
     lastMemoryError = null;
     lastBehaviorError = null;
     lastMemoryWriteOkAt = null;
@@ -348,7 +359,9 @@ function normalizeMemory(row) {
         created_at: row.created_at,
         updated_at: Number.isFinite(row.updated_at) ? row.updated_at : row.created_at,
         expires_at: Number.isFinite(row.created_at) ? row.created_at + MEMORY_RETENTION_MS : null,
-        schema_version: row.schema_version || 1
+        schema_version: row.schema_version || 1,
+        // Summaries from before Phase 5 could only come from chats.
+        ...(row.source === SUMMARY_SOURCE ? { summary_origin: SUMMARY_ORIGINS.has(row.summary_origin) ? row.summary_origin : 'chat' } : {})
     };
 }
 
@@ -490,6 +503,10 @@ async function getMemoryPreference(guildId, userId) {
             enabled: row ? row.enabled === true : true,
             // Conversation summaries are opt-in: only a stored true counts.
             summaries: row ? row.summaries === true : false,
+            // Channel consent is a snapshot: only these channel IDs, shown to
+            // the member when they opted in, may ever be read for them.
+            summariesChannels: row && Array.isArray(row.summaries_channels) ? row.summaries_channels.filter((id) => typeof id === 'string') : [],
+            summariesConsentVersion: row && Number.isInteger(row.summaries_consent_version) ? row.summaries_consent_version : (row && row.summaries === true ? 1 : 0),
             stored: Boolean(row),
             updated_at: row && Number.isFinite(row.updated_at) ? row.updated_at : null
         };
@@ -526,24 +543,32 @@ async function setMemoryPreference(guildId, userId, enabled) {
 // Opt-in for conversation summaries, separate from memory on/off. Creating the
 // preference document here must not turn memory off: a new document starts
 // with enabled: true, which is what "no document" already meant.
-async function setSummariesPreference(guildId, userId, summaries) {
+// channels: the summary channels shown to the member in the consent notice
+// (the snapshot). Opting in again replaces it; opting out clears it.
+async function setSummariesPreference(guildId, userId, summaries, { channels = [] } = {}) {
     requireBrain();
     const owner = ownerKey(guildId, userId);
     if (typeof summaries !== 'boolean') {
         throw new MemoryValidationError('Summaries preference must be true or false.');
     }
+    const snapshot = summaries
+        ? [...new Set((Array.isArray(channels) ? channels : []).map(String))].filter((id) => /^\d{1,32}$/.test(id)).slice(0, SUMMARY_CHANNELS_MAX)
+        : [];
     const now = Date.now();
     try {
         const result = await memoryPrefs.updateOne(
             owner,
-            { $set: { summaries, summaries_updated_at: now }, $setOnInsert: { enabled: true, created_at: now, updated_at: now } },
+            {
+                $set: { summaries, summaries_updated_at: now, summaries_channels: snapshot, summaries_consent_version: SUMMARIES_CONSENT_VERSION },
+                $setOnInsert: { enabled: true, created_at: now, updated_at: now }
+            },
             { upsert: true }
         );
         if (result && result.acknowledged === false) {
             throw new Error('Summaries preference write was not acknowledged by MongoDB.');
         }
         noteMemoryWriteOk();
-        return { summaries, updated_at: now };
+        return { summaries, channels: snapshot, updated_at: now };
     } catch (error) {
         noteMemoryError(error);
         throw error;
@@ -812,9 +837,12 @@ function similarity(a, b) {
 // shareable, and expire on the normal 30-day retention. A failed insert is
 // rolled back so nothing is half-saved; then the oldest summaries beyond
 // MEMORY_SUMMARY_CAP are removed (saved memories are never touched).
-async function saveSummaryFacts(guildId, userId, facts) {
+async function saveSummaryFacts(guildId, userId, facts, { origin = 'chat' } = {}) {
     requireBrain();
     const owner = ownerKey(guildId, userId);
+    if (!SUMMARY_ORIGINS.has(origin)) {
+        throw new MemoryValidationError(`Summary origin must be one of: ${[...SUMMARY_ORIGINS].join(', ')}.`);
+    }
     const candidates = (Array.isArray(facts) ? facts : []).slice(0, MEMORY_SUMMARY_BATCH_MAX).map(({ fact, type }) => {
         const text = validateMemoryContent(fact, type);
         if (containsInstructionPayload(text)) {
@@ -858,6 +886,7 @@ async function saveSummaryFacts(guildId, userId, facts) {
                 updated_at: now,
                 scope: 'personal',
                 source: SUMMARY_SOURCE,
+                summary_origin: origin,
                 verified: false,
                 schema_version: MEMORY_SCHEMA_VERSION,
                 id: await nextSequence('memory_id')
@@ -894,6 +923,55 @@ async function saveSummaryFacts(guildId, userId, facts) {
         noteMemoryError(error);
         throw error;
     }
+}
+
+// ---- Admin-chosen summary channels (one document per server) ----
+// Channel validation (type, NSFW, visibility) happens in the admin command,
+// which has the Discord channel object; this layer stores IDs only.
+
+function validateChannelId(channelId) {
+    const id = String(channelId ?? '');
+    if (!/^\d{1,32}$/.test(id)) throw new MemoryValidationError('Channel id must be a Discord ID.');
+    return id;
+}
+
+async function getSummaryChannels(guildId) {
+    requireBrain();
+    const guild = String(guildId ?? '');
+    if (!guild || guild.length > MEMORY_ID_FIELD_MAX) throw new MemoryValidationError('A valid guildId is required.');
+    const row = await summaryChannels.findOne({ guildId: guild });
+    return row && Array.isArray(row.channelIds) ? row.channelIds.filter((id) => typeof id === 'string') : [];
+}
+
+async function writeSummaryChannels(guildId, channelIds, updatedBy) {
+    const now = Date.now();
+    const result = await summaryChannels.updateOne(
+        { guildId: String(guildId) },
+        { $set: { channelIds, updated_by: String(updatedBy || ''), updated_at: now }, $setOnInsert: { created_at: now } },
+        { upsert: true }
+    );
+    if (result && result.acknowledged === false) throw new Error('Summary channel write was not acknowledged by MongoDB.');
+}
+
+// -> { status: 'added' | 'exists' | 'full', channelIds }
+async function addSummaryChannel(guildId, channelId, updatedBy) {
+    const id = validateChannelId(channelId);
+    const current = await getSummaryChannels(guildId);
+    if (current.includes(id)) return { status: 'exists', channelIds: current };
+    if (current.length >= SUMMARY_CHANNELS_MAX) return { status: 'full', channelIds: current };
+    const next = [...current, id];
+    await writeSummaryChannels(guildId, next, updatedBy);
+    return { status: 'added', channelIds: next };
+}
+
+// -> { status: 'removed' | 'missing', channelIds }
+async function removeSummaryChannel(guildId, channelId, updatedBy) {
+    const id = validateChannelId(channelId);
+    const current = await getSummaryChannels(guildId);
+    if (!current.includes(id)) return { status: 'missing', channelIds: current };
+    const next = current.filter((existing) => existing !== id);
+    await writeSummaryChannels(guildId, next, updatedBy);
+    return { status: 'removed', channelIds: next };
 }
 
 // Daily summariser usage, kept in MongoDB so a restart cannot reset the caps.
@@ -1244,6 +1322,7 @@ function _disconnectForTests() {
     ytNoRoast = null;
     ytQuota = null;
     summaryUsage = null;
+    summaryChannels = null;
     lastMemoryError = null;
     lastBehaviorError = null;
     lastMemoryWriteOkAt = null;
@@ -1266,6 +1345,11 @@ module.exports = {
     recallSummaries,
     saveSummaryFacts,
     getSummaryUsage,
+    getSummaryChannels,
+    addSummaryChannel,
+    removeSummaryChannel,
+    SUMMARY_CHANNELS_MAX,
+    SUMMARIES_CONSENT_VERSION,
     addSummaryUsage,
     recallIfEnabled,
     recallRecords,

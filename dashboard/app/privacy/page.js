@@ -10,7 +10,7 @@ export const metadata = {
 // Dynamic so the contact link uses the runtime env, like the other pages.
 export const dynamic = 'force-dynamic';
 
-const UPDATED = '22 October 2026';
+const UPDATED = '24 October 2026';
 
 export default function Privacy() {
     const contact = contactUrl();
@@ -38,7 +38,16 @@ export default function Privacy() {
                 <ul>
                     <li><strong>Server settings</strong> chosen by its admins (personality, rules, roles, channels, voice and music options), and a log of which admin changed what and when.</li>
                     <li><strong>Messages sent to ZiGBoT.</strong> When you mention or reply to ZiGBoT, it reads your message and a few recent messages in that channel so it can answer in context.</li>
-                    <li><strong>Memories.</strong> Short notes from your conversations with ZiGBoT in that server, so it can remember what you talked about. They are deleted automatically after 30 days.</li>
+                    <li><strong>Memories.</strong> Short notes you save with <code>/memory remember</code> in that server, so ZiGBoT can remember them in its replies to you. They are private to you unless you choose to share one with that server, and are deleted automatically after 30 days.</li>
+                    <li>
+                        <strong>Conversation summaries (off unless you opt in).</strong> If this feature is available and you turn it on with{' '}
+                        <code>/memory summaries</code>, ZiGBoT summarises your own messages to it into a few short facts every so often. If the
+                        server&apos;s admins have chosen summary channels, and those channels were listed when you opted in, your own messages in
+                        those channels are included too; a channel added later is only included if you opt in again. Other people&apos;s messages,
+                        ZiGBoT&apos;s replies, threads, attachments and quoted text are never used. No transcript is stored. Facts about health,
+                        religion, politics, sexuality, money, relationships, where you live, contact details or passwords are dropped. Summaries are
+                        labelled automatic and unverified, are private to you, are never shared, and are deleted automatically after 30 days.
+                    </li>
                     <li><strong>Moderation and behaviour records</strong> for that server, such as warnings and signals of how members treat the bot, used to decide how it responds.</li>
                     <li><strong>Voice.</strong> When ZiGBoT is listening in a voice channel, what you say to it is sent for speech-to-text, and its replies are turned into speech. We do not keep the audio recordings.</li>
                     <li><strong>Music.</strong> Songs requested and the current playback status for the server.</li>
@@ -69,6 +78,7 @@ export default function Privacy() {
                 <ul>
                     <li><strong>Discord</strong>: login, and the messages and voice ZiGBoT works with.</li>
                     <li><strong>NVIDIA</strong> and <strong>Groq</strong>: AI models that write replies and turn speech into text. They receive the message or speech being answered plus recent context.</li>
+                    <li><strong>Groq</strong>: also writes conversation summaries for members who opted in. It receives only that member&apos;s own messages described above.</li>
                     <li><strong>Sarvam AI</strong> and <strong>NVIDIA</strong>: turn ZiGBoT&apos;s replies into speech.</li>
                     <li><strong>Supabase</strong> and <strong>MongoDB</strong>: databases for settings, accounts, memories and records.</li>
                     <li><strong>Render</strong>: hosting.</li>
@@ -79,7 +89,7 @@ export default function Privacy() {
 
                 <h2>4. How long we keep it</h2>
                 <ul>
-                    <li>Memories: 30 days, then deleted automatically.</li>
+                    <li>Memories and conversation summaries: 30 days, then deleted automatically.</li>
                     <li>YouTube live-chat records: 1 to 3 days.</li>
                     <li>Voice audio: not stored.</li>
                     <li>Server settings and change logs: while ZiGBoT is used in that server, or until an admin resets them or asks us to delete them.</li>
@@ -89,7 +99,12 @@ export default function Privacy() {
 
                 <h2>5. Your choices</h2>
                 <ul>
-                    <li>Don&apos;t want ZiGBoT to read your message? Don&apos;t mention or reply to it.</li>
+                    <li>Don&apos;t want ZiGBoT to read your message? Don&apos;t mention or reply to it, and don&apos;t turn on conversation summaries.</li>
+                    <li>
+                        Use <code>/memory</code> to see, search, export, correct or delete your memories and summaries, or to turn memory off.{' '}
+                        <code>/memory summaries state:off</code> stops new summaries and stops ZiGBoT using existing ones;{' '}
+                        <code>/memory forget</code> or <code>/memory clear</code> deletes them.
+                    </li>
                     <li>Server admins can change or reset ZiGBoT&apos;s settings at any time, or remove it from the server.</li>
                     <li>You can ask us for a copy of your data, or to correct or delete it, by contacting us below.</li>
                 </ul>

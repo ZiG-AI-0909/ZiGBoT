@@ -25,12 +25,23 @@ const LINE_CONTENT_MAX = 180;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 const WRITE_SUBCOMMANDS = new Set(['remember', 'correct', 'forget', 'clear', 'on', 'off', 'share', 'summaries']);
 
-const SUMMARIES_ON_NOTICE = [
-    '✅ Automatic conversation summaries are **ON** for you in this server.',
-    'What happens: after you chat with me for a while (about 12 messages, or 10 quiet minutes), your own messages to me — never other people\'s, never my replies — are summarised into at most 3 short facts by the same AI provider that writes my replies (Groq). No transcript is stored.',
-    'Facts about health, religion, politics, sexuality, money, relationships, where you live, contact details, or passwords are dropped. Summaries are labelled automatic and unverified, kept for 30 days, private to you, and never shared.',
-    'See them with `/memory view`; delete them with `/memory forget` or `/memory clear`. `/memory summaries state:off` stops new ones and hides existing ones from my replies.'
-].join('\n');
+// channelIds: the summary channels this member is consenting to right now
+// (exactly what gets stored as their snapshot). channelsNote: shown when the
+// channel list could not be loaded.
+function summariesOnNotice(channelIds = [], channelsNote = '') {
+    const channels = channelIds.map((id) => `<#${id}>`).join(', ');
+    const what = channelIds.length > 0
+        ? `your own messages to me, **and your own messages in ${channels}** (channels chosen by this server's admins) — never other people's messages, never my replies, never threads —`
+        : 'your own messages to me — never other people\'s, never my replies —';
+    return [
+        '✅ Automatic conversation summaries are **ON** for you in this server.',
+        `What happens: after you chat for a while (about 12 messages, or 10 quiet minutes), ${what} are summarised into at most 3 short facts by the same AI provider that writes my replies (Groq). No transcript is stored.`,
+        ...(channelIds.length > 0 ? ['If admins add another channel later, it is not read for you until you run `/memory summaries state:on` again.'] : []),
+        ...(channelsNote ? [channelsNote] : []),
+        'Facts about health, religion, politics, sexuality, money, relationships, where you live, contact details, or passwords are dropped. Summaries are labelled automatic and unverified, kept for 30 days, private to you, and never shared.',
+        'See them with `/memory view`; delete them with `/memory forget` or `/memory clear`. `/memory summaries state:off` stops new ones and hides existing ones from my replies.'
+    ].join('\n');
+}
 const NO_MENTIONS = { parse: [] };
 
 const UNAVAILABLE = '⚠️ Persistent memory is temporarily unavailable (database unreachable). Nothing was read or changed.';
@@ -46,8 +57,17 @@ function safeText(text, max = LINE_CONTENT_MAX) {
         .replace(/<(@[!&]?|#)(\d+)>/g, '<​$1$2>');
 }
 
+const SUMMARY_ORIGIN_LABEL = {
+    chat: 'from chats with me',
+    channel: 'from server channels',
+    mixed: 'from chats and server channels'
+};
+
 function sourceLabel(memory) {
-    if (memory.source === 'summary') return memory.verified ? '🤖 automatic summary, confirmed by you' : '🤖 automatic summary, unverified';
+    if (memory.source === 'summary') {
+        const from = SUMMARY_ORIGIN_LABEL[memory.summary_origin] || SUMMARY_ORIGIN_LABEL.chat;
+        return `🤖 automatic summary ${from}, ${memory.verified ? 'confirmed by you' : 'unverified'}`;
+    }
     if (memory.source === 'explicit') return 'saved by you';
     if (memory.verified) return 'confirmed by you';
     if (memory.source === 'legacy') return 'older record, unverified';
@@ -130,7 +150,10 @@ function createMemoryCommands({
     writeLimiter = new RateLimiter({ max: 10, windowMs: RATE_WINDOW_MS }),
     clearRequests = new ClearRequests(),
     now = () => Date.now(),
-    schedule = (fn, ms) => setTimeout(fn, ms).unref?.()
+    schedule = (fn, ms) => setTimeout(fn, ms).unref?.(),
+    // Called after a confirmed memory or summaries preference change, so the
+    // summariser's short-lived cache never outlives the member's choice.
+    onPreferenceChange = () => {}
 } = {}) {
     const logFailure = (subcommand, error) => {
         // Name/code only: database messages are safe, but never log content.
@@ -168,9 +191,10 @@ function createMemoryCommands({
         }
     }
 
-    async function statusText({ guildId, userId, memoryAllowedByServer, summariesAvailable = false }) {
+    async function statusText({ guildId, userId, memoryAllowedByServer, summariesAvailable = false, channelSummariesAvailable = false, summaryChannels = [] }) {
         const lines = ['🧠 **Your memory in this server** (only you can see this)'];
         const available = brain.isMemoryAvailable();
+        let channelsLine = null;
         let preferenceLine = '⚠️ could not be checked, so it is treated as **OFF** until it can be verified';
         let countLine = '⚠️ could not be checked';
         let sharedLine = '⚠️ could not be checked';
@@ -185,6 +209,20 @@ function createMemoryCommands({
                     summariesLine = preference.summaries
                         ? (preference.enabled ? '✅ **ON**' : 'opted in, but paused while your memory is off')
                         : '**OFF** — opt in with `/memory summaries state:on`';
+                }
+                if (summariesAvailable && channelSummariesAvailable) {
+                    // Exactly what is read for this member: admin list ∩ consent snapshot.
+                    if (!Array.isArray(summaryChannels)) {
+                        channelsLine = '⚠️ could not be checked';
+                    } else {
+                        const admin = new Set(summaryChannels);
+                        const consented = preference.summaries && preference.enabled && (preference.summariesConsentVersion || 0) >= 2
+                            ? preference.summariesChannels.filter((id) => admin.has(id))
+                            : [];
+                        const notYet = summaryChannels.filter((id) => !consented.includes(id));
+                        channelsLine = consented.length > 0 ? consented.map((id) => `<#${id}>`).join(', ') : 'none';
+                        if (notYet.length > 0) channelsLine += ` · not read for you (run \`/memory summaries state:on\` to include): ${notYet.map((id) => `<#${id}>`).join(', ')}`;
+                    }
                 }
             } catch (error) {
                 logFailure('status preference', error);
@@ -204,6 +242,7 @@ function createMemoryCommands({
         lines.push(`• Database: ${available ? '✅ connected' : '❌ unavailable'} · last successful write ${relativeTime(status.lastWriteOkAt)} · last successful read ${relativeTime(status.lastReadOkAt)}`);
         lines.push('• Automatic saving: OFF — I only save what you add with `/memory remember`');
         lines.push(`• Conversation summaries: ${summariesLine}`);
+        if (channelsLine) lines.push(`• Channels read for your summaries: ${channelsLine}`);
         lines.push(`• Your stored memories here: ${countLine}`);
         lines.push(`• Shared with this server: ${sharedLine} — memories are personal unless you share one with \`/memory share\`. Shared ones can come up in replies to other members here while your memory is on; the server owner never sees contents.`);
         lines.push('• What can be stored: facts, preferences, events, and context, up to 500 characters each, kept for 30 days. Never passwords, keys, tokens, or instructions aimed at the bot.');
@@ -325,6 +364,7 @@ function createMemoryCommands({
             logFailure(enabled ? 'on' : 'off', error);
             return '❌ The database did not confirm the change, so your memory setting may not have changed. While it cannot be verified, your memories are not used.';
         }
+        onPreferenceChange(guildId, userId);
         if (enabled) {
             return '✅ Memory is **ON** for you in this server. Automatic saving is off, so I only save what you add with `/memory remember`.';
         }
@@ -356,8 +396,13 @@ function createMemoryCommands({
 
     // Opt in or out of automatic conversation summaries for this server.
     // Turning off always works; turning on needs the feature here and memory on.
-    async function summariesText({ guildId, userId, options, summariesAvailable = false, memoryAllowedByServer, botEnabled }) {
+    async function summariesText({ guildId, userId, options, summariesAvailable = false, channelSummariesAvailable = false, summaryChannels = [], memoryAllowedByServer, botEnabled }) {
         const on = options.getString('state', true) === 'on';
+        // The consent snapshot: exactly the channels shown in the notice.
+        const channels = on && channelSummariesAvailable && Array.isArray(summaryChannels) ? summaryChannels : [];
+        const channelsNote = on && channelSummariesAvailable && !Array.isArray(summaryChannels)
+            ? 'The summary channel list could not be loaded, so only your messages to me are included for now; run this again later to include channels.'
+            : '';
         if (on) {
             if (!summariesAvailable) return 'ℹ️ Conversation summaries are not available on this bot or in this server, so nothing changed.';
             if (!botEnabled) return '❌ ZiGBoT is switched off in this server by its admins, so nothing changed.';
@@ -372,14 +417,15 @@ function createMemoryCommands({
             if (!preference.enabled) return '⏸️ Your memory is OFF in this server. Turn it on with `/memory on` first.';
         }
         try {
-            await brain.setSummariesPreference(guildId, userId, on);
+            await brain.setSummariesPreference(guildId, userId, on, { channels });
         } catch (error) {
             if (isKnownError(error, 'MemoryValidationError')) return `❌ ${error.message}`;
             logFailure('summaries', error);
             return '❌ The database did not confirm the change, so your summaries setting may not have changed. While it cannot be verified, no summaries are made or used.';
         }
+        onPreferenceChange(guildId, userId);
         return on
-            ? SUMMARIES_ON_NOTICE
+            ? summariesOnNotice(channels, channelsNote)
             : '⏸️ Automatic conversation summaries are **OFF** for you in this server. No new ones will be made, and existing ones are no longer used in my replies. They stay in `/memory view` until they expire (30 days); `/memory forget` or `/memory clear` deletes them now.';
     }
 
@@ -408,6 +454,7 @@ function createMemoryCommands({
                 source: memory.source,
                 verified: memory.verified,
                 scope: memory.scope,
+                ...(memory.summary_origin ? { summary_origin: memory.summary_origin } : {}),
                 created_at: iso(memory.created_at),
                 updated_at: iso(memory.updated_at),
                 expires_at: iso(memory.expires_at)

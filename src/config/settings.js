@@ -140,6 +140,10 @@ function loadSettings() {
         // to those servers; empty = every server the global switch allows.
         memorySummariesEnabled: process.env.MEMORY_SUMMARIES_ENABLED === 'true',
         memorySummariesGuilds: parseList(process.env.MEMORY_SUMMARIES_GUILDS),
+        // Also summarise opted-in members' own messages in the admin-chosen
+        // /summarychannels list. OFF unless explicitly 'true'; needs the
+        // summaries switch above too.
+        memorySummariesChannelsEnabled: process.env.MEMORY_SUMMARIES_CHANNELS_ENABLED === 'true',
         groqSummaryModel: process.env.GROQ_SUMMARY_MODEL || 'llama-3.1-8b-instant',
         sttCommand: process.env.STT_COMMAND || '',
         sttArgs: parseArgs(process.env.STT_ARGS),

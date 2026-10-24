@@ -4,6 +4,7 @@
  * ClientReady so new actions appear immediately in the guild's UI.
  */
 const {
+    ChannelType,
     SlashCommandBuilder,
     PermissionFlagsBits
 } = require('discord.js');
@@ -145,6 +146,19 @@ function buildDefinitions() {
                 .setName('member')
                 .setDescription('Optional: defaults to yourself'))
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+        // Admins: channels where opted-in members' own messages may be
+        // summarised. Also checked server-side (src/memory/summaryChannels.js).
+        new SlashCommandBuilder()
+            .setName('summarychannels')
+            .setDescription('Admins: choose channels where opted-in members\' own messages may be summarised')
+            .addSubcommand((sub) => sub.setName('add').setDescription('Add a summary channel')
+                .addChannelOption((option) => option.setName('channel').setDescription('Text, announcement, or voice-chat channel')
+                    .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildVoice).setRequired(true)))
+            .addSubcommand((sub) => sub.setName('remove').setDescription('Remove a summary channel')
+                .addChannelOption((option) => option.setName('channel').setDescription('The channel to remove')
+                    .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildVoice).setRequired(true)))
+            .addSubcommand((sub) => sub.setName('list').setDescription('Show the summary channels'))
+            .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
         new SlashCommandBuilder()
             .setName('help')
             .setDescription('List everything ZiGBoT can do'),

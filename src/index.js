@@ -18,7 +18,8 @@ const { isGentleMember, getMemberGender, isNonGentleMember } = require('./ai/rol
 const { isServerOwner } = require('./security/authorization');
 const { getOwnerRoastTarget, getOwnerMemoryTarget } = require('./security/ownerCommands');
 const { requestConfirmation } = require('./security/confirmation');
-const { executeTool, destructiveActions } = require('./tools/router');
+const { executeTool, destructiveActions, isAuthorizedActor } = require('./tools/router');
+const { auditLog } = require('./logging/auditLog');
 const { buildVoiceTranscriptRoute } = require('./routing/voiceRoute');
 const { speak, isListening } = require('./voice/voiceConversation');
 const {
@@ -55,6 +56,7 @@ const { createMemoryCommands } = require('./memory/commands');
 const { ownerMemoryStatus } = require('./memory/ownerLookup');
 const { resolvePersonalMemory, resolveSharedMemory, memoryQuestionReply } = require('./memory/retrieval');
 const { createSummaryService } = require('./memory/summaries');
+const { createSummaryChannelCommands } = require('./memory/summaryChannels');
 const { version: BOT_VERSION } = require('../package.json');
 
 function logAiError(error) {
@@ -94,13 +96,25 @@ const guildStore = new GuildConfigStore({
     supabaseUrl: settings.supabaseUrl,
     serviceRoleKey: settings.supabaseServiceRoleKey
 });
-const memoryCommands = createMemoryCommands({ brain });
 // Opt-in conversation summaries (off unless MEMORY_SUMMARIES_ENABLED=true).
-const summaryService = createSummaryService({ brain, settings });
+const summaryService = createSummaryService({
+    brain,
+    settings,
+    // A batch from someone no longer in the server is discarded.
+    isMember: async (guildId, userId) => {
+        const guild = client.guilds.cache.get(guildId);
+        if (!guild) return false;
+        if (guild.members.cache.has(userId)) return true;
+        return guild.members.fetch(userId).then(() => true, () => false);
+    }
+});
+// /memory preference changes clear the summariser's short-lived cache at once.
+const memoryCommands = createMemoryCommands({ brain, onPreferenceChange: (guildId, userId) => summaryService.invalidate(guildId, userId) });
+const summaryChannelCommands = createSummaryChannelCommands({ brain, summaryService });
 {
     const summaryStatus = summaryService.status();
     console.log(`[ZiGBoT MEMORY] Conversation summaries: ${summaryStatus.enabled
-        ? `ON (${summaryStatus.guilds === 'all' ? 'all servers' : `${summaryStatus.guilds.length} listed server(s)`}, model ${summaryStatus.model}, opt-in per member)`
+        ? `ON (${summaryStatus.guilds === 'all' ? 'all servers' : `${summaryStatus.guilds.length} listed server(s)`}, model ${summaryStatus.model}, opt-in per member; channel summaries ${summaryStatus.channelsEnabled ? 'ON' : 'OFF'})`
         : summaryStatus.switchOn ? 'OFF (GROQ_API_KEY missing)' : 'OFF (MEMORY_SUMMARIES_ENABLED)'}`);
 }
 
@@ -262,14 +276,40 @@ client.on(Events.InteractionCreate, async (interaction) => {
             resolveContext: async () => {
                 const { ctx, gSettings, behavior } = await guildRuntime(interaction.guild, interaction.member);
                 const fakeMessage = { author: interaction.user, member: interaction.member, guild: interaction.guild, channel: interaction.channel, reply: () => null };
+                const channelSummariesAvailable = summaryService.isChannelSummariesEnabledForGuild(interaction.guild?.id);
+                // null = the channel list could not be read (shown as such; never guessed).
+                let summaryChannels = [];
+                if (channelSummariesAvailable) {
+                    summaryChannels = await summaryService.getChannelsForGuild(interaction.guild.id).catch(() => null);
+                }
                 return {
                     botEnabled: !(ctx && ctx.config.enabled === false),
                     memoryAllowedByServer: !ctx || (ctx.config.memory_enabled !== false && hasFeature(behavior, 'memory')),
                     summariesAvailable: summaryService.isEnabledForGuild(interaction.guild?.id),
+                    channelSummariesAvailable,
+                    summaryChannels,
                     runDiagnostics: (target) => runIntent(fakeMessage, gSettings, target ? { action: 'memory_status', target } : { action: 'memory_status' }, { warnStore })
                 };
             }
         }).catch((error) => console.error(`[ZiGBoT MEMORY] /memory failed: ${error?.code || error?.name || 'Error'}`));
+        return;
+    }
+    // Admin summary-channel list: private replies, authorized server-side.
+    if (interaction.commandName === 'summarychannels') {
+        await summaryChannelCommands.handleSlash(interaction, {
+            resolveContext: async () => {
+                const { gSettings } = await guildRuntime(interaction.guild, interaction.member);
+                const fakeMessage = { author: interaction.user, member: interaction.member, guild: interaction.guild, channel: interaction.channel, client: interaction.client };
+                const auth = isAuthorizedActor(fakeMessage, gSettings, { action: 'summary_channels' });
+                return {
+                    authorized: auth.allowed,
+                    reason: auth.reason,
+                    channelsFeatureOn: summaryService.isChannelSummariesEnabledForGuild(interaction.guild?.id),
+                    audit: ({ action, target, result, details }) => auditLog({ message: fakeMessage, settings: gSettings, event: 'SUMMARY CHANNELS', action, target, result, details })
+                        .catch(() => {})
+                };
+            }
+        }).catch((error) => console.error(`[ZiGBoT SUMMARY CHANNELS] /summarychannels failed: ${error?.code || error?.name || 'Error'}`));
         return;
     }
     try {
@@ -432,7 +472,28 @@ client.on(Events.MessageCreate, async (message) => {
     const ownerMemoryTarget = getOwnerMemoryTarget(message, client.user.id, settings);
     // Reply to explicit interactions, configured chat channels, or enabled keywords.
     const shouldReply = isMentioned || isReplyToBot || inChatChannel || gSettings.respondToAllMessages || trigger.matched || ownerMemoryTarget;
-    if (!shouldReply) return;
+    if (!shouldReply) {
+        // Opt-in channel summaries: a message ZiGBoT does not reply to may
+        // still be batched, but ONLY this author's own message, ONLY in an
+        // admin-chosen summary channel the author consented to (checked inside
+        // the service). Messages ZiGBoT replies to use the reply path instead,
+        // so nothing is counted twice. Fire-and-forget: never blocks anything.
+        if (message.guild && !message.webhookId && !message.system) {
+            summaryService.observeChannelMessage({
+                guildId: message.guild.id,
+                channelId: message.channel.id,
+                userId: message.author.id,
+                memoryAllowed,
+                isThread: Boolean(message.channel.isThread?.()),
+                content: message.content,
+                attachmentCount: message.attachments?.size || 0,
+                embedCount: message.embeds?.length || 0,
+                snapshotCount: message.messageSnapshots?.size || 0,
+                replyToOtherMember: Boolean(message.reference?.messageId) && !isReplyToBot
+            }).catch((error) => console.error(`[ZiGBoT SUMMARY] channel observe failed: ${error?.code || error?.name || 'Error'}`));
+        }
+        return;
+    }
     // A role mapping can switch the AI off for some members (deny "chat").
     if (!ownerMemoryTarget && !hasFeature(behavior, 'chat')) return;
 

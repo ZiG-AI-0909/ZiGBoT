@@ -712,7 +712,7 @@ test('view, search, export, forget, clear, share, and status handle summaries, c
     const run = commandRunner();
 
     const view = (await run({ subcommand: 'view' })).content;
-    assert.match(view, /Loves playing chess on weekends — _🤖 automatic summary, unverified_/);
+    assert.match(view, /Loves playing chess on weekends — _🤖 automatic summary from chats with me, unverified_/);
     assert.match(view, /I prefer short answers — _saved by you_/);
     assert.match((await run({ subcommand: 'search', strings: { query: 'chess' } })).content, /🤖 automatic summary/);
 

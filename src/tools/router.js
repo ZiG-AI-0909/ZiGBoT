@@ -237,6 +237,18 @@ function summariesDiagnostic(settings, guildId) {
     return 'ON in this server — opt-in per member with /memory summaries';
 }
 
+// Real state of channel summaries (the /summarychannels list) for one server.
+async function channelSummariesDiagnostic(settings, guildId) {
+    if (!settings.memorySummariesChannelsEnabled) return 'OFF (MEMORY_SUMMARIES_CHANNELS_ENABLED is not true)';
+    if (!summariesDiagnostic(settings, guildId).startsWith('ON in this server')) return 'switched on, but conversation summaries are not running in this server';
+    try {
+        const count = (await brain.getSummaryChannels(guildId)).length;
+        return `ON — ${count} channel${count === 1 ? '' : 's'} on the list (/summarychannels); read only for members who consented to them`;
+    } catch (error) {
+        return `⚠️ channel list lookup failed (${error.message})`;
+    }
+}
+
 async function executeTool(message, settings, intent, context = {}) {
     if (!message.guild) return '❌ These tools only work inside a server.';
     let target = intent.target || intent.channel || intent.role || 'server';
@@ -576,7 +588,8 @@ async function executeTool(message, settings, intent, context = {}) {
                     `• Memory writes after replies: ${!status.memoryWrite ? '❌ no — saves disabled' : '⏸️ no automatic capture — only explicit /memory remember saves (plus opt-in conversation summaries)'}`,
                     `• Last successful write: ${status.lastWriteOkAt ? `<t:${Math.floor(status.lastWriteOkAt / 1000)}:R>` : 'none since start'} · last successful read: ${status.lastReadOkAt ? `<t:${Math.floor(status.lastReadOkAt / 1000)}:R>` : 'none since start'}`,
                     '• Cross-member memory sharing: opt-in only (members choose with /memory share; members with memory off are excluded)',
-                    `• Conversation summaries: ${summariesDiagnostic(settings, guild.id)}`
+                    `• Conversation summaries: ${summariesDiagnostic(settings, guild.id)}`,
+                    `• Channel summaries: ${await channelSummariesDiagnostic(settings, guild.id)}`
                 ];
                 if (status.lastError) lines.push(`• Last memory error: ${status.lastError}`);
                 else lines.push('• Last memory error: none');

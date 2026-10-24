@@ -14,6 +14,12 @@
  * Off unless MEMORY_SUMMARIES_ENABLED=true (optionally limited to the servers
  * in MEMORY_SUMMARIES_GUILDS), and then only for members who opted in with
  * /memory summaries on and still have memory on.
+ *
+ * Second source (also off unless MEMORY_SUMMARIES_CHANNELS_ENABLED=true): the
+ * member's own ordinary messages in the admin-chosen /summarychannels list,
+ * but only channels that were in the list the member saw when opting in
+ * (a consent snapshot). Never threads, never anyone else's messages. At most
+ * 2 of a member's 4 daily calls may include channel messages.
  */
 const OpenAI = require('openai');
 const { isCrisisMessage } = require('../../dashboard/lib/shared/safety');
@@ -44,7 +50,11 @@ const SUMMARY_LIMITS = Object.freeze({
     evidenceMax: 200,
     factMin: 10,
     factMax: 200,
-    recentResults: 20
+    recentResults: 20,
+    memberDailyChannelCalls: 2, // of memberDailyCalls, at most this many may include channel messages
+    preferenceCacheMs: 60_000, // channel path only: whether to buffer
+    preferenceCacheMax: 5000,
+    channelListCacheMs: 5 * 60_000
 });
 
 const FACT_TYPES = new Set(['fact', 'preference', 'event', 'context']);
@@ -242,7 +252,10 @@ function createSummaryService({
         return timer;
     },
     clearTimer = (timer) => clearTimeout(timer),
-    logger = console
+    logger = console,
+    // Is the member still in the server? A batch from someone who left is
+    // discarded; an error counts as "left" (fail closed).
+    isMember = async () => true
 } = {}) {
     const L = { ...SUMMARY_LIMITS, ...limits };
     const allowlist = new Set((settings.memorySummariesGuilds || []).map(String));
@@ -254,6 +267,11 @@ function createSummaryService({
     const queue = [];
     const recent = [];
     const stats = { batches: 0, dropped: 0, calls: 0, saved: 0 };
+    // Channel messages arrive in volume, so the decision to BUFFER one uses
+    // short-lived caches. Every check before the Groq call and before the
+    // write reads MongoDB fresh, so a stale cache can never cause a save.
+    const preferenceCache = new Map();
+    const channelCache = new Map();
     let running = null;
     let pausedUntil = 0;
 
@@ -262,24 +280,71 @@ function createSummaryService({
             && (allowlist.size === 0 || allowlist.has(String(guildId))));
     }
 
+    function isChannelSummariesEnabledForGuild(guildId) {
+        return Boolean(settings.memorySummariesChannelsEnabled && isEnabledForGuild(guildId));
+    }
+
     function status() {
         return {
             enabled: Boolean(settings.memorySummariesEnabled && client),
             switchOn: Boolean(settings.memorySummariesEnabled),
+            channelsEnabled: Boolean(settings.memorySummariesEnabled && client && settings.memorySummariesChannelsEnabled),
             groqConfigured: Boolean(client),
             guilds: allowlist.size === 0 ? 'all' : [...allowlist],
             model: settings.groqSummaryModel
         };
     }
 
-    // Memory on AND summaries opted in; any failure counts as not eligible.
-    async function eligible(guildId, userId) {
+    // Fresh preference read; null on any failure (callers fail closed).
+    async function readPreference(guildId, userId) {
         try {
-            const preference = await brain.getMemoryPreference(guildId, userId);
-            return preference.enabled === true && preference.summaries === true;
+            return await brain.getMemoryPreference(guildId, userId);
         } catch {
-            return false;
+            return null;
         }
+    }
+
+    // Memory on AND summaries opted in.
+    const isEligible = (preference) => Boolean(preference && preference.enabled === true && preference.summaries === true);
+
+    async function eligible(guildId, userId) {
+        return isEligible(await readPreference(guildId, userId));
+    }
+
+    async function cachedPreference(guildId, userId) {
+        const key = `${guildId}:${userId}`;
+        const hit = preferenceCache.get(key);
+        if (hit && now() - hit.at < L.preferenceCacheMs) return hit.value;
+        const value = await readPreference(guildId, userId);
+        preferenceCache.set(key, { at: now(), value });
+        if (preferenceCache.size > L.preferenceCacheMax) preferenceCache.delete(preferenceCache.keys().next().value);
+        return value;
+    }
+
+    // The admin channel list for a server. Throws if it cannot be read.
+    async function getChannelsForGuild(guildId, { fresh = false } = {}) {
+        const key = String(guildId);
+        const hit = channelCache.get(key);
+        if (!fresh && hit && now() - hit.at < L.channelListCacheMs) return hit.ids;
+        const ids = await brain.getSummaryChannels(key);
+        channelCache.set(key, { at: now(), ids });
+        return ids;
+    }
+
+    function invalidate(guildId, userId) {
+        preferenceCache.delete(`${guildId}:${userId}`);
+    }
+
+    function invalidateChannels(guildId) {
+        channelCache.delete(String(guildId));
+    }
+
+    // Channels this member may be read in: the admin list AND the snapshot
+    // the member consented to (consent version 2+). Nothing otherwise.
+    function consentedChannels(preference, adminIds) {
+        if (!isEligible(preference) || (preference.summariesConsentVersion || 0) < 2) return new Set();
+        const admin = new Set((adminIds || []).map(String));
+        return new Set((preference.summariesChannels || []).filter((id) => admin.has(id)));
     }
 
     function record(batch, result) {
@@ -287,18 +352,50 @@ function createSummaryService({
         recent.push(entry);
         if (recent.length > L.recentResults) recent.shift();
         // Status and counts only: never message or fact text.
-        logger.log?.(`[ZiGBoT SUMMARY] batch ${result.status}${result.saved ? ` saved=${result.saved}` : ''}${result.rejected?.length ? ` rejected=${result.rejected.length}` : ''}`);
+        logger.log?.(`[ZiGBoT SUMMARY] batch ${result.status}${result.origin ? ` origin=${result.origin}` : ''}${result.saved ? ` saved=${result.saved}` : ''}${result.rejected?.length ? ` rejected=${result.rejected.length}` : ''}`);
         return entry;
     }
 
+    const textOf = (items) => items.map((item) => item.text);
+    const tooShort = (items) => textOf(items).join('\n').length < L.minChars;
+
     async function processBatch(batch) {
         if (now() < pausedUntil) return record(batch, { status: 'paused' });
-        if (batch.texts.join('\n').length < L.minChars) return record(batch, { status: 'too-short' });
         if (batch.observed > 0 && batch.roleplay / batch.observed > L.roleplayMaxRatio) return record(batch, { status: 'roleplay' });
-        if (!(await eligible(batch.guildId, batch.userId))) return record(batch, { status: 'not-eligible' });
+        const preference = await readPreference(batch.guildId, batch.userId);
+        if (!isEligible(preference)) return record(batch, { status: 'not-eligible' });
+        let stillMember = false;
+        try {
+            stillMember = await isMember(batch.guildId, batch.userId);
+        } catch {
+            stillMember = false;
+        }
+        if (!stillMember) return record(batch, { status: 'left-server' });
+
+        // Channel messages stay only if their channel is still on the admin
+        // list AND in the member's consent snapshot (fresh read; on any
+        // failure every channel message is dropped).
+        let items = batch.items;
+        if (items.some((item) => item.origin === 'channel')) {
+            let allowed = new Set();
+            if (isChannelSummariesEnabledForGuild(batch.guildId)) {
+                try {
+                    allowed = consentedChannels(preference, await getChannelsForGuild(batch.guildId, { fresh: true }));
+                } catch {
+                    allowed = new Set();
+                }
+            }
+            items = items.filter((item) => item.origin === 'chat' || allowed.has(item.channelId));
+        }
+        if (tooShort(items)) return record(batch, { status: 'too-short' });
 
         const day = utcDay(now());
-        const keys = { member: `member:${batch.guildId}:${batch.userId}`, guild: `guild:${batch.guildId}`, global: 'global' };
+        const keys = {
+            member: `member:${batch.guildId}:${batch.userId}`,
+            guild: `guild:${batch.guildId}`,
+            global: 'global',
+            channel: `member-channel:${batch.guildId}:${batch.userId}`
+        };
         let usage;
         try {
             usage = await brain.getSummaryUsage(day, Object.values(keys));
@@ -309,9 +406,20 @@ function createSummaryService({
         if (usage[keys.member].saved >= L.memberDailySaved) return record(batch, { status: 'member-save-cap' });
         if (usage[keys.guild].calls >= L.guildDailyCalls) return record(batch, { status: 'guild-call-cap' });
         if (usage[keys.global].calls >= L.globalDailyCalls) return record(batch, { status: 'global-call-cap' });
+        // At most memberDailyChannelCalls of a member's daily calls may
+        // include channel messages; past that, only chat messages are used.
+        if (items.some((item) => item.origin === 'channel') && usage[keys.channel].calls >= L.memberDailyChannelCalls) {
+            items = items.filter((item) => item.origin === 'chat');
+            if (tooShort(items)) return record(batch, { status: 'member-channel-call-cap' });
+        }
+        const hasChannel = items.some((item) => item.origin === 'channel');
+        const hasChat = items.some((item) => item.origin === 'chat');
+        const origin = hasChannel && hasChat ? 'mixed' : hasChannel ? 'channel' : 'chat';
+        const texts = textOf(items);
         try {
             // Counted BEFORE the call: a failed call still uses up its slot.
-            for (const key of Object.values(keys)) await brain.addSummaryUsage(day, key, { calls: 1 });
+            for (const key of [keys.member, keys.guild, keys.global]) await brain.addSummaryUsage(day, key, { calls: 1 });
+            if (hasChannel) await brain.addSummaryUsage(day, keys.channel, { calls: 1 });
         } catch {
             return record(batch, { status: 'usage-unavailable' });
         }
@@ -321,7 +429,7 @@ function createSummaryService({
         try {
             const response = await client.chat.completions.create({
                 model: settings.groqSummaryModel,
-                messages: buildSummaryMessages(batch.texts),
+                messages: buildSummaryMessages(texts),
                 temperature: 0,
                 max_tokens: L.maxTokens,
                 response_format: { type: 'json_object' },
@@ -330,16 +438,16 @@ function createSummaryService({
             content = response?.choices?.[0]?.message?.content;
         } catch (error) {
             if (error?.status === 429) pausedUntil = now() + L.pauseOn429Ms;
-            return record(batch, { status: 'groq-failed', code: error?.status || error?.code || error?.name || 'Error' });
+            return record(batch, { status: 'groq-failed', origin, code: error?.status || error?.code || error?.name || 'Error' });
         }
 
         const parsed = validateSummaryOutput(content);
-        if (!parsed.ok) return record(batch, { status: 'invalid-output', reason: parsed.reason });
+        if (!parsed.ok) return record(batch, { status: 'invalid-output', origin, reason: parsed.reason });
 
         const rejected = [];
         const accepted = [];
         for (const item of parsed.facts) {
-            const grounded = groundFact(item, batch.texts);
+            const grounded = groundFact(item, texts);
             if (!grounded.ok) {
                 rejected.push(grounded.reason);
                 continue;
@@ -358,16 +466,16 @@ function createSummaryService({
         const room = Math.max(0, L.memberDailySaved - usage[keys.member].saved);
         const toSave = accepted.slice(0, room);
         for (let i = toSave.length; i < accepted.length; i += 1) rejected.push('member-save-cap');
-        if (toSave.length === 0) return record(batch, { status: 'nothing-to-save', rejected });
+        if (toSave.length === 0) return record(batch, { status: 'nothing-to-save', origin, rejected });
 
         // Consent is checked again right before the write (and once more
         // inside saveSummaryFacts): turning summaries off stops this batch.
-        if (!(await eligible(batch.guildId, batch.userId))) return record(batch, { status: 'not-eligible', rejected });
+        if (!(await eligible(batch.guildId, batch.userId))) return record(batch, { status: 'not-eligible', origin, rejected });
         let result;
         try {
-            result = await brain.saveSummaryFacts(batch.guildId, batch.userId, toSave);
+            result = await brain.saveSummaryFacts(batch.guildId, batch.userId, toSave, { origin });
         } catch (error) {
-            return record(batch, { status: 'save-failed', code: error?.code || error?.name || 'Error', rejected });
+            return record(batch, { status: 'save-failed', origin, code: error?.code || error?.name || 'Error', rejected });
         }
         if (result.saved.length > 0) {
             try {
@@ -377,7 +485,7 @@ function createSummaryService({
             }
         }
         stats.saved += result.saved.length;
-        return record(batch, { status: result.saved.length > 0 ? 'saved' : 'duplicate', saved: result.saved.length, skipped: result.skipped, rejected });
+        return record(batch, { status: result.saved.length > 0 ? 'saved' : 'duplicate', origin, saved: result.saved.length, skipped: result.skipped, rejected });
     }
 
     function pump() {
@@ -412,15 +520,43 @@ function createSummaryService({
         if (!buffer) return;
         buffers.delete(key);
         if (buffer.timer) clearTimer(buffer.timer);
-        if (buffer.texts.length === 0) return;
-        enqueue({ guildId: buffer.guildId, userId: buffer.userId, texts: buffer.texts, roleplay: buffer.roleplay, observed: buffer.observed });
+        if (buffer.items.length === 0) return;
+        enqueue({ guildId: buffer.guildId, userId: buffer.userId, items: buffer.items, roleplay: buffer.roleplay, observed: buffer.observed });
     }
 
     function onIdle(key) {
         const buffer = buffers.get(key);
         if (!buffer) return;
-        if (buffer.texts.length >= L.idleMinMessages) closeBuffer(key);
+        if (buffer.items.length >= L.idleMinMessages) closeBuffer(key);
         else buffers.delete(key); // too little to summarise: discard, nothing stored
+    }
+
+    // Shared by both entry points: one buffer per member per server.
+    function addToBuffer(guildId, userId, message, { origin, channelId }) {
+        const key = `${guildId}:${userId}`;
+        const prepared = prepareMessage(message);
+        let buffer = buffers.get(key);
+        if (prepared.text && buffer && buffer.chars + prepared.text.length > L.maxBatchChars) {
+            closeBuffer(key);
+            buffer = null;
+        }
+        if (!buffer) {
+            buffer = { guildId: String(guildId), userId: String(userId), items: [], chars: 0, roleplay: 0, observed: 0, timer: null };
+            buffers.set(key, buffer);
+        }
+        buffer.observed += 1;
+        if (prepared.roleplay) buffer.roleplay += 1;
+        if (prepared.text) {
+            buffer.items.push({ text: prepared.text, origin, channelId });
+            buffer.chars += prepared.text.length;
+        }
+        if (buffer.items.length >= Math.min(L.batchMessages, L.maxBatchMessages)) {
+            closeBuffer(key);
+            return 'queued';
+        }
+        if (buffer.timer) clearTimer(buffer.timer);
+        buffer.timer = setTimer(() => onIdle(key), L.idleMs);
+        return prepared.text ? 'buffered' : `skipped:${prepared.skip}`;
     }
 
     // Called after the bot replied to a member's chat message. Never throws
@@ -430,38 +566,51 @@ function createSummaryService({
         if (!memoryAllowed) return 'memory-not-allowed';
         if (!brain.isMemoryAvailable()) return 'unavailable';
         if (!(await eligible(guildId, userId))) return 'not-eligible';
+        return addToBuffer(guildId, userId, message, { origin: 'chat', channelId: null });
+    }
 
-        const key = `${guildId}:${userId}`;
-        const prepared = prepareMessage(message);
-        let buffer = buffers.get(key);
-        if (prepared.text && buffer && buffer.chars + prepared.text.length > L.maxBatchChars) {
-            closeBuffer(key);
-            buffer = null;
+    // Called for a member's ordinary message (no bot reply) in a server
+    // channel. Only the author's own message is ever passed in. Buffered
+    // only if the channel is on the admin list AND in this member's consent
+    // snapshot; threads are never read.
+    async function observeChannelMessage({ guildId, channelId, userId, memoryAllowed = false, isThread = false, ...message }) {
+        if (!isChannelSummariesEnabledForGuild(guildId)) return 'disabled';
+        if (isThread) return 'thread';
+        if (!channelId) return 'no-channel';
+        if (!memoryAllowed) return 'memory-not-allowed';
+        if (!brain.isMemoryAvailable()) return 'unavailable';
+        let adminIds;
+        try {
+            adminIds = await getChannelsForGuild(guildId);
+        } catch {
+            return 'channels-unavailable';
         }
-        if (!buffer) {
-            buffer = { guildId: String(guildId), userId: String(userId), texts: [], chars: 0, roleplay: 0, observed: 0, timer: null };
-            buffers.set(key, buffer);
-        }
-        buffer.observed += 1;
-        if (prepared.roleplay) buffer.roleplay += 1;
-        if (prepared.text) {
-            buffer.texts.push(prepared.text);
-            buffer.chars += prepared.text.length;
-        }
-        if (buffer.texts.length >= Math.min(L.batchMessages, L.maxBatchMessages)) {
-            closeBuffer(key);
-            return 'queued';
-        }
-        if (buffer.timer) clearTimer(buffer.timer);
-        buffer.timer = setTimer(() => onIdle(key), L.idleMs);
-        return prepared.text ? 'buffered' : `skipped:${prepared.skip}`;
+        if (!adminIds.includes(String(channelId))) return 'channel-not-listed';
+        const preference = await cachedPreference(guildId, userId);
+        if (!consentedChannels(preference, adminIds).has(String(channelId))) return 'not-eligible';
+        return addToBuffer(guildId, userId, message, { origin: 'channel', channelId: String(channelId) });
     }
 
     async function drain() {
         while (running) await running;
     }
 
-    return { observeMessage, isEnabledForGuild, status, drain, stats, recent, _buffers: buffers, _queue: queue, _onIdle: onIdle };
+    return {
+        observeMessage,
+        observeChannelMessage,
+        isEnabledForGuild,
+        isChannelSummariesEnabledForGuild,
+        getChannelsForGuild,
+        invalidate,
+        invalidateChannels,
+        status,
+        drain,
+        stats,
+        recent,
+        _buffers: buffers,
+        _queue: queue,
+        _onIdle: onIdle
+    };
 }
 
 module.exports = {
