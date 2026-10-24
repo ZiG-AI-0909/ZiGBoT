@@ -276,7 +276,8 @@ async function executeTool(message, settings, intent, context = {}) {
                 result = '**ZiGBoT actions:**\n' + [...actionCatalog.values()]
                     .map(({ description }) => `• ${description}`)
                     .join('\n')
-                    + '\n• Verified server owner: ask “what do you know about” and mention a member for their private 30-day memory summary.';
+                    + '\n• Everyone: `/memory` to see, search, add, correct, export, or delete your own memories, or turn memory off (private replies).'
+                    + '\n• Verified server owner: ask “what do you know about” and mention a member for their memory status (counts only, never contents).';
                 break;
             }
             case 'get_server_info':
@@ -563,21 +564,31 @@ async function executeTool(message, settings, intent, context = {}) {
                     `• Persistent memory enabled: ${status.persistentMemory ? '✅ yes' : '❌ no'}`,
                     `• Conversation (short-term) memory: ${status.conversationMemory ? '✅ active (in-process, per-channel)' : '❌ off'}`,
                     `• Memory retrieval before replies: ${status.memoryRetrieval ? '✅ yes' : '⚠️ no — recall skipped'}`,
-                    `• Memory writes after replies: ${status.memoryWrite ? '✅ yes (selective, credentials refused)' : '❌ no — saves disabled'}`
+                    `• Memory writes after replies: ${!status.memoryWrite ? '❌ no — saves disabled' : settings.memoryAutoCapture ? '✅ yes (selective, credentials refused)' : '⏸️ automatic capture OFF (MEMORY_AUTO_CAPTURE) — only explicit /memory remember saves'}`,
+                    `• Last successful write: ${status.lastWriteOkAt ? `<t:${Math.floor(status.lastWriteOkAt / 1000)}:R>` : 'none since start'} · last successful read: ${status.lastReadOkAt ? `<t:${Math.floor(status.lastReadOkAt / 1000)}:R>` : 'none since start'}`,
+                    '• Cross-member memory sharing: disabled'
                 ];
                 if (status.lastError) lines.push(`• Last memory error: ${status.lastError}`);
                 else lines.push('• Last memory error: none');
                 // Per-user count is optional: omit target -> the requester's own memories.
+                // Another member's count is shown only when THEY have memory on.
                 const member = intent.target ? findMember(guild, intent.target) : null;
                 if (intent.target && !member) {
                     lines.push(`⚠️ Could not resolve member "${intent.target}" for a per-user count.`);
                 } else {
                     const userId = member ? member.id : message.author.id;
+                    const label = member ? member.displayName : 'you';
                     try {
-                        const count = await brain.countMemories(guild.id, userId);
-                        lines.push(`• Stored memories for ${member ? member.displayName : 'you'}: **${count}**`);
+                        const isOther = userId !== message.author.id;
+                        const preference = isOther ? await brain.getMemoryPreference(guild.id, userId) : null;
+                        if (preference && !preference.enabled) {
+                            lines.push(`• Stored memories for ${label}: hidden — this member turned personal memory off`);
+                        } else {
+                            const count = await brain.countMemories(guild.id, userId);
+                            lines.push(`• Stored memories for ${label}: **${count}**`);
+                        }
                     } catch (error) {
-                        lines.push(`• Stored memories for ${member ? member.displayName : 'you'}: ⚠️ lookup failed (${error.message})`);
+                        lines.push(`• Stored memories for ${label}: ⚠️ lookup failed (${error.message}) — nothing shown`);
                     }
                 }
                 result = lines.join('\n');

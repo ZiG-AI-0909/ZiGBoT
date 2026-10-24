@@ -3,97 +3,9 @@ const assert = require('node:assert/strict');
 
 // Phase 1 memory data layer: schema v2, owner-scoped CRUD, validation, and the
 // MongoDB driver v7 findOneAndUpdate regression (returns the document itself,
-// not { value }). The fake below follows driver v7 return shapes on purpose.
+// not { value }). The shared fake follows driver v7 return shapes on purpose.
 const brain = require('../src/db/brain');
-
-function matches(doc, filter) {
-    return Object.entries(filter).every(([key, expected]) => {
-        if (expected !== null && typeof expected === 'object' && !(expected instanceof Date)) {
-            if (expected.$lt !== undefined && !(doc[key] < expected.$lt)) return false;
-            if (expected.$gte !== undefined && !(doc[key] >= expected.$gte)) return false;
-            return Object.keys(expected).every((op) => op === '$lt' || op === '$gte');
-        }
-        return doc[key] === expected;
-    });
-}
-
-function v7Client({ legacyFindOneAndUpdate = false } = {}) {
-    const collections = new Map();
-    const usedDbNames = [];
-    function collection(name) {
-        if (collections.has(name)) return collections.get(name);
-        const docs = [];
-        const store = {
-            docs,
-            async createIndex() { return 'idx'; },
-            async insertOne(doc) { docs.push({ ...doc }); return { acknowledged: true }; },
-            async findOne(filter) {
-                const doc = docs.find((d) => matches(d, filter));
-                return doc ? { ...doc } : null;
-            },
-            async updateOne(filter, update, options = {}) {
-                let doc = docs.find((d) => matches(d, filter));
-                if (!doc && options.upsert) { doc = { ...filter }; docs.push(doc); }
-                if (doc && update.$set) Object.assign(doc, update.$set);
-                return { matchedCount: doc ? 1 : 0 };
-            },
-            async countDocuments(filter) { return docs.filter((d) => matches(d, filter)).length; },
-            async deleteOne(filter) {
-                const index = docs.findIndex((d) => matches(d, filter));
-                if (index < 0) return { deletedCount: 0 };
-                docs.splice(index, 1);
-                return { deletedCount: 1 };
-            },
-            async deleteMany(filter) {
-                const keep = docs.filter((d) => !matches(d, filter));
-                const deletedCount = docs.length - keep.length;
-                docs.splice(0, docs.length, ...keep);
-                return { deletedCount };
-            },
-            find(filter) {
-                let sortSpec = {};
-                let limitCount = 0;
-                return {
-                    sort(spec) { sortSpec = spec; return this; },
-                    limit(n) { limitCount = n; return this; },
-                    async toArray() {
-                        const rows = docs.filter((d) => matches(d, filter)).map((d) => ({ ...d }));
-                        rows.sort((a, b) => {
-                            for (const [key, dir] of Object.entries(sortSpec)) {
-                                if (a[key] !== b[key]) return (a[key] - b[key]) * dir;
-                            }
-                            return 0;
-                        });
-                        return limitCount > 0 ? rows.slice(0, limitCount) : rows;
-                    }
-                };
-            },
-            async findOneAndUpdate(filter, update, options = {}) {
-                let doc = docs.find((d) => matches(d, filter));
-                const before = doc ? { ...doc } : null;
-                if (!doc && options.upsert) {
-                    doc = Object.fromEntries(Object.entries(filter).filter(([, v]) => v === null || typeof v !== 'object'));
-                    docs.push(doc);
-                }
-                if (doc && update.$inc) for (const [k, v] of Object.entries(update.$inc)) doc[k] = (doc[k] || 0) + v;
-                if (doc && update.$set) Object.assign(doc, update.$set);
-                const value = doc && options.returnDocument === 'after' ? { ...doc } : before;
-                // Driver v5 shape, only to prove the old destructuring is gone.
-                if (legacyFindOneAndUpdate) return { value, ok: 1 };
-                return options.includeResultMetadata ? { value, ok: 1 } : value;
-            }
-        };
-        collections.set(name, store);
-        return store;
-    }
-    return {
-        collections,
-        usedDbNames,
-        collection,
-        db(name) { usedDbNames.push(name); return { collection }; },
-        async connect() {}
-    };
-}
+const { v7Client } = require('../test-support/fakeMongoV7');
 
 async function connect(client = v7Client(), options = {}) {
     brain._disconnectForTests();

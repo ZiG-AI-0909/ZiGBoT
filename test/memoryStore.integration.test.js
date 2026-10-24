@@ -101,6 +101,25 @@ test('memory data layer against a real MongoDB test database', { skip: skipReaso
         assert.equal(await brain.countWarnings('g1', 'u1'), 2);
     });
 
+    await t.test('memory preferences persist, are unique per member+server, and gate saves', async () => {
+        await brain.setMemoryPreference('g1', 'pref-user', false);
+        await brain.setMemoryPreference('g1', 'pref-user', false);
+        const prefs = await openClients.at(-1).db(DB_NAME).collection('memory_prefs').find({ userId: 'pref-user' }).toArray();
+        assert.equal(prefs.length, 1, 'upsert must not create duplicates');
+        await assert.rejects(() => brain.remember('g1', 'pref-user', 'blocked while off'), brain.MemoryDisabledError);
+        assert.deepEqual(await brain.recallIfEnabled('g1', 'pref-user'), { enabled: false, memories: null });
+        await brain.setMemoryPreference('g1', 'pref-user', true);
+        assert.equal((await brain.recallIfEnabled('g1', 'pref-user')).enabled, true);
+    });
+
+    await t.test('search runs as a literal, case-insensitive query on the real server', async () => {
+        await brain.remember('g1', 'search-user', 'I enjoy C++ (and Rust)', 'preference', { source: 'explicit' });
+        const literal = await brain.searchMemories('g1', 'search-user', 'c++ (AND');
+        assert.equal(literal.items.length, 1);
+        const wildcard = await brain.searchMemories('g1', 'search-user', '.*');
+        assert.equal(wildcard.items.length, 0);
+    });
+
     await t.test('deletes are real and counted truthfully', async () => {
         const target = await brain.remember('g1', 'u1', 'integration delete me');
         assert.equal(await brain.deleteMemoryById('g1', 'u1', target.id), true);

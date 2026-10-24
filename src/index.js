@@ -9,7 +9,6 @@ const {
     crisisResponse,
     isMemoryQuestion,
     buildMemoryAnswer,
-    buildOwnerMemoryAnswer,
     shouldRemember,
     isReputationQuestion,
     buildReputationAnswer
@@ -57,6 +56,8 @@ const {
     hasFeature,
     rateLimitReplyFor
 } = require('./guildConfig/context');
+const { createMemoryCommands } = require('./memory/commands');
+const { ownerMemoryStatus } = require('./memory/ownerLookup');
 const { version: BOT_VERSION } = require('../package.json');
 
 function logAiError(error) {
@@ -97,6 +98,10 @@ const guildStore = new GuildConfigStore({
     serviceRoleKey: settings.supabaseServiceRoleKey
 });
 console.log(`[ZiGBoT MEMORY] Automatic memory capture: ${settings.memoryAutoCapture ? 'ON' : 'OFF'} (MEMORY_AUTO_CAPTURE)`);
+const memoryCommands = createMemoryCommands({ brain, autoCapture: settings.memoryAutoCapture });
+
+// Shown when a member who turned memory off asks what the bot remembers.
+const MEMORY_OFF_REPLY = 'You turned personal memory off in this server, so I am not using anything stored about you. `/memory view` shows what is still stored (it expires after 30 days), `/memory clear` deletes it, and `/memory on` turns memory back on.';
 console.log(`[ZiGBoT CONFIG] Per-server config mode: ${guildStore.mode}${guildStore.mode === 'legacy' ? ' (set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to enable the dashboard)' : ''}`);
 
 // Resolve everything the handlers need for one guild event. Never throws.
@@ -243,7 +248,27 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }).catch((error) => console.error(`[ZiGBoT MUSIC] button failed: ${error.message}`));
         return;
     }
+    if (memoryCommands.isMemoryComponent(interaction)) {
+        await memoryCommands.handleComponent(interaction)
+            .catch((error) => console.error(`[ZiGBoT MEMORY] clear button failed: ${error?.code || error?.name || 'Error'}`));
+        return;
+    }
     if (!interaction.isChatInputCommand()) return;
+    // /memory replies are private, so it branches off before the public deferral.
+    if (interaction.commandName === 'memory') {
+        await memoryCommands.handleSlash(interaction, {
+            resolveContext: async () => {
+                const { ctx, gSettings, behavior } = await guildRuntime(interaction.guild, interaction.member);
+                const fakeMessage = { author: interaction.user, member: interaction.member, guild: interaction.guild, channel: interaction.channel, reply: () => null };
+                return {
+                    botEnabled: !(ctx && ctx.config.enabled === false),
+                    memoryAllowedByServer: !ctx || (ctx.config.memory_enabled !== false && hasFeature(behavior, 'memory')),
+                    runDiagnostics: (target) => runIntent(fakeMessage, gSettings, target ? { action: 'memory_status', target } : { action: 'memory_status' }, { warnStore })
+                };
+            }
+        }).catch((error) => console.error(`[ZiGBoT MEMORY] /memory failed: ${error?.code || error?.name || 'Error'}`));
+        return;
+    }
     try {
         await interaction.deferReply();
 
@@ -467,20 +492,20 @@ client.on(Events.MessageCreate, async (message) => {
             await message.reply('Persistent memory is temporarily unavailable, so I cannot check what is stored.').catch(() => {});
             return;
         }
+        // Counts and status only (src/memory/ownerLookup.js): another member's
+        // memory CONTENTS are never readable here.
         try {
-            const totalCount = await brain.countMemories(message.guild.id, ownerMemoryTarget.id);
-            const memories = await brain.recall(message.guild.id, ownerMemoryTarget.id, 20);
             const member = message.guild.members.cache.get(ownerMemoryTarget.id);
             const targetName = member?.displayName || ownerMemoryTarget.globalName || ownerMemoryTarget.username;
-            const summary = buildOwnerMemoryAnswer({ targetName, memories, totalCount });
+            const summary = await ownerMemoryStatus({ brain, guildId: message.guild.id, userId: ownerMemoryTarget.id, targetName });
             await message.author.send({
                 content: summary,
                 allowedMentions: { parse: [] }
             });
-            await message.reply(`I sent the 30-day memory summary for ${ownerMemoryTarget} to your DMs.`);
+            await message.reply({ content: 'I sent that member\'s memory status (counts only, no contents) to your DMs.', allowedMentions: { parse: [] } });
         } catch (memoryError) {
-            console.error(`[ZiGBoT MEMORY] Owner lookup failed: ${memoryError.message}`);
-            await message.reply('I could not retrieve or privately deliver that memory summary. No details were posted here.').catch(() => {});
+            console.error(`[ZiGBoT MEMORY] Owner lookup failed: ${memoryError?.code || memoryError?.name || 'Error'}`);
+            await message.reply('I could not retrieve or privately deliver that memory status. No details were posted here.').catch(() => {});
         }
         return;
     }
@@ -544,8 +569,12 @@ client.on(Events.MessageCreate, async (message) => {
             return;
         }
         try {
-            const userMemories = await brain.recall(message.guild.id, message.author.id, 10);
-            await message.reply(buildMemoryAnswer({ capabilities, memories: userMemories }));
+            const personal = await brain.recallIfEnabled(message.guild.id, message.author.id, 10);
+            if (!personal.enabled) {
+                await message.reply(MEMORY_OFF_REPLY);
+                return;
+            }
+            await message.reply(buildMemoryAnswer({ capabilities, memories: personal.memories }));
         } catch {
             // Retrieval failed: report that honestly instead of guessing.
             await message.reply(buildMemoryAnswer({ capabilities, memories: null }));
@@ -661,16 +690,17 @@ client.on(Events.MessageCreate, async (message) => {
         const history = defaultMemory.getHistory(message.channel.id);
 
         // Persistent memory retrieval: real MongoDB records for THIS user in
-        // THIS guild, injected into the AI context. A retrieval failure must
-        // degrade the reply, not kill it — the AI is told recall failed.
+        // THIS guild, injected into the AI context, only when the member has
+        // memory on. A retrieval or preference failure must degrade the reply,
+        // not kill it — the AI is told recall failed (fail closed).
         const capabilities = brain.getMemoryCapabilities();
         let userMemories = null;
         let retrievalFailed = false;
         if (capabilities.persistentMemory && message.guild && memoryAllowed) {
             try {
-                userMemories = await brain.recall(message.guild.id, message.author.id, 5);
+                userMemories = (await brain.recallIfEnabled(message.guild.id, message.author.id, 5)).memories;
             } catch (memoryError) {
-                console.error(`[ZiGBoT MEMORY] Recall failed: ${memoryError.message}`);
+                console.error(`[ZiGBoT MEMORY] Recall failed: ${memoryError?.code || memoryError?.name || 'Error'}`);
                 retrievalFailed = true;
             }
         }
@@ -686,23 +716,9 @@ client.on(Events.MessageCreate, async (message) => {
             }
         }
 
-        // Server happenings: recent memories from ALL members (last 30 days)
-        // so the AI can reference one member's situation while talking to
-        // another. Excludes the current speaker (their own memories are
-        // already in the personal block). Failure degrades silently.
-        let recentMemories = null;
-        let recentRetrievalFailed = false;
-        if (brain.isMemoryAvailable() && message.guild && (!guildCtx || guildCtx.config.memory_enabled !== false)) {
-            try {
-                recentMemories = await brain.recallRecent(message.guild.id, {
-                    limit: 15,
-                    excludeUserId: message.author.id
-                });
-            } catch (recentError) {
-                console.error(`[ZiGBoT MEMORY] Recent-context lookup failed: ${recentError.message}`);
-                recentRetrievalFailed = true;
-            }
-        }
+        // Cross-member "server happenings" retrieval is disabled: one member's
+        // memories never reach a reply to another member. Explicit opt-in
+        // sharing is planned for Phase 3.
 
         const replyText = await ai.reply({
             userMessage,
@@ -719,8 +735,6 @@ client.on(Events.MessageCreate, async (message) => {
             memories: userMemories,
             retrievalFailed,
             reputation,
-            recentMemories,
-            recentRetrievalFailed,
             guildPrompt,
             rateLimitMax: gSettings.aiRateLimitMax
         });
@@ -803,7 +817,7 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
         let retrievalFailed = false;
         if (capabilities.persistentMemory && voiceMemoryAllowed) {
             try {
-                userMemories = await brain.recall(guild.id, userId, 5);
+                userMemories = (await brain.recallIfEnabled(guild.id, userId, 5)).memories;
             } catch {
                 retrievalFailed = true;
             }

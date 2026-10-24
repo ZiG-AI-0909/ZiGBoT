@@ -15,6 +15,7 @@ let users = null;
 let warnings = null;
 let counters = null;
 let memories = null;
+let memoryPrefs = null;
 let behaviors = null;
 let ytGreeted = null;
 let ytBans = null;
@@ -42,6 +43,9 @@ const MEMORY_SCHEMA_VERSION = 2;
 const MEMORY_SOURCES = new Set(['explicit', 'auto-text', 'auto-voice']);
 const MEMORY_SCOPES = new Set(['personal']);
 const MEMORY_ID_FIELD_MAX = 64;
+const MEMORY_PAGE_SIZE = 10;
+const MEMORY_SEARCH_MAX_LENGTH = 100;
+const MEMORY_EXPORT_MAX = 200;
 
 // ---- Behavior accountability (who did what, and how the bot treats them) ----
 // Sliding-window reputation: positive signals +1, negative -2, only events
@@ -80,6 +84,28 @@ function containsCredential(text) {
         || CREDENTIAL_LABEL_PATTERN.test(text);
 }
 
+// Text that reads like instructions to the bot rather than a fact about the
+// member. Explicit saves and corrections matching any of these are refused.
+// This is an extra safeguard only: stored text must still be handled as
+// untrusted data wherever it is shown to the model.
+const INSTRUCTION_PAYLOAD_PATTERNS = [
+    /\b(?:ignore|disregard|override|bypass)\b.{0,40}\b(?:instructions?|rules|prompts?|guidelines|directives?)\b/i,
+    /\bforget\b.{0,20}\b(?:all|your|previous|prior|earlier|above)\b.{0,20}\b(?:instructions?|rules|prompts?)\b/i,
+    /\byou\s+are\s+now\b/i,
+    /\bfrom\s+now\s+on\s+(?:you|zigbot|the\s+bot)\b/i,
+    /\b(?:system|developer)\s*(?:prompt|message|instructions?)\b/i,
+    /^\s*(?:system|assistant|developer|user)\s*:/im,
+    /<\|[^|>]{1,40}\|>/,
+    /\[\/?(?:INST|SYS)\]|<<\/?SYS>>/i,
+    /\bnew\s+(?:instructions?|rules|persona)\s*[:=]/i,
+    /\b(?:jailbreak|jailbroken|DAN\s+mode|developer\s+mode)\b/i,
+    /\b(?:act|behave|respond|pretend)\s+(?:as|like)\s+(?:if\s+you\s+(?:are|were)\s+)?(?:an?\s+)?(?:unrestricted|unfiltered|uncensored|evil|different)\b/i
+];
+
+function containsInstructionPayload(text) {
+    return INSTRUCTION_PAYLOAD_PATTERNS.some((pattern) => pattern.test(String(text || '')));
+}
+
 // Thrown for input that must never reach the database. The message never
 // echoes the content itself, so it is safe to log.
 class MemoryValidationError extends Error {
@@ -87,6 +113,16 @@ class MemoryValidationError extends Error {
         super(message);
         this.name = 'MemoryValidationError';
         this.code = 'MEMORY_INVALID';
+    }
+}
+
+// The member turned memory off (or it could not be verified as on). Not a
+// database failure, so it never lands in lastMemoryError.
+class MemoryDisabledError extends Error {
+    constructor(message = 'Personal memory is turned off for this member in this server.') {
+        super(message);
+        this.name = 'MemoryDisabledError';
+        this.code = 'MEMORY_DISABLED';
     }
 }
 
@@ -121,6 +157,7 @@ async function connectBrain(uri, { client: injectedClient = null, dbName = 'zigb
     const nextWarnings = db.collection('warnings');
     const nextCounters = db.collection('counters');
     const nextMemories = db.collection('memories');
+    const nextMemoryPrefs = db.collection('memory_prefs');
     const nextBehaviors = db.collection('behaviors');
     const nextYtGreeted = db.collection('ytGreeted');
     const nextYtBans = db.collection('ytBans');
@@ -139,6 +176,8 @@ async function connectBrain(uri, { client: injectedClient = null, dbName = 'zigb
     await nextMemories.createIndex({ guildId: 1, created_at: -1 });
     // MongoDB TTL cleanup is asynchronous; every read also enforces the cutoff.
     await nextMemories.createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 });
+    // One preference document per member per server.
+    await nextMemoryPrefs.createIndex({ guildId: 1, userId: 1 }, { unique: true });
     // Behavior accountability: per-member lookups + signal aggregation.
     await nextBehaviors.createIndex({ guildId: 1, userId: 1, created_at: -1 });
     await nextYtGreeted.createIndex({ videoId: 1, channelId: 1 }, { unique: true });
@@ -156,6 +195,7 @@ async function connectBrain(uri, { client: injectedClient = null, dbName = 'zigb
     warnings = nextWarnings;
     counters = nextCounters;
     memories = nextMemories;
+    memoryPrefs = nextMemoryPrefs;
     behaviors = nextBehaviors;
     ytGreeted = nextYtGreeted;
     ytBans = nextYtBans;
@@ -290,6 +330,7 @@ function normalizeMemory(row) {
         verified: row.verified === true,
         created_at: row.created_at,
         updated_at: Number.isFinite(row.updated_at) ? row.updated_at : row.created_at,
+        expires_at: Number.isFinite(row.created_at) ? row.created_at + MEMORY_RETENTION_MS : null,
         schema_version: row.schema_version || 1
     };
 }
@@ -305,6 +346,13 @@ async function remember(guildId, userId, content, type = 'fact', meta = {}) {
     if (!MEMORY_SOURCES.has(source)) {
         throw new MemoryValidationError(`Memory source must be one of: ${[...MEMORY_SOURCES].join(', ')}.`);
     }
+    if (source === 'explicit' && containsInstructionPayload(text)) {
+        throw new MemoryValidationError('That reads like instructions to the bot, not a fact about you, so it was not saved.');
+    }
+    // Every save path honors the member's preference. A lookup failure throws
+    // here, so nothing is written unless "on" is actually confirmed.
+    const preference = await getMemoryPreference(owner.guildId, owner.userId);
+    if (!preference.enabled) throw new MemoryDisabledError();
     try {
         // Idempotent for repeats: the same live text for the same member is
         // returned as-is instead of stored twice. (Two concurrent identical
@@ -332,7 +380,10 @@ async function remember(guildId, userId, content, type = 'fact', meta = {}) {
         };
         // Atomic sequence, same pattern as warning ids.
         doc.id = await nextSequence('memory_id');
-        await memories.insertOne(doc);
+        const inserted = await memories.insertOne(doc);
+        if (inserted && inserted.acknowledged === false) {
+            throw new Error('Memory write was not acknowledged by MongoDB.');
+        }
         noteMemoryWriteOk();
         // Retention: prune anything older than the window. A prune failure
         // must never fail the save that just succeeded.
@@ -367,7 +418,7 @@ async function getMemory(guildId, userId, id) {
 // Correct a memory's content/type in one atomic update. The owner filter is
 // part of the query, so another member's id simply matches nothing (null).
 // Provenance (source, created_at, verified) is preserved as written.
-async function updateMemory(guildId, userId, id, { content, type } = {}) {
+async function updateMemory(guildId, userId, id, { content, type, verified } = {}) {
     requireBrain();
     const owner = ownerKey(guildId, userId);
     const numericId = validateMemoryId(id);
@@ -376,9 +427,16 @@ async function updateMemory(guildId, userId, id, { content, type } = {}) {
         if (!current) return null;
         const nextType = type === undefined ? current.type : type;
         const nextContent = validateMemoryContent(content === undefined ? current.content : content, nextType);
+        if (content !== undefined && containsInstructionPayload(nextContent)) {
+            throw new MemoryValidationError('That reads like instructions to the bot, not a fact about you, so it was not saved.');
+        }
+        const changes = { content: nextContent, type: nextType, updated_at: Date.now() };
+        // A member correcting their own memory confirms it; provenance (source,
+        // created_at) is still kept as originally written.
+        if (verified === true) changes.verified = true;
         const updated = await memories.findOneAndUpdate(
             { ...owner, id: numericId, created_at: { $gte: Date.now() - MEMORY_RETENTION_MS } },
-            { $set: { content: nextContent, type: nextType, updated_at: Date.now() } },
+            { $set: changes },
             { returnDocument: 'after', includeResultMetadata: false }
         );
         if (!updated) return null; // expired or deleted between the two calls
@@ -386,6 +444,140 @@ async function updateMemory(guildId, userId, id, { content, type } = {}) {
         return normalizeMemory(updated);
     } catch (error) {
         if (!(error instanceof MemoryValidationError)) noteMemoryError(error);
+        throw error;
+    }
+}
+
+// ---- Per-member memory preference (memory_prefs collection) ----
+// No document = memory ON (the behavior before preferences existed). Only a
+// stored enabled === true or no document counts as on; anything else is off.
+// Lookup failures THROW so every caller fails closed.
+async function getMemoryPreference(guildId, userId) {
+    requireBrain();
+    const owner = ownerKey(guildId, userId);
+    try {
+        const row = await memoryPrefs.findOne(owner);
+        noteMemoryReadOk();
+        return {
+            enabled: row ? row.enabled === true : true,
+            stored: Boolean(row),
+            updated_at: row && Number.isFinite(row.updated_at) ? row.updated_at : null
+        };
+    } catch (error) {
+        noteMemoryError(error);
+        throw error;
+    }
+}
+
+async function setMemoryPreference(guildId, userId, enabled) {
+    requireBrain();
+    const owner = ownerKey(guildId, userId);
+    if (typeof enabled !== 'boolean') {
+        throw new MemoryValidationError('Memory preference must be true or false.');
+    }
+    const now = Date.now();
+    try {
+        const result = await memoryPrefs.updateOne(
+            owner,
+            { $set: { enabled, updated_at: now }, $setOnInsert: { created_at: now } },
+            { upsert: true }
+        );
+        if (result && result.acknowledged === false) {
+            throw new Error('Memory preference write was not acknowledged by MongoDB.');
+        }
+        noteMemoryWriteOk();
+        return { enabled, updated_at: now };
+    } catch (error) {
+        noteMemoryError(error);
+        throw error;
+    }
+}
+
+// Personal memories for a reply, ONLY when the member has memory on. The one
+// gate for every reply retrieval path (text, voice, memory questions).
+// Off -> { enabled: false, memories: null }; lookup failure -> throws.
+async function recallIfEnabled(guildId, userId, limit = MEMORY_DEFAULT_LIMIT) {
+    const preference = await getMemoryPreference(guildId, userId);
+    if (!preference.enabled) return { enabled: false, memories: null };
+    return { enabled: true, memories: await recall(guildId, userId, limit) };
+}
+
+function liveOwnerFilter(owner) {
+    return { ...owner, created_at: { $gte: Date.now() - MEMORY_RETENTION_MS } };
+}
+
+// The member's own live memories, newest first, one page at a time. This is
+// the member's view of their data, so it works whether memory is on or off.
+async function listMemories(guildId, userId, { page = 1, pageSize = MEMORY_PAGE_SIZE } = {}) {
+    requireBrain();
+    const owner = ownerKey(guildId, userId);
+    const size = Math.max(1, Math.min(Math.floor(Number(pageSize)) || MEMORY_PAGE_SIZE, 25));
+    const requested = Math.max(1, Math.floor(Number(page)) || 1);
+    const filter = liveOwnerFilter(owner);
+    try {
+        const total = await memories.countDocuments(filter);
+        const pages = Math.max(1, Math.ceil(total / size));
+        const current = Math.min(requested, pages);
+        const rows = await memories.find(filter)
+            .sort({ created_at: -1, id: -1 })
+            .skip((current - 1) * size)
+            .limit(size)
+            .toArray();
+        noteMemoryReadOk();
+        return { total, page: current, pages, pageSize: size, items: rows.map(normalizeMemory) };
+    } catch (error) {
+        noteMemoryError(error);
+        throw error;
+    }
+}
+
+function escapeRegex(text) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Case-insensitive literal search over the member's own live memories. The
+// query is escaped, so it can never act as a pattern or an operator.
+async function searchMemories(guildId, userId, query, { limit = MEMORY_PAGE_SIZE } = {}) {
+    requireBrain();
+    const owner = ownerKey(guildId, userId);
+    const text = String(query ?? '').trim();
+    if (!text || text.length > MEMORY_SEARCH_MAX_LENGTH) {
+        throw new MemoryValidationError(`Search text must be 1-${MEMORY_SEARCH_MAX_LENGTH} characters.`);
+    }
+    const capped = Math.max(1, Math.min(Math.floor(Number(limit)) || MEMORY_PAGE_SIZE, 25));
+    try {
+        const rows = await memories.find({ ...liveOwnerFilter(owner), content: { $regex: escapeRegex(text), $options: 'i' } })
+            .sort({ created_at: -1, id: -1 })
+            .limit(capped + 1)
+            .toArray();
+        noteMemoryReadOk();
+        return { items: rows.slice(0, capped).map(normalizeMemory), more: rows.length > capped };
+    } catch (error) {
+        noteMemoryError(error);
+        throw error;
+    }
+}
+
+// The member's own live memories for this server, newest first, capped at
+// MEMORY_EXPORT_MAX. Content that looks like a credential (possible only in
+// records written before the credential filter) is redacted, never exported.
+async function exportMemories(guildId, userId) {
+    requireBrain();
+    const owner = ownerKey(guildId, userId);
+    const filter = liveOwnerFilter(owner);
+    try {
+        const total = await memories.countDocuments(filter);
+        const rows = await memories.find(filter)
+            .sort({ created_at: -1, id: -1 })
+            .limit(MEMORY_EXPORT_MAX)
+            .toArray();
+        noteMemoryReadOk();
+        const items = rows.map(normalizeMemory).map((memory) => (containsCredential(String(memory.content || ''))
+            ? { ...memory, content: '[redacted: looked like a password, key, or token]' }
+            : memory));
+        return { total, items, truncated: total > items.length, limit: MEMORY_EXPORT_MAX };
+    } catch (error) {
+        noteMemoryError(error);
         throw error;
     }
 }
@@ -743,6 +935,7 @@ function _disconnectForTests() {
     warnings = null;
     counters = null;
     memories = null;
+    memoryPrefs = null;
     behaviors = null;
     ytGreeted = null;
     ytBans = null;
@@ -764,6 +957,13 @@ module.exports = {
     remember,
     getMemory,
     updateMemory,
+    getMemoryPreference,
+    setMemoryPreference,
+    recallIfEnabled,
+    listMemories,
+    searchMemories,
+    exportMemories,
+    containsInstructionPayload,
     recall,
     recallRecent,
     pruneOldMemories,
@@ -792,7 +992,11 @@ module.exports = {
     tierFromScore,
     scoreEvents,
     MemoryValidationError,
+    MemoryDisabledError,
     MEMORY_MAX_LENGTH,
+    MEMORY_SEARCH_MAX_LENGTH,
+    MEMORY_EXPORT_MAX,
+    MEMORY_RETENTION_MS,
     MEMORY_SCHEMA_VERSION,
     _disconnectForTests
 };

@@ -41,10 +41,17 @@ const slashActionByCommand = new Map([
     ['join', 'join_voice'],
     ['kick', 'kick_member'],
     ['ban', 'ban_member'],
-    ['memory', 'memory_status'],
+    // /memory has its own handler (src/memory/commands.js), not an intent.
     ['reputation', 'behavior_status'],
     ['help', 'bot_help']
 ]);
+
+const MEMORY_TYPE_CHOICES = [
+    { name: 'Fact', value: 'fact' },
+    { name: 'Preference', value: 'preference' },
+    { name: 'Event', value: 'event' },
+    { name: 'Context', value: 'context' }
+];
 
 function buildDefinitions() {
     return [
@@ -98,13 +105,32 @@ function buildDefinitions() {
                 .setDescription('Member to ban')
                 .setRequired(true))
             .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers),
+        // Member-facing (no default permission): every subcommand works on the
+        // caller's own memories only. `diagnostics` keeps the old admin view,
+        // still gated server-side by the router's owner/admin check.
         new SlashCommandBuilder()
             .setName('memory')
-            .setDescription('Owner/admin: inspect ZiGBoT persistent memory (live MongoDB state)')
-            .addUserOption((option) => option
-                .setName('member')
-                .setDescription('Optional: count stored memories for this member'))
-            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+            .setDescription('Your ZiGBoT memory in this server (private replies)')
+            .addSubcommand((sub) => sub.setName('status').setDescription('Is memory on for you, and what can be stored'))
+            .addSubcommand((sub) => sub.setName('view').setDescription('List your stored memories')
+                .addIntegerOption((option) => option.setName('page').setDescription('Page number').setMinValue(1).setMaxValue(100)))
+            .addSubcommand((sub) => sub.setName('search').setDescription('Search your stored memories')
+                .addStringOption((option) => option.setName('query').setDescription('Text to look for').setMaxLength(100).setRequired(true)))
+            .addSubcommand((sub) => sub.setName('remember').setDescription('Save something about you')
+                .addStringOption((option) => option.setName('text').setDescription('What to remember (max 500 characters)').setMaxLength(500).setRequired(true))
+                .addStringOption((option) => option.setName('type').setDescription('Kind of memory (default: fact)').addChoices(...MEMORY_TYPE_CHOICES)))
+            .addSubcommand((sub) => sub.setName('correct').setDescription('Fix one of your memories')
+                .addIntegerOption((option) => option.setName('id').setDescription('Its #id from /memory view').setMinValue(1).setRequired(true))
+                .addStringOption((option) => option.setName('text').setDescription('The corrected text (max 500 characters)').setMaxLength(500).setRequired(true))
+                .addStringOption((option) => option.setName('type').setDescription('Kind of memory').addChoices(...MEMORY_TYPE_CHOICES)))
+            .addSubcommand((sub) => sub.setName('forget').setDescription('Delete one of your memories')
+                .addIntegerOption((option) => option.setName('id').setDescription('Its #id from /memory view').setMinValue(1).setRequired(true)))
+            .addSubcommand((sub) => sub.setName('clear').setDescription('Delete all your memories in this server (asks to confirm)'))
+            .addSubcommand((sub) => sub.setName('on').setDescription('Let ZiGBoT save and use your memories here'))
+            .addSubcommand((sub) => sub.setName('off').setDescription('Stop ZiGBoT saving or using your memories here'))
+            .addSubcommand((sub) => sub.setName('export').setDescription('Download your memories from this server as a file'))
+            .addSubcommand((sub) => sub.setName('diagnostics').setDescription('Owner/admin: memory system diagnostics')
+                .addUserOption((option) => option.setName('member').setDescription('Optional: check this member'))),
         new SlashCommandBuilder()
             .setName('reputation')
             .setDescription('Owner/admin: view a member\'s behavior record and standing')
@@ -183,6 +209,27 @@ function buildDefinitions() {
 // registered in home servers, so other servers never even see them.
 const YOUTUBE_COMMANDS = new Set(['watch', 'unwatch', 'ytstatus', 'ytgreet', 'ytmod', 'ytroast', 'ytretry']);
 
+// One rejected definition fails a whole bulk set, so failures are logged, not
+// swallowed. Only status/code and a bounded, scrubbed message are printed —
+// never the bot token, connection strings, or the request payload.
+function describeRegistrationError(error, secrets = []) {
+    let message = String(error?.message || 'Unknown error');
+    for (const secret of secrets) {
+        if (typeof secret === 'string' && secret.length >= 8) message = message.split(secret).join('[redacted]');
+    }
+    message = message
+        .replace(/[A-Za-z0-9_-]{23,28}\.[A-Za-z0-9_-]{6,7}\.[A-Za-z0-9_-]{27,}/g, '[redacted-token]')
+        .replace(/mongodb(?:\+srv)?:\/\/\S+/gi, '[redacted-uri]')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 300);
+    return [error?.status && `status=${error.status}`, error?.code && `code=${error.code}`, message].filter(Boolean).join(' | ');
+}
+
+function logRegistrationFailure(scope, error, settings) {
+    console.error(`[ZiGBoT SLASH] ${scope} registration failed: ${describeRegistrationError(error, [settings?.discordToken])}`);
+}
+
 async function registerSlashCommands(client, settings) {
     const json = buildDefinitions();
     const general = json.filter((command) => !YOUTUBE_COMMANDS.has(command.name));
@@ -190,13 +237,20 @@ async function registerSlashCommands(client, settings) {
     if (settings.slashCommandGuildIds.length > 0) {
         for (const guildId of settings.slashCommandGuildIds) {
             const guild = client.guilds.cache.get(guildId);
-            if (guild) await guild.commands.set(isHomeGuild(guild, settings) ? json : general).catch(() => {});
+            if (guild) {
+                await guild.commands.set(isHomeGuild(guild, settings) ? json : general)
+                    .catch((error) => logRegistrationFailure(`Guild ${guildId}`, error, settings));
+            }
         }
         return;
     }
-    await client.application.commands.set(general).catch(() => {});
+    await client.application.commands.set(general)
+        .catch((error) => logRegistrationFailure('Global command', error, settings));
     for (const guild of client.guilds.cache.values()) {
-        if (isHomeGuild(guild, settings)) await guild.commands.set(youtube).catch(() => {});
+        if (isHomeGuild(guild, settings)) {
+            await guild.commands.set(youtube)
+                .catch((error) => logRegistrationFailure(`YouTube (guild ${guild.id})`, error, settings));
+        }
     }
 }
 
@@ -217,7 +271,7 @@ async function interactionToIntent(interaction) {
         const user = interaction.options.getUser('member', true);
         return { action, target: `<@${user.id}>` };
     }
-    if (action === 'memory_status' || action === 'behavior_status') {
+    if (action === 'behavior_status') {
         // Optional member: only set when the owner picked one.
         const user = interaction.options.getUser('member');
         return user ? { action, target: `<@${user.id}>` } : { action };
@@ -290,6 +344,7 @@ async function runYouTubeInteraction(interaction, settings, client) {
 module.exports = {
     buildDefinitions,
     registerSlashCommands,
+    describeRegistrationError,
     interactionToIntent,
     slashActionByCommand,
     YOUTUBE_COMMANDS,

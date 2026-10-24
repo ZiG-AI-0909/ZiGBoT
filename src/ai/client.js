@@ -1,3 +1,4 @@
+const { escapeMarkdown } = require('discord.js');
 const { createChatClient, checkProviders } = require('./providers');
 const { normalizeAction, actionCatalog } = require('../tools/router');
 const { composeSystemPrompt } = require('../../dashboard/lib/shared/prompt');
@@ -167,25 +168,18 @@ function buildMemoryAnswer({ capabilities = null, memories = null, lastError = n
     return `Pulled live from MongoDB — everything I have stored for you (${memories.length}):\n${lines.join('\n')}\nThat's the complete list. Nothing else exists in my long-term memory about you.`;
 }
 
-function buildOwnerMemoryAnswer({ targetName, memories = [], totalCount = 0 } = {}) {
-    if (totalCount === 0) {
-        return `I have no stored memories about ${targetName} from the last 30 days.`;
+// Owner lookup about another member: counts and status ONLY. Memory contents
+// are private to the member and never appear here. preference: on | off | unknown.
+function buildOwnerMemoryAnswer({ targetName, totalCount = 0, preference = 'unknown' } = {}) {
+    const name = escapeMarkdown(String(targetName || 'That member'));
+    if (preference === 'off') {
+        return `${name} has turned personal memory off in this server, so I am not sharing any memory details about them.`;
     }
-
-    const entries = [...memories].reverse();
-    const header = `Recent memories about ${targetName} (${totalCount} stored in the last 30 days):\n`;
-    const lines = [];
-    let length = header.length;
-    for (const memory of entries) {
-        const content = String(memory.content || '').replace(/\s+/g, ' ').slice(0, 240);
-        const line = `• [${memory.type}] ${content}${memory.content?.length > 240 ? '…' : ''}\n`;
-        if (length + line.length > 1750) break;
-        lines.push(line);
-        length += line.length;
+    if (preference !== 'on') {
+        return `I could not verify ${name}'s memory preference, so I am not sharing any memory details about them right now.`;
     }
-    const omitted = totalCount - lines.length;
-    if (omitted > 0) lines.push(`• …and ${omitted} more; ask again for the latest memories.`);
-    return `${header}${lines.join('')}`.slice(0, 1900);
+    const count = Number(totalCount) || 0;
+    return `Memory status for ${name}: personal memory is ON, with ${count} stored memor${count === 1 ? 'y' : 'ies'} from the last 30 days. The contents are private to ${name}; they can review them with \`/memory view\`.`;
 }
 
 // ---- Behavior accountability: reputation grounding ----

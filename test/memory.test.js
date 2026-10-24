@@ -532,18 +532,26 @@ test('memory collection has automatic 30-day TTL cleanup and startup removes leg
     assert.deepEqual(store.docs, [], 'stale legacy records are removed at startup');
 });
 
-test('owner memory summary reports stored entries and handles an empty history', () => {
+test('owner memory lookup reports counts and status only, never contents', () => {
     const answer = buildOwnerMemoryAnswer({
         targetName: 'Ravi',
         totalCount: 2,
-        memories: [
-            { type: 'fact', content: 'Ravi lives in Pune' },
-            { type: 'preference', content: 'Ravi likes chess' }
-        ]
+        preference: 'on',
+        // Even if a caller passed memories, they must never be rendered.
+        memories: [{ type: 'fact', content: 'Ravi lives in Pune' }]
     });
-    assert.match(answer, /Ravi \(2 stored in the last 30 days\)/);
-    assert.match(answer, /\[preference\] Ravi likes chess/);
-    assert.match(buildOwnerMemoryAnswer({ targetName: 'Ravi' }), /no stored memories.*last 30 days/i);
+    assert.match(answer, /ON, with 2 stored memories/);
+    assert.doesNotMatch(answer, /Pune/);
+
+    const off = buildOwnerMemoryAnswer({ targetName: 'Ravi', totalCount: 5, preference: 'off' });
+    assert.match(off, /turned personal memory off/);
+    assert.doesNotMatch(off, /5/);
+
+    const unknown = buildOwnerMemoryAnswer({ targetName: 'Ravi', totalCount: 5 });
+    assert.match(unknown, /could not verify/);
+    assert.doesNotMatch(unknown, /5/);
+
+    assert.match(buildOwnerMemoryAnswer({ targetName: '**Bold**', totalCount: 0, preference: 'on' }), /\\\*\\\*Bold\\\*\\\*/);
 });
 
 // ---------- Passive capture + topic keywords ----------
