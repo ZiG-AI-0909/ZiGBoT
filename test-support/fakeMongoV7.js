@@ -3,15 +3,18 @@
  * (findOneAndUpdate resolves to the document itself, not { value }). Lives
  * outside test/ so `node --test` does not run it as a test file.
  *
- * Supports the operator subset brain.js uses: equality, $lt, $gte, $in,
- * $regex/$options, $set, $setOnInsert, $inc, upsert, sort/skip/limit.
+ * Supports the operator subset brain.js uses: equality, $lt, $gte, $in, $ne,
+ * $regex/$options, $set, $setOnInsert, $inc, upsert, insertMany,
+ * sort/skip/limit.
  */
 function matches(doc, filter) {
     return Object.entries(filter).every(([key, expected]) => {
         if (expected !== null && typeof expected === 'object' && !(expected instanceof Date)) {
             const ops = Object.keys(expected);
-            if (!ops.every((op) => ['$lt', '$gte', '$regex', '$options', '$in'].includes(op))) return false;
+            if (!ops.every((op) => ['$lt', '$gte', '$regex', '$options', '$in', '$ne'].includes(op))) return false;
             if (expected.$in !== undefined && !expected.$in.includes(doc[key])) return false;
+            // Like MongoDB, $ne also matches documents missing the field.
+            if (Object.prototype.hasOwnProperty.call(expected, '$ne') && doc[key] === expected.$ne) return false;
             if (expected.$lt !== undefined && !(doc[key] < expected.$lt)) return false;
             if (expected.$gte !== undefined && !(doc[key] >= expected.$gte)) return false;
             if (expected.$regex !== undefined && !new RegExp(expected.$regex, expected.$options || '').test(String(doc[key] ?? ''))) return false;
@@ -44,9 +47,14 @@ function v7Client({ legacyFindOneAndUpdate = false } = {}) {
                 let doc = docs.find((d) => matches(d, filter));
                 let upserted = false;
                 if (!doc && options.upsert) { doc = plainFields(filter); docs.push(doc); upserted = true; }
+                if (doc && update.$inc) for (const [k, v] of Object.entries(update.$inc)) doc[k] = (doc[k] || 0) + v;
                 if (doc && update.$set) Object.assign(doc, update.$set);
                 if (doc && upserted && update.$setOnInsert) Object.assign(doc, update.$setOnInsert);
                 return { acknowledged: true, matchedCount: doc && !upserted ? 1 : 0, upsertedCount: upserted ? 1 : 0 };
+            },
+            async insertMany(newDocs) {
+                for (const doc of newDocs) docs.push({ ...doc });
+                return { acknowledged: true, insertedCount: newDocs.length };
             },
             async countDocuments(filter) { return docs.filter((d) => matches(d, filter)).length; },
             async deleteOne(filter) {

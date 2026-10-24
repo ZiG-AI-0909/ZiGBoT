@@ -138,6 +138,12 @@ function loadSettings() {
         // Passive long-term memory capture from ordinary text/voice messages.
         // OFF unless explicitly set: no automatic saves without consent controls.
         memoryAutoCapture: process.env.MEMORY_AUTO_CAPTURE === 'true',
+        // Opt-in conversation summaries (src/memory/summaries.js). OFF unless
+        // explicitly 'true'. MEMORY_SUMMARIES_GUILDS (server IDs) limits them
+        // to those servers; empty = every server the global switch allows.
+        memorySummariesEnabled: process.env.MEMORY_SUMMARIES_ENABLED === 'true',
+        memorySummariesGuilds: parseList(process.env.MEMORY_SUMMARIES_GUILDS),
+        groqSummaryModel: process.env.GROQ_SUMMARY_MODEL || 'llama-3.1-8b-instant',
         sttCommand: process.env.STT_COMMAND || '',
         sttArgs: parseArgs(process.env.STT_ARGS),
         ttsCommand: process.env.TTS_COMMAND || '',

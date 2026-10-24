@@ -228,6 +228,15 @@ function voiceNotify(message) {
     return channel?.send ? (content) => channel.send({ content, allowedMentions: { parse: [] } }) : null;
 }
 
+// Real state of the opt-in summaries feature for one server (diagnostics).
+function summariesDiagnostic(settings, guildId) {
+    if (!settings.memorySummariesEnabled) return 'OFF (MEMORY_SUMMARIES_ENABLED is not true)';
+    if (!settings.groqApiKey) return '⚠️ switched on, but GROQ_API_KEY is missing — not running';
+    const guilds = settings.memorySummariesGuilds || [];
+    if (guilds.length > 0 && !guilds.includes(String(guildId))) return 'ON, but not in this server (MEMORY_SUMMARIES_GUILDS)';
+    return 'ON in this server — opt-in per member with /memory summaries';
+}
+
 async function executeTool(message, settings, intent, context = {}) {
     if (!message.guild) return '❌ These tools only work inside a server.';
     let target = intent.target || intent.channel || intent.role || 'server';
@@ -566,7 +575,8 @@ async function executeTool(message, settings, intent, context = {}) {
                     `• Memory retrieval before replies: ${status.memoryRetrieval ? '✅ yes' : '⚠️ no — recall skipped'}`,
                     `• Memory writes after replies: ${!status.memoryWrite ? '❌ no — saves disabled' : settings.memoryAutoCapture ? '✅ yes (selective, credentials refused)' : '⏸️ automatic capture OFF (MEMORY_AUTO_CAPTURE) — only explicit /memory remember saves'}`,
                     `• Last successful write: ${status.lastWriteOkAt ? `<t:${Math.floor(status.lastWriteOkAt / 1000)}:R>` : 'none since start'} · last successful read: ${status.lastReadOkAt ? `<t:${Math.floor(status.lastReadOkAt / 1000)}:R>` : 'none since start'}`,
-                    '• Cross-member memory sharing: opt-in only (members choose with /memory share; members with memory off are excluded)'
+                    '• Cross-member memory sharing: opt-in only (members choose with /memory share; members with memory off are excluded)',
+                    `• Conversation summaries: ${summariesDiagnostic(settings, guild.id)}`
                 ];
                 if (status.lastError) lines.push(`• Last memory error: ${status.lastError}`);
                 else lines.push('• Last memory error: none');
@@ -584,8 +594,11 @@ async function executeTool(message, settings, intent, context = {}) {
                         if (preference && !preference.enabled) {
                             lines.push(`• Stored memories for ${label}: hidden — this member turned personal memory off`);
                         } else {
-                            const count = await brain.countMemories(guild.id, userId);
-                            lines.push(`• Stored memories for ${label}: **${count}**`);
+                            // Saved memories and automatic summaries are counted
+                            // separately; summary text is never shown here.
+                            const count = await brain.countMemories(guild.id, userId, { excludeSource: 'summary' });
+                            const summaries = await brain.countMemories(guild.id, userId, { source: 'summary' });
+                            lines.push(`• Stored memories for ${label}: **${count}** saved · **${summaries}** automatic summar${summaries === 1 ? 'y' : 'ies'}`);
                         }
                     } catch (error) {
                         lines.push(`• Stored memories for ${label}: ⚠️ lookup failed (${error.message}) — nothing shown`);

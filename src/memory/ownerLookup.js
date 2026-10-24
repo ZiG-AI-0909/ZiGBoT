@@ -14,8 +14,11 @@ async function ownerMemoryStatus({ brain, guildId, userId, targetName }) {
     } catch (error) {
         console.error(`[ZiGBoT MEMORY] Owner lookup preference check failed: ${error?.code || error?.name || 'Error'}`);
     }
-    const totalCount = preference === 'on' ? await brain.countMemories(guildId, userId) : 0;
-    return buildOwnerMemoryAnswer({ targetName, totalCount, preference });
+    if (preference !== 'on') return buildOwnerMemoryAnswer({ targetName, preference });
+    // Saved memories and automatic summaries are counted separately.
+    const totalCount = await brain.countMemories(guildId, userId, { excludeSource: 'summary' });
+    const summaryCount = await brain.countMemories(guildId, userId, { source: 'summary' });
+    return buildOwnerMemoryAnswer({ targetName, totalCount, summaryCount, preference });
 }
 
 module.exports = { ownerMemoryStatus };

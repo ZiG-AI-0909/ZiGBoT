@@ -5,15 +5,28 @@
  */
 
 // state: unavailable | server_off | off | failed | none | retrieved
-async function resolvePersonalMemory({ brain, guildId, userId, memoryAllowed, limit = 5 }) {
+// summariesEnabled: the summaries feature is on for this server. Automatic
+// summaries are added only for members who opted in (summariesActive: true);
+// otherwise the result has no summary fields at all.
+async function resolvePersonalMemory({ brain, guildId, userId, memoryAllowed, limit = 5, summariesEnabled = false, summaryLimit = 3 }) {
     if (!guildId || !brain.isMemoryAvailable()) return { state: 'unavailable', memories: null };
     if (!memoryAllowed) return { state: 'server_off', memories: null };
     try {
         const personal = await brain.recallIfEnabled(guildId, userId, limit);
         if (!personal.enabled) return { state: 'off', memories: null };
-        return personal.memories.length > 0
+        const base = personal.memories.length > 0
             ? { state: 'retrieved', memories: personal.memories }
             : { state: 'none', memories: [] };
+        if (!summariesEnabled) return base;
+        const preference = await brain.getMemoryPreference(guildId, userId);
+        if (!preference.enabled || !preference.summaries) return base;
+        const summaries = await brain.recallSummaries(guildId, userId, summaryLimit);
+        return {
+            state: personal.memories.length > 0 || summaries.length > 0 ? 'retrieved' : 'none',
+            memories: personal.memories,
+            summaries,
+            summariesActive: true
+        };
     } catch (error) {
         // Preference or recall failure: fail closed, and say so.
         console.error(`[ZiGBoT MEMORY] Recall failed: ${error?.code || error?.name || 'Error'}`);

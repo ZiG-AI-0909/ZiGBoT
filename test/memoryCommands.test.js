@@ -420,7 +420,8 @@ test('off persists across a restart and blocks retrieval; on re-enables it', asy
 
 test('preference defaults to on, and a corrupt stored value counts as off', async () => {
     await setup();
-    assert.deepEqual(await brain.getMemoryPreference('g1', 'fresh'), { enabled: true, stored: false, updated_at: null });
+    // Summaries are opt-in: a fresh member is memory ON, summaries OFF.
+    assert.deepEqual(await brain.getMemoryPreference('g1', 'fresh'), { enabled: true, summaries: false, stored: false, updated_at: null });
     brain._disconnectForTests();
     const client = v7Client();
     client.collection('memory_prefs').docs.push({ guildId: 'g1', userId: 'odd', enabled: 'yes' });
@@ -630,12 +631,12 @@ test('memory text never appears in logs when commands fail', async () => {
 
 // ---------- slash definition compatibility ----------
 
-test('/memory is a member-facing command with its twelve subcommands', () => {
+test('/memory is a member-facing command with its thirteen subcommands', () => {
     const memory = buildDefinitions().find((command) => command.name === 'memory');
     assert.equal(memory.default_member_permissions ?? null, null, 'members must be able to see /memory');
     assert.deepEqual(
         memory.options.map((option) => option.name),
-        ['status', 'view', 'search', 'remember', 'correct', 'forget', 'share', 'clear', 'on', 'off', 'export', 'diagnostics']
+        ['status', 'view', 'search', 'remember', 'correct', 'forget', 'share', 'summaries', 'clear', 'on', 'off', 'export', 'diagnostics']
     );
     for (const sub of memory.options) assert.equal(sub.type, 1, `${sub.name} must be a subcommand`);
     const remember = memory.options.find((option) => option.name === 'remember');

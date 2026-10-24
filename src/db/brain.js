@@ -21,6 +21,7 @@ let ytGreeted = null;
 let ytBans = null;
 let ytNoRoast = null;
 let ytQuota = null;
+let summaryUsage = null;
 let lastMemoryError = null;
 let lastBehaviorError = null;
 // "Connected" is not "working": these record the last operation that really
@@ -40,7 +41,15 @@ const MEMORY_RECALL_RECENT_CAP = 200;
 // Schema v2 (additive): new writes carry these fields. v1 documents (written
 // before them) are never rewritten; normalizeMemory() fills defaults on read.
 const MEMORY_SCHEMA_VERSION = 2;
-const MEMORY_SOURCES = new Set(['explicit', 'auto-text', 'auto-voice']);
+// 'summary' rows are written only by saveSummaryFacts (opt-in conversation
+// summaries); remember() never accepts it.
+const MEMORY_SOURCES = new Set(['explicit', 'auto-text', 'auto-voice', 'summary']);
+const SUMMARY_SOURCE = 'summary';
+const MEMORY_SUMMARY_CAP = 20;
+const MEMORY_SUMMARY_BATCH_MAX = 3;
+const MEMORY_SUMMARY_DEDUPE_THRESHOLD = 0.8;
+const MEMORY_SUMMARY_DEDUPE_SCAN = 200;
+const SUMMARY_USAGE_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 // personal: used only in replies to its owner. guild: the owner explicitly
 // shared it with this one server ("server happenings").
 const MEMORY_SCOPES = new Set(['personal', 'guild']);
@@ -166,6 +175,7 @@ async function connectBrain(uri, { client: injectedClient = null, dbName = 'zigb
     const nextYtBans = db.collection('ytBans');
     const nextYtNoRoast = db.collection('ytNoRoast');
     const nextYtQuota = db.collection('ytQuota');
+    const nextSummaryUsage = db.collection('summary_usage');
 
     // Clean up records created before the TTL field was added, and enforce the
     // retention boundary immediately when the bot starts.
@@ -191,6 +201,9 @@ async function connectBrain(uri, { client: injectedClient = null, dbName = 'zigb
     await nextYtNoRoast.createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 });
     await nextYtQuota.createIndex({ pacificDate: 1 }, { unique: true });
     await nextYtQuota.createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 });
+    // Daily summariser call/save counters (one row per day+key, auto-expiring).
+    await nextSummaryUsage.createIndex({ day: 1, key: 1 }, { unique: true });
+    await nextSummaryUsage.createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 });
 
     // Everything succeeded — swap the live state over in one go.
     client = newClient;
@@ -204,6 +217,7 @@ async function connectBrain(uri, { client: injectedClient = null, dbName = 'zigb
     ytBans = nextYtBans;
     ytNoRoast = nextYtNoRoast;
     ytQuota = nextYtQuota;
+    summaryUsage = nextSummaryUsage;
     lastMemoryError = null;
     lastBehaviorError = null;
     lastMemoryWriteOkAt = null;
@@ -346,6 +360,9 @@ async function remember(guildId, userId, content, type = 'fact', meta = {}) {
     const owner = ownerKey(guildId, userId);
     const text = validateMemoryContent(content, type);
     const source = meta.source === undefined ? 'auto-text' : meta.source;
+    if (source === SUMMARY_SOURCE) {
+        throw new MemoryValidationError('Summaries are saved only through saveSummaryFacts.');
+    }
     if (!MEMORY_SOURCES.has(source)) {
         throw new MemoryValidationError(`Memory source must be one of: ${[...MEMORY_SOURCES].join(', ')}.`);
     }
@@ -471,6 +488,8 @@ async function getMemoryPreference(guildId, userId) {
         noteMemoryReadOk();
         return {
             enabled: row ? row.enabled === true : true,
+            // Conversation summaries are opt-in: only a stored true counts.
+            summaries: row ? row.summaries === true : false,
             stored: Boolean(row),
             updated_at: row && Number.isFinite(row.updated_at) ? row.updated_at : null
         };
@@ -504,6 +523,33 @@ async function setMemoryPreference(guildId, userId, enabled) {
     }
 }
 
+// Opt-in for conversation summaries, separate from memory on/off. Creating the
+// preference document here must not turn memory off: a new document starts
+// with enabled: true, which is what "no document" already meant.
+async function setSummariesPreference(guildId, userId, summaries) {
+    requireBrain();
+    const owner = ownerKey(guildId, userId);
+    if (typeof summaries !== 'boolean') {
+        throw new MemoryValidationError('Summaries preference must be true or false.');
+    }
+    const now = Date.now();
+    try {
+        const result = await memoryPrefs.updateOne(
+            owner,
+            { $set: { summaries, summaries_updated_at: now }, $setOnInsert: { enabled: true, created_at: now, updated_at: now } },
+            { upsert: true }
+        );
+        if (result && result.acknowledged === false) {
+            throw new Error('Summaries preference write was not acknowledged by MongoDB.');
+        }
+        noteMemoryWriteOk();
+        return { summaries, updated_at: now };
+    } catch (error) {
+        noteMemoryError(error);
+        throw error;
+    }
+}
+
 // Personal memories for a reply, ONLY when the member has memory on. The one
 // gate for every reply retrieval path (text, voice, memory questions).
 // Off -> { enabled: false, memories: null }; lookup failure -> throws.
@@ -516,12 +562,32 @@ async function recallIfEnabled(guildId, userId, limit = MEMORY_DEFAULT_LIMIT) {
 }
 
 // The member's newest live memories, returned oldest-first, normalized.
+// Automatic summaries are excluded: they are retrieved separately (and only
+// for opted-in members) so they can never crowd out saved memories.
 async function recallRecords(guildId, userId, limit = MEMORY_DEFAULT_LIMIT) {
     requireBrain();
     const owner = ownerKey(guildId, userId);
     const capped = Math.max(1, Math.min(Number(limit) || MEMORY_DEFAULT_LIMIT, MEMORY_MAX_LIMIT));
     try {
-        const rows = await memories.find(liveOwnerFilter(owner))
+        const rows = await memories.find({ ...liveOwnerFilter(owner), source: { $ne: SUMMARY_SOURCE } })
+            .sort({ created_at: -1, id: -1 })
+            .limit(capped)
+            .toArray();
+        noteMemoryReadOk();
+        return rows.reverse().map(normalizeMemory);
+    } catch (error) {
+        noteMemoryError(error);
+        throw error;
+    }
+}
+
+// The member's newest live automatic summaries, oldest-first, normalized.
+async function recallSummaries(guildId, userId, limit = 3) {
+    requireBrain();
+    const owner = ownerKey(guildId, userId);
+    const capped = Math.max(1, Math.min(Number(limit) || 3, MEMORY_MAX_LIMIT));
+    try {
+        const rows = await memories.find({ ...liveOwnerFilter(owner), source: SUMMARY_SOURCE })
             .sort({ created_at: -1, id: -1 })
             .limit(capped)
             .toArray();
@@ -536,6 +602,7 @@ async function recallRecords(guildId, userId, limit = MEMORY_DEFAULT_LIMIT) {
 // Mark one of the member's own live memories as shared with this server
 // ('guild') or personal again. Owner-scoped like every other write: another
 // member's id matches nothing (null). Unsharing takes effect immediately.
+// Automatic summaries can never be shared.
 async function setMemoryScope(guildId, userId, id, scope) {
     requireBrain();
     const owner = ownerKey(guildId, userId);
@@ -544,15 +611,24 @@ async function setMemoryScope(guildId, userId, id, scope) {
         throw new MemoryValidationError(`Memory scope must be one of: ${[...MEMORY_SCOPES].join(', ')}.`);
     }
     try {
+        if (scope === 'guild') {
+            const current = await memories.findOne({ ...owner, id: numericId });
+            if (current && current.source === SUMMARY_SOURCE) {
+                throw new MemoryValidationError('Automatic summaries cannot be shared with the server.');
+            }
+        }
         const updated = await memories.findOneAndUpdate(
-            { ...liveOwnerFilter(owner), id: numericId },
+            // The source guard also holds if the row changed since the check.
+            scope === 'guild'
+                ? { ...liveOwnerFilter(owner), id: numericId, source: { $ne: SUMMARY_SOURCE } }
+                : { ...liveOwnerFilter(owner), id: numericId },
             { $set: { scope, updated_at: Date.now() } },
             { returnDocument: 'after', includeResultMetadata: false }
         );
         noteMemoryWriteOk();
         return updated ? normalizeMemory(updated) : null;
     } catch (error) {
-        noteMemoryError(error);
+        if (!(error instanceof MemoryValidationError)) noteMemoryError(error);
         throw error;
     }
 }
@@ -692,7 +768,9 @@ async function recall(guildId, userId, limit = MEMORY_DEFAULT_LIMIT) {
 }
 
 // scope: optional 'guild' to count only the member's shared memories.
-async function countMemories(guildId, userId, { scope = null } = {}) {
+// source: 'summary' counts only automatic summaries; excludeSource: 'summary'
+// counts everything else (the memories the member saved).
+async function countMemories(guildId, userId, { scope = null, source = null, excludeSource = null } = {}) {
     requireBrain();
     try {
         const filter = {
@@ -701,12 +779,143 @@ async function countMemories(guildId, userId, { scope = null } = {}) {
             created_at: { $gte: Date.now() - MEMORY_RETENTION_MS }
         };
         if (scope) filter.scope = scope;
+        if (source) filter.source = source;
+        else if (excludeSource) filter.source = { $ne: excludeSource };
         const count = await memories.countDocuments(filter);
         noteMemoryReadOk();
         return count;
     } catch (error) {
         noteMemoryError(error);
         throw error;
+    }
+}
+
+// ---- Opt-in conversation summaries ----
+
+function wordSet(text) {
+    return new Set((String(text || '').toLowerCase().match(/[\p{L}\p{N}']+/gu) || []).filter((word) => word.length >= 3));
+}
+
+function similarity(a, b) {
+    const left = wordSet(a);
+    const right = wordSet(b);
+    if (left.size === 0 || right.size === 0) return 0;
+    let shared = 0;
+    for (const word of left) if (right.has(word)) shared += 1;
+    return shared / (left.size + right.size - shared);
+}
+
+// Saves already-validated summary facts ([{ fact, type }], at most 3) for a
+// member. Consent is re-checked here, so turning memory or summaries off at
+// any point before the write stops it. Facts too similar to any live memory
+// (or to each other) are skipped. Rows are personal, unverified, never
+// shareable, and expire on the normal 30-day retention. A failed insert is
+// rolled back so nothing is half-saved; then the oldest summaries beyond
+// MEMORY_SUMMARY_CAP are removed (saved memories are never touched).
+async function saveSummaryFacts(guildId, userId, facts) {
+    requireBrain();
+    const owner = ownerKey(guildId, userId);
+    const candidates = (Array.isArray(facts) ? facts : []).slice(0, MEMORY_SUMMARY_BATCH_MAX).map(({ fact, type }) => {
+        const text = validateMemoryContent(fact, type);
+        if (containsInstructionPayload(text)) {
+            throw new MemoryValidationError('Summary fact reads like instructions; not saved.');
+        }
+        return { text, type };
+    });
+    const preference = await getMemoryPreference(owner.guildId, owner.userId);
+    if (!preference.enabled || !preference.summaries) {
+        throw new MemoryDisabledError('Conversation summaries are not turned on for this member in this server.');
+    }
+    try {
+        const existing = await memories.find(liveOwnerFilter(owner))
+            .sort({ created_at: -1, id: -1 })
+            .limit(MEMORY_SUMMARY_DEDUPE_SCAN)
+            .toArray();
+        const known = existing.map((row) => row.content);
+        const kept = [];
+        let skipped = 0;
+        for (const candidate of candidates) {
+            if ([...known, ...kept.map((item) => item.text)].some((text) => similarity(text, candidate.text) >= MEMORY_SUMMARY_DEDUPE_THRESHOLD)) {
+                skipped += 1;
+            } else {
+                kept.push(candidate);
+            }
+        }
+        noteMemoryReadOk();
+        if (kept.length === 0) return { saved: [], skipped, evicted: 0 };
+
+        const now = Date.now();
+        const docs = [];
+        for (const { text, type } of kept) {
+            docs.push({
+                ...owner,
+                content: text,
+                type,
+                author_name: null,
+                keyword: null,
+                created_at: now,
+                expires_at: new Date(now + MEMORY_RETENTION_MS),
+                updated_at: now,
+                scope: 'personal',
+                source: SUMMARY_SOURCE,
+                verified: false,
+                schema_version: MEMORY_SCHEMA_VERSION,
+                id: await nextSequence('memory_id')
+            });
+        }
+        try {
+            const inserted = await memories.insertMany(docs, { ordered: true });
+            if (inserted && inserted.acknowledged === false) {
+                throw new Error('Summary write was not acknowledged by MongoDB.');
+            }
+        } catch (insertError) {
+            // Undo any partial insert so a failure never leaves half a batch.
+            await memories.deleteMany({ ...owner, source: SUMMARY_SOURCE, id: { $in: docs.map((doc) => doc.id) } }).catch(() => {});
+            throw insertError;
+        }
+        noteMemoryWriteOk();
+
+        let evicted = 0;
+        try {
+            const live = await memories.find({ ...liveOwnerFilter(owner), source: SUMMARY_SOURCE })
+                .sort({ created_at: 1, id: 1 })
+                .toArray();
+            const overflow = live.length - MEMORY_SUMMARY_CAP;
+            if (overflow > 0) {
+                const ids = live.slice(0, overflow).map((row) => row.id);
+                const result = await memories.deleteMany({ ...owner, source: SUMMARY_SOURCE, id: { $in: ids } });
+                evicted = result.deletedCount || 0;
+            }
+        } catch (capError) {
+            console.error(`[ZiGBoT MEMORY] Summary cap cleanup skipped: ${capError?.code || capError?.name || 'Error'}`);
+        }
+        return { saved: docs.map(normalizeMemory), skipped, evicted };
+    } catch (error) {
+        noteMemoryError(error);
+        throw error;
+    }
+}
+
+// Daily summariser usage, kept in MongoDB so a restart cannot reset the caps.
+// day: 'YYYY-MM-DD' (UTC); keys: e.g. 'global', 'guild:<id>', 'member:<g>:<u>'.
+async function getSummaryUsage(day, keys) {
+    requireBrain();
+    const rows = await summaryUsage.find({ day: String(day), key: { $in: keys.map(String) } }).toArray();
+    const usage = Object.fromEntries(keys.map((key) => [key, { calls: 0, saved: 0 }]));
+    for (const row of rows) usage[row.key] = { calls: Number(row.calls) || 0, saved: Number(row.saved) || 0 };
+    return usage;
+}
+
+async function addSummaryUsage(day, key, { calls = 0, saved = 0 } = {}) {
+    requireBrain();
+    const now = Date.now();
+    const result = await summaryUsage.updateOne(
+        { day: String(day), key: String(key) },
+        { $inc: { calls, saved }, $set: { updated_at: now, expires_at: new Date(now + SUMMARY_USAGE_TTL_MS) }, $setOnInsert: { created_at: now } },
+        { upsert: true }
+    );
+    if (result && result.acknowledged === false) {
+        throw new Error('Summary usage write was not acknowledged by MongoDB.');
     }
 }
 
@@ -1034,6 +1243,7 @@ function _disconnectForTests() {
     ytBans = null;
     ytNoRoast = null;
     ytQuota = null;
+    summaryUsage = null;
     lastMemoryError = null;
     lastBehaviorError = null;
     lastMemoryWriteOkAt = null;
@@ -1052,6 +1262,11 @@ module.exports = {
     updateMemory,
     getMemoryPreference,
     setMemoryPreference,
+    setSummariesPreference,
+    recallSummaries,
+    saveSummaryFacts,
+    getSummaryUsage,
+    addSummaryUsage,
     recallIfEnabled,
     recallRecords,
     recallShared,
@@ -1060,6 +1275,7 @@ module.exports = {
     searchMemories,
     exportMemories,
     containsInstructionPayload,
+    containsCredential,
     recall,
     recallRecent,
     pruneOldMemories,
@@ -1089,6 +1305,9 @@ module.exports = {
     scoreEvents,
     MemoryValidationError,
     MemoryDisabledError,
+    SUMMARY_SOURCE,
+    MEMORY_SUMMARY_CAP,
+    MEMORY_SUMMARY_BATCH_MAX,
     MEMORY_MAX_LENGTH,
     MEMORY_SEARCH_MAX_LENGTH,
     MEMORY_EXPORT_MAX,

@@ -23,7 +23,14 @@ const CLEAR_PREFIX = 'zigmem_clear_';
 const REPLY_MAX = 1900;
 const LINE_CONTENT_MAX = 180;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
-const WRITE_SUBCOMMANDS = new Set(['remember', 'correct', 'forget', 'clear', 'on', 'off', 'share']);
+const WRITE_SUBCOMMANDS = new Set(['remember', 'correct', 'forget', 'clear', 'on', 'off', 'share', 'summaries']);
+
+const SUMMARIES_ON_NOTICE = [
+    '✅ Automatic conversation summaries are **ON** for you in this server.',
+    'What happens: after you chat with me for a while (about 12 messages, or 10 quiet minutes), your own messages to me — never other people\'s, never my replies — are summarised into at most 3 short facts by the same AI provider that writes my replies (Groq). No transcript is stored.',
+    'Facts about health, religion, politics, sexuality, money, relationships, where you live, contact details, or passwords are dropped. Summaries are labelled automatic and unverified, kept for 30 days, private to you, and never shared.',
+    'See them with `/memory view`; delete them with `/memory forget` or `/memory clear`. `/memory summaries state:off` stops new ones and hides existing ones from my replies.'
+].join('\n');
 const NO_MENTIONS = { parse: [] };
 
 const UNAVAILABLE = '⚠️ Persistent memory is temporarily unavailable (database unreachable). Nothing was read or changed.';
@@ -40,6 +47,7 @@ function safeText(text, max = LINE_CONTENT_MAX) {
 }
 
 function sourceLabel(memory) {
+    if (memory.source === 'summary') return memory.verified ? '🤖 automatic summary, confirmed by you' : '🤖 automatic summary, unverified';
     if (memory.source === 'explicit') return 'saved by you';
     if (memory.verified) return 'confirmed by you';
     if (memory.source === 'legacy') return 'older record, unverified';
@@ -155,26 +163,37 @@ function createMemoryCommands({
             case 'on': return { content: await setPreferenceText(ctx, true) };
             case 'off': return { content: await setPreferenceText(ctx, false) };
             case 'share': return { content: await shareText(ctx) };
+            case 'summaries': return { content: await summariesText(ctx) };
             case 'export': return exportPayload(ctx);
             default: return { content: '❌ Unknown memory command.' };
         }
     }
 
-    async function statusText({ guildId, userId, memoryAllowedByServer }) {
+    async function statusText({ guildId, userId, memoryAllowedByServer, summariesAvailable = false }) {
         const lines = ['🧠 **Your memory in this server** (only you can see this)'];
         const available = brain.isMemoryAvailable();
         let preferenceLine = '⚠️ could not be checked, so it is treated as **OFF** until it can be verified';
         let countLine = '⚠️ could not be checked';
         let sharedLine = '⚠️ could not be checked';
+        let summariesLine = summariesAvailable
+            ? '⚠️ could not be checked, so treated as **OFF**'
+            : 'not available on this bot or in this server';
         if (available) {
             try {
                 const preference = await brain.getMemoryPreference(guildId, userId);
                 preferenceLine = preference.enabled ? '✅ **ON**' : '⏸️ **OFF** (you turned it off)';
+                if (summariesAvailable) {
+                    summariesLine = preference.summaries
+                        ? (preference.enabled ? '✅ **ON**' : 'opted in, but paused while your memory is off')
+                        : '**OFF** — opt in with `/memory summaries state:on`';
+                }
             } catch (error) {
                 logFailure('status preference', error);
             }
             try {
-                countLine = String(await brain.countMemories(guildId, userId));
+                const saved = await brain.countMemories(guildId, userId, { excludeSource: 'summary' });
+                const summaries = await brain.countMemories(guildId, userId, { source: 'summary' });
+                countLine = `${saved} saved · ${summaries} automatic summar${summaries === 1 ? 'y' : 'ies'}`;
                 sharedLine = String(await brain.countMemories(guildId, userId, { scope: 'guild' }));
             } catch (error) {
                 logFailure('status count', error);
@@ -185,6 +204,7 @@ function createMemoryCommands({
         lines.push(`• Server setting: ${memoryAllowedByServer ? 'memory allowed' : 'memory is turned off by this server\'s admins or for your roles'}`);
         lines.push(`• Database: ${available ? '✅ connected' : '❌ unavailable'} · last successful write ${relativeTime(status.lastWriteOkAt)} · last successful read ${relativeTime(status.lastReadOkAt)}`);
         lines.push(`• Automatic saving: ${autoCapture ? 'ON' : 'OFF — I only save what you add with `/memory remember`'}`);
+        lines.push(`• Conversation summaries: ${summariesLine}`);
         lines.push(`• Your stored memories here: ${countLine}`);
         lines.push(`• Shared with this server: ${sharedLine} — memories are personal unless you share one with \`/memory share\`. Shared ones can come up in replies to other members here while your memory is on; the server owner never sees contents.`);
         lines.push('• What can be stored: facts, preferences, events, and context, up to 500 characters each, kept for 30 days. Never passwords, keys, tokens, or instructions aimed at the bot.');
@@ -333,6 +353,35 @@ function createMemoryCommands({
             logFailure('share', error);
             return '❌ The database did not confirm the change, so the sharing setting may not have changed. Check `/memory view`.';
         }
+    }
+
+    // Opt in or out of automatic conversation summaries for this server.
+    // Turning off always works; turning on needs the feature here and memory on.
+    async function summariesText({ guildId, userId, options, summariesAvailable = false, memoryAllowedByServer, botEnabled }) {
+        const on = options.getString('state', true) === 'on';
+        if (on) {
+            if (!summariesAvailable) return 'ℹ️ Conversation summaries are not available on this bot or in this server, so nothing changed.';
+            if (!botEnabled) return '❌ ZiGBoT is switched off in this server by its admins, so nothing changed.';
+            if (!memoryAllowedByServer) return '❌ Memory is turned off in this server (or for your roles), so summaries cannot be turned on.';
+            let preference;
+            try {
+                preference = await brain.getMemoryPreference(guildId, userId);
+            } catch (error) {
+                logFailure('summaries preference', error);
+                return '❌ Could not check your memory setting, so nothing changed.';
+            }
+            if (!preference.enabled) return '⏸️ Your memory is OFF in this server. Turn it on with `/memory on` first.';
+        }
+        try {
+            await brain.setSummariesPreference(guildId, userId, on);
+        } catch (error) {
+            if (isKnownError(error, 'MemoryValidationError')) return `❌ ${error.message}`;
+            logFailure('summaries', error);
+            return '❌ The database did not confirm the change, so your summaries setting may not have changed. While it cannot be verified, no summaries are made or used.';
+        }
+        return on
+            ? SUMMARIES_ON_NOTICE
+            : '⏸️ Automatic conversation summaries are **OFF** for you in this server. No new ones will be made, and existing ones are no longer used in my replies. They stay in `/memory view` until they expire (30 days); `/memory forget` or `/memory clear` deletes them now.';
     }
 
     async function exportPayload({ guildId, userId }) {

@@ -59,6 +59,7 @@ const {
 const { createMemoryCommands } = require('./memory/commands');
 const { ownerMemoryStatus } = require('./memory/ownerLookup');
 const { resolvePersonalMemory, resolveSharedMemory, memoryQuestionReply } = require('./memory/retrieval');
+const { createSummaryService } = require('./memory/summaries');
 const { version: BOT_VERSION } = require('../package.json');
 
 function logAiError(error) {
@@ -100,6 +101,14 @@ const guildStore = new GuildConfigStore({
 });
 console.log(`[ZiGBoT MEMORY] Automatic memory capture: ${settings.memoryAutoCapture ? 'ON' : 'OFF'} (MEMORY_AUTO_CAPTURE)`);
 const memoryCommands = createMemoryCommands({ brain, autoCapture: settings.memoryAutoCapture });
+// Opt-in conversation summaries (off unless MEMORY_SUMMARIES_ENABLED=true).
+const summaryService = createSummaryService({ brain, settings });
+{
+    const summaryStatus = summaryService.status();
+    console.log(`[ZiGBoT MEMORY] Conversation summaries: ${summaryStatus.enabled
+        ? `ON (${summaryStatus.guilds === 'all' ? 'all servers' : `${summaryStatus.guilds.length} listed server(s)`}, model ${summaryStatus.model}, opt-in per member)`
+        : summaryStatus.switchOn ? 'OFF (GROQ_API_KEY missing)' : 'OFF (MEMORY_SUMMARIES_ENABLED)'}`);
+}
 
 console.log(`[ZiGBoT CONFIG] Per-server config mode: ${guildStore.mode}${guildStore.mode === 'legacy' ? ' (set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to enable the dashboard)' : ''}`);
 
@@ -262,6 +271,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 return {
                     botEnabled: !(ctx && ctx.config.enabled === false),
                     memoryAllowedByServer: !ctx || (ctx.config.memory_enabled !== false && hasFeature(behavior, 'memory')),
+                    summariesAvailable: summaryService.isEnabledForGuild(interaction.guild?.id),
                     runDiagnostics: (target) => runIntent(fakeMessage, gSettings, target ? { action: 'memory_status', target } : { action: 'memory_status' }, { warnStore })
                 };
             }
@@ -680,7 +690,9 @@ client.on(Events.MessageCreate, async (message) => {
             brain,
             guildId: message.guild?.id,
             userId: message.author.id,
-            memoryAllowed
+            memoryAllowed,
+            // Automatic summaries join only for members who opted in.
+            summariesEnabled: summaryService.isEnabledForGuild(message.guild?.id)
         });
         // Opt-in server happenings: only memories other members explicitly
         // shared with THIS server, from authors who still have memory on, are
@@ -724,6 +736,8 @@ client.on(Events.MessageCreate, async (message) => {
             sharedState: shared.state,
             sharedMemories: shared.memories,
             autoCapture: settings.memoryAutoCapture,
+            summaries: personal.summaries || null,
+            summariesActive: personal.summariesActive === true,
             reputation,
             guildPrompt,
             rateLimitMax: gSettings.aiRateLimitMax
@@ -731,6 +745,21 @@ client.on(Events.MessageCreate, async (message) => {
 
         await deliverAiReply(message, replyText, { log: logReplyPacing });
         speakReplyInVoice(message, gSettings, replyText, behavior);
+
+        // Opt-in summaries: hand over ONLY this member's own message, after
+        // the reply is out. Fire-and-forget: it never delays or breaks a reply.
+        if (message.guild) {
+            summaryService.observeMessage({
+                guildId: message.guild.id,
+                userId: message.author.id,
+                memoryAllowed,
+                content: userMessage,
+                attachmentCount: message.attachments?.size || 0,
+                embedCount: message.embeds?.length || 0,
+                snapshotCount: message.messageSnapshots?.size || 0,
+                replyToOtherMember: Boolean(message.reference?.messageId) && !isReplyToBot
+            }).catch((error) => console.error(`[ZiGBoT SUMMARY] observe failed: ${error?.code || error?.name || 'Error'}`));
+        }
 
         // Record message in conversation memory (full unsplit text)
         defaultMemory.addMessage(message.channel.id, 'user', userMessage, authorName);
