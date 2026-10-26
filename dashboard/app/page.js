@@ -140,6 +140,7 @@ export default async function Home({ searchParams }) {
                             <h3>{feature.title}</h3>
                             {feature.preview === 'identity' ? <IdentitySwap /> : null}
                             <p className="muted small">{feature.text}</p>
+                            {feature.attribution ? <p className="small l-attribution">{feature.attribution}</p> : null}
                         </Reveal>
                     ))}
                 </div>
@@ -189,6 +190,15 @@ export default async function Home({ searchParams }) {
                                 ))}
                             </tbody>
                         </table>
+                        <div className="stack l-templates" aria-labelledby="templates-title">
+                            <h3 id="templates-title">{landing.personaTemplates.title} <span className="pill pill-premium">{landing.PREMIUM_LABEL}</span></h3>
+                            <p className="muted small">{landing.personaTemplates.text}</p>
+                            <ul className="l-template-list">
+                                {landing.personaTemplates.items.map((t) => (
+                                    <li key={t.id}><span aria-hidden="true">{t.emoji}</span> <strong>{t.name}</strong> <span className="muted small">{t.description}</span></li>
+                                ))}
+                            </ul>
+                        </div>
                         <div className="row">
                             <a className="btn btn-primary btn-lg l-glow" href={dashboardHref}>Get Premium</a>
                             <span className="small muted">{current ? 'Pick your server, then open the 💎 Premium tab.' : 'Sign in with Discord, pick your server, then open the 💎 Premium tab.'}</span>
