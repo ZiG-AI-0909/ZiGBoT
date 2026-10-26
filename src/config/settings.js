@@ -156,7 +156,9 @@ function loadSettings() {
         // Never logged; only ever sent to api.giphy.com.
         giphyApiKey: (process.env.GIPHY_API_KEY || '').trim(),
         customIdentityGuilds: parseIdentityGuilds(process.env.CUSTOM_IDENTITY_GUILDS),
-        groqSummaryModel: process.env.GROQ_SUMMARY_MODEL || 'llama-3.1-8b-instant',
+        // Groq retired llama-3.1-8b-instant for free/developer keys on
+        // 2026-08-16; gpt-oss-20b is its listed replacement and supports JSON mode.
+        groqSummaryModel: process.env.GROQ_SUMMARY_MODEL || 'openai/gpt-oss-20b',
         sttCommand: process.env.STT_COMMAND || '',
         sttArgs: parseArgs(process.env.STT_ARGS),
         ttsCommand: process.env.TTS_COMMAND || '',
