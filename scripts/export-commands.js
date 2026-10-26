@@ -73,7 +73,7 @@ const TALK = [
     { message: '@ZiGBoT what can you do?', kind: 'action', action: 'bot_help', what: 'Lists what ZiGBoT can do.' },
     { message: '@ZiGBoT what do you remember about me?', kind: 'memory-question', what: 'Says how many memories it has saved for you here, as a count only. Use /memory view to see them privately.' },
     { message: "@ZiGBoT what's my reputation?", kind: 'reputation-question', what: 'Shows your recent behaviour record in this server, if the server has it turned on.' },
-    { message: '@ZiGBoT who made you?', kind: 'creator-question', what: 'Explains who made ZiGBoT.' }
+    { message: '@ZiGBoT who made you?', kind: 'creator-question', what: "A quick, casual answer in this server's tone and language: ZiG made ZiGBoT, with a link to his work." }
 ];
 
 const OPTION_TYPES = { 3: 'text', 4: 'number', 5: 'yes/no', 6: 'member', 7: 'channel', 8: 'role', 10: 'number' };

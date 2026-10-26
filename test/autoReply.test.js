@@ -4,9 +4,9 @@ const { detectTrigger, TriggerTracker } = require('../src/ai/triggerDetector');
 const { ConversationMemory } = require('../src/ai/memory');
 const { isGentleMember, normalizeRoleName, getMemberGender, isNonGentleMember } = require('../src/ai/roleDetector');
 const { loadSettings } = require('../src/config/settings');
-const { isCreatorQuestion, creatorResponse, creatorWhyResponse, creatorHowResponse, getCreatorResponse, getSystemPrompt, savageInstructions, gentleInstructions, isCrisisMessage, crisisResponse, moderateReplyText } = require('../src/ai/client');
+const { isCreatorQuestion, getCreatorResponse, CREATOR_PORTFOLIO_URL, getSystemPrompt, savageInstructions, gentleInstructions, isCrisisMessage, crisisResponse, moderateReplyText } = require('../src/ai/client');
 
-test('creator questions identify ZiG and provide the portfolio details', () => {
+test('creator questions identify ZiG and give the portfolio link', () => {
     assert.equal(isCreatorQuestion('Who created you?'), true);
     assert.equal(isCreatorQuestion('who made this bot'), true);
     assert.equal(isCreatorQuestion('Who made it?'), true);
@@ -18,19 +18,10 @@ test('creator questions identify ZiG and provide the portfolio details', () => {
     assert.equal(isCreatorQuestion('How did ZiG build this bot?'), true);
     assert.equal(isCreatorQuestion('How does this bot play music?'), false);
     assert.equal(isCreatorQuestion('Tell me a joke'), false);
-    assert.match(creatorResponse, /ZiG/);
-    assert.match(creatorResponse, /creator/i);
-    assert.match(creatorResponse, /main owner/i);
-    assert.match(creatorResponse, /fun, stress relief/i);
-    assert.match(creatorResponse, /Discord\.js bot/i);
-    assert.match(creatorResponse, /1296202178263912448/);
-    assert.match(creatorResponse, /portfolio-eight-neon-70\.vercel\.app/);
-    assert.match(creatorResponse, /Bhavesh Kumar Tiwari/);
-    assert.equal(getCreatorResponse('Why did ZiG create you?'), creatorWhyResponse);
-    assert.equal(getCreatorResponse('How did ZiG build this bot?'), creatorHowResponse);
-    assert.notEqual(creatorWhyResponse, creatorHowResponse);
-    assert.match(creatorWhyResponse, /fun, stress relief/i);
-    assert.match(creatorHowResponse, /Discord\.js bot/i);
+    const answer = getCreatorResponse({ tone: 'neutral', language: 'English', rng: () => 0 });
+    assert.match(answer, /ZiG/);
+    assert.ok(answer.includes(CREATOR_PORTFOLIO_URL));
+    assert.equal(CREATOR_PORTFOLIO_URL, 'https://aibhaveshportfolio.vercel.app/');
     assert.match(savageInstructions, /maximum-intensity comedic insults/i);
     assert.match(savageInstructions, /No threats, doxxing, sexual harassment/i);
     assert.match(savageInstructions, /ZiG created you and is the main owner/i);

@@ -5,7 +5,7 @@
 **ZiGBoT** (v1.0.0) is a witty, stress-relieving Discord chat companion and auto-reply bot. It mingles with server members, lightens the mood with dry Gen-Z / Hinglish humor, and offers fun conversation to de-stress. Built on **Node.js** with **discord.js** and LLM integrations (**NVIDIA NIM** / OpenAI-compatible APIs).
 
 - **Personality:** Savage roast mode by default; gentle/wholesome mode for members with specific roles; JARVIS-like respect for the verified server owner.
-- **Creator:** Bhavesh Kumar Tiwari (ZiG) — https://portfolio-eight-neon-70.vercel.app/
+- **Creator:** Bhavesh Kumar Tiwari (ZiG) — https://aibhaveshportfolio.vercel.app/
 
 ---
 
@@ -77,7 +77,7 @@ test/                         # music, authorization, autoReply, router, p3 suit
 - **Gentle mode**: warm, wholesome, gender-neutral by default — for members with gentle roles (`she/her`, `gentleman`, `king`, `soft boy`, `queen`, … including fullwidth Unicode variants like `ｓｈｅ ﹒ ｈｅｒ`).
 - **Owner mode**: verified server owner gets a respectful "Sir"/JARVIS tone — unless they hold the `Users.heer` role, which forces roast mode.
 - **Gender pronouns** are only used when a member holds explicit `he/him` or `she/her` roles.
-- **Creator FAQ**: "Who created you? / Why did ZiG make you? / How was this bot built?" are answered locally (no LLM call) with creator attribution.
+- **Creator FAQ**: "Who created you? / Why did ZiG make you? / How was this bot built?" get a short, casual answer in the server's language and the member's tone (several variations, no AI call; a custom persona answers in its own voice), with the creator's portfolio link.
 
 ### 🛡️ Security & Administration
 - Text **and slash** entry points into the same permission-gated tool router.

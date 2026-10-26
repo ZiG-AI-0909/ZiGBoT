@@ -3,27 +3,13 @@ const { createChatClient, checkProviders } = require('./providers');
 const { normalizeAction, actionCatalog } = require('../tools/router');
 const { composeSystemPrompt } = require('../../dashboard/lib/shared/prompt');
 
-// Creator identity is configuration, not code (BOT_CREATOR_ID, falling back
-// to SERVER_OWNER_ID); the literal default keeps old deployments unchanged.
-const CREATOR_ID = process.env.BOT_CREATOR_ID || process.env.SERVER_OWNER_ID || '1296202178263912448';
-const creatorResponse = `ZiG is my creator and the main owner of this server. He made me to bring some fun, stress relief, and chaotic companionship to the server. Basically, he built ZiGBoT as a Discord.js bot, connected me to an AI model, and gave me my roast-and-support personality. His Discord ID is ${CREATOR_ID}; you can learn more about him at <https://portfolio-eight-neon-70.vercel.app/> - he is Bhavesh Kumar Tiwari, a frontend and product developer focused on React products, AI automation, e-commerce, and conversion-first product design.`;
+// "Who made you?" answers live in ./creator.js: short, in the server's
+// language and the member's tone, never calling ZiG this server's owner.
+const { creatorAnswer, creatorPersonaInstruction, withPortfolioLink, CREATOR_PORTFOLIO_URL } = require('./creator');
 
-const creatorWhyResponse = 'ZiG made me so the server could have a little fun, stress relief, and a bot that can actually hang out with everyone. Basically: less dry server, more chaos and good vibes.';
-const creatorHowResponse = 'Short version: ZiG built me as a Discord.js bot, connected me to an AI model, and gave me the roast-and-support personality you see here. He is the main owner of this server too.';
-
-function getCreatorResponse(message, { isHomeGuild = true } = {}) {
-    const text = String(message || '');
-    if (!isHomeGuild) return guestCreatorResponse(text);
-    if (/\bwhy\b/i.test(text)) return creatorWhyResponse;
-    if (/\bhow\b/i.test(text)) return creatorHowResponse;
-    return creatorResponse;
-}
-
-// In other people's servers ZiG is the creator, NOT the server owner.
-function guestCreatorResponse(text) {
-    if (/\bwhy\b/i.test(text)) return 'ZiG made me to bring fun, stress relief, and good company to Discord servers. This server\'s own admins decide how I behave here.';
-    if (/\bhow\b/i.test(text)) return 'Short version: ZiG built me as a Discord.js bot connected to an AI model. Each server\'s admins customise my personality and rules from the ZiGBoT dashboard.';
-    return `ZiG (Bhavesh Kumar Tiwari) created me — he built ZiGBoT as a Discord.js bot connected to an AI model. He is my creator, not the owner of this server; this server's own admins configure how I behave here. More about him: <https://portfolio-eight-neon-70.vercel.app/>`;
+/** A fixed "who made you" reply for a built-in tone (the owner gets the respectful one). */
+function getCreatorResponse({ tone = 'neutral', isOwner = false, language = '', rng = Math.random } = {}) {
+    return creatorAnswer({ tone: isOwner ? 'gentle' : tone, language, rng });
 }
 
 // Appended to the savage system prompt for a single reply when the user just
@@ -502,11 +488,21 @@ function createAiClient(settings) {
         async generate({ fast = false, userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, declineMode = false, userId = null, memoryState = null, memories = null, sharedState = 'skipped', sharedMemories = null, summaries = null, summariesActive = false, reputation = null, guildPrompt = null, rateLimitMax = null, gif = null }) {
             const plain = (text) => ({ text, gif: null });
             // guildPrompt = { config, behavior, isHomeGuild } in multi-server mode; null keeps the legacy prompt exactly.
-            if (isCreatorQuestion(userMessage)) return plain(getCreatorResponse(userMessage, { isHomeGuild: guildPrompt ? guildPrompt.isHomeGuild : true }));
+            const config = guildPrompt?.config || {};
+            const language = config.language ?? (guildPrompt ? '' : 'English-Hinglish mix');
+            // "Who made you?": built-in tones get a fixed reply (no AI call);
+            // a custom persona answers in its own voice from fixed facts, and
+            // falls back to a fixed reply if the AI cannot.
+            const creatorTurn = isCreatorQuestion(userMessage);
+            const creatorFallback = () => plain(getCreatorResponse({ tone: 'neutral', language }));
+            if (creatorTurn && !config.custom_system_prompt) {
+                return plain(getCreatorResponse({ tone: guildPrompt?.behavior?.isMinor ? 'gentle' : tone, isOwner, language }));
+            }
 
             // AI quota protection: applied per user before any LLM call.
             // rateLimitMax: the server's plan limit (Premium servers get more).
             if (rateLimiter && !rateLimiter.attempt(userId, Date.now(), { max: rateLimitMax })) {
+                if (creatorTurn) return creatorFallback();
                 const error = new Error('AI rate limit exceeded');
                 error.rateLimited = true;
                 throw error;
@@ -519,7 +515,8 @@ function createAiClient(settings) {
             // Excluded-category abuse at the bot: de-escalate, never match energy.
             if (declineMode) return plain(declineReplyText);
 
-            const systemPrompt = buildReplySystemPrompt({ tone, gender, isOwner, isNonGentle, comebackMode, guildPrompt }) + gifPromptBlock(gif);
+            const systemPrompt = buildReplySystemPrompt({ tone, gender, isOwner, isNonGentle, comebackMode, guildPrompt })
+                + (creatorTurn ? creatorPersonaInstruction(language) : gifPromptBlock(gif));
 
             // Memory status + rules go in the system prompt (code-written);
             // stored memory text goes only in the delimited data block of the
@@ -542,29 +539,36 @@ function createAiClient(settings) {
             // Voice chat (fast): reasoning models such as gpt-oss think briefly,
             // and a slow request is retried once after 30 s instead of the
             // SDK's long defaults.
-            const response = await client.chat.completions.create({
-                model: settings.aiModel,
-                messages,
-                temperature: 1,
-                top_p: 1,
-                max_tokens: fast ? 1024 : 4096,
-                stream: false
-            }, fast ? { timeout: 30_000, maxRetries: 1, reasoningLow: true, prefer: 'Groq' } : undefined);
+            let tagged;
+            try {
+                const response = await client.chat.completions.create({
+                    model: settings.aiModel,
+                    messages,
+                    temperature: 1,
+                    top_p: 1,
+                    max_tokens: fast ? 1024 : 4096,
+                    stream: false
+                }, fast ? { timeout: 30_000, maxRetries: 1, reasoningLow: true, prefer: 'Groq' } : undefined);
 
-
-            const content = response.choices?.[0]?.message?.content;
-            if (!content) throw new Error('AI returned an empty response.');
-            // Any GIF tag is removed here, requested or not, so it can never be shown or spoken.
-            const tagged = parseGifTag(cleanOutput(content), gif);
+                const content = response.choices?.[0]?.message?.content;
+                if (!content) throw new Error('AI returned an empty response.');
+                // Any GIF tag is removed here, requested or not, so it can never be shown or spoken.
+                tagged = parseGifTag(cleanOutput(content), creatorTurn ? null : gif);
+                if (!tagged.text) throw new Error('AI returned only reasoning, no answer.');
+            } catch (error) {
+                if (creatorTurn) return creatorFallback();
+                throw error;
+            }
             const cleaned = tagged.text;
-            if (!cleaned) throw new Error('AI returned only reasoning, no answer.');
 
             // Post-generation guardrail check: prompts alone are not a safety boundary.
             const moderated = moderateReplyText(cleaned);
             if (!moderated.allowed) {
                 console.error(`[ZiGBoT AI GUARDRAIL] Blocked reply (${moderated.reason}).`);
+                if (creatorTurn) return creatorFallback();
                 return plain('Nah, I am not saying that one. Ask me something else. 💀');
             }
+            if (creatorTurn) return plain(withPortfolioLink(moderated.text));
             return { text: moderated.text, gif: tagged.style ? { style: tagged.style, theme: tagged.theme } : null };
         },
 
@@ -586,15 +590,12 @@ module.exports = {
     crisisResponse,
     declineReplyText,
     moderateReplyText,
-    creatorResponse,
-    creatorWhyResponse,
-    creatorHowResponse,
     getCreatorResponse,
+    CREATOR_PORTFOLIO_URL,
     getSystemPrompt,
     buildReplySystemPrompt,
     gifPromptBlock,
     parseGifTag,
-    guestCreatorResponse,
     buildMemoryStatusBlock,
     buildMemoryDataBlock,
     buildReplyMessages,
