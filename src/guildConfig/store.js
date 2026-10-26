@@ -20,6 +20,8 @@ const {
     defaultGuildConfig,
     sanitizeStoredConfig,
     sanitizeStoredMappings,
+    LANGUAGE_VALUES,
+    DEFAULT_LANGUAGE,
     isPremiumActive,
     applyPlanToConfig,
     applyPlanToMappings,
@@ -251,7 +253,7 @@ class GuildConfigStore {
         if (!SNOWFLAKE.test(guildId)) throw new Error('Invalid server.');
         const ids = (list) => [...new Set((list || []).map(String).filter((id) => SNOWFLAKE.test(id) && id !== guildId))].slice(0, 10);
         const body = {
-            language: language === 'English' ? 'English' : 'Hinglish',
+            language: LANGUAGE_VALUES.includes(language) ? language : DEFAULT_LANGUAGE,
             owner_pronouns: SETUP_PRONOUNS.includes(ownerPronouns) ? ownerPronouns : null,
             male_role_ids: ids(maleRoleIds),
             female_role_ids: ids(femaleRoleIds),

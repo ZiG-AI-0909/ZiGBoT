@@ -11,6 +11,7 @@ const {
 const { destructiveActions } = require('./tools/router');
 const { isOwner } = require('./security/authorization');
 const { isHomeGuild } = require('./guildConfig/store');
+const { SUPPORTED_LANGUAGES } = require('../dashboard/lib/shared');
 const {
     isYouTubeReady,
     getYouTubeStatus,
@@ -169,7 +170,8 @@ function buildDefinitions({ identity = false } = {}) {
                 .setName('language')
                 .setDescription('English (English humour) or Hinglish (desi humour)')
                 .setRequired(true)
-                .addChoices({ name: 'English', value: 'English' }, { name: 'Hinglish', value: 'Hinglish' }))
+                // Same list as the dashboard dropdown and the config validator.
+                .addChoices(...SUPPORTED_LANGUAGES.map((l) => ({ name: l.label, value: l.value }))))
             .addStringOption((option) => option
                 .setName('owner_gender')
                 .setDescription("The server owner's gender")

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import IdentityTab from './IdentityTab';
+import LanguageSelect from './LanguageSelect';
 
 const TABS = [
     { id: 'behaviour', label: 'AI behaviour' },
@@ -118,9 +119,14 @@ function roleColor(color) {
 }
 
 export default function GuildEditor({ initial, meta }) {
+    // The form always holds a supported language (meta.languages). An old or
+    // unknown saved value is shown as the default and flagged until saved.
+    const languageValues = meta.languages.map((l) => l.value);
+    const withLanguage = (config) => (languageValues.includes(config.language) ? config : { ...config, language: meta.defaultLanguage });
+    const formOf = (config) => withLanguage(stripMeta(config));
     const [tab, setTab] = useState('behaviour');
     const [saved, setSaved] = useState(initial.config);
-    const [draft, setDraft] = useState(stripMeta(initial.config));
+    const [draft, setDraft] = useState(formOf(initial.config));
     const [savedMappings, setSavedMappings] = useState(initial.mappings);
     const [mappings, setMappings] = useState(initial.mappings);
     const [fieldErrors, setFieldErrors] = useState({});
@@ -134,9 +140,12 @@ export default function GuildEditor({ initial, meta }) {
     const channels = initial.channels;
     const roleById = useMemo(() => new Map(roles.map((r) => [r.id, r])), [roles]);
 
-    const configDirty = JSON.stringify(stripMeta(saved)) !== JSON.stringify(draft);
+    const configDirty = JSON.stringify(formOf(saved)) !== JSON.stringify(draft);
     const mappingsDirty = JSON.stringify(savedMappings) !== JSON.stringify(mappings);
     const dirty = configDirty || mappingsDirty;
+    // Saved language not on the list (old free text, "English-Hinglish mix", or never set).
+    const staleLanguage = languageValues.includes(saved.language) ? null : (saved.language || '');
+    const canSave = dirty || staleLanguage !== null;
 
     useEffect(() => {
         const warn = (e) => {
@@ -162,10 +171,10 @@ export default function GuildEditor({ initial, meta }) {
         setFieldErrors({});
         setMappingErrors([]);
         try {
-            if (configDirty) {
+            if (configDirty || staleLanguage !== null) {
                 const { config } = await api(`/api/guilds/${initial.guild.id}/config`, { method: 'PUT', body: { config: draft, expectedVersion: saved.version } });
                 setSaved(config);
-                setDraft(stripMeta(config));
+                setDraft(formOf(config));
             }
             if (mappingsDirty) {
                 const { mappings: next } = await api(`/api/guilds/${initial.guild.id}/roles`, { method: 'PUT', body: { mappings } });
@@ -189,7 +198,7 @@ export default function GuildEditor({ initial, meta }) {
     }
 
     function discard() {
-        setDraft(stripMeta(saved));
+        setDraft(formOf(saved));
         setMappings(savedMappings);
         setFieldErrors({});
         setMappingErrors([]);
@@ -201,7 +210,7 @@ export default function GuildEditor({ initial, meta }) {
             const { config } = await api(`/api/guilds/${initial.guild.id}/config/reset`, { method: 'POST' });
             if (config) {
                 setSaved(config);
-                setDraft(stripMeta(config));
+                setDraft(formOf(config));
             }
             setConfirmReset(false);
             toast('Settings reset to safe defaults. Role mappings were kept.');
@@ -247,7 +256,7 @@ export default function GuildEditor({ initial, meta }) {
             </div>
 
             <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
-                {tab === 'behaviour' ? <BehaviourTab draft={draft} saved={saved} set={set} errors={fieldErrors} meta={meta} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
+                {tab === 'behaviour' ? <BehaviourTab draft={draft} saved={saved} set={set} errors={fieldErrors} meta={meta} premium={premium} staleLanguage={staleLanguage} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'roles' ? <ServerSetupCard draft={draft} set={set} errors={fieldErrors} roles={roles} /> : null}
                 {tab === 'roles' ? <div style={{ marginTop: 16 }}><RolesTab roles={roles} roleById={roleById} mappings={mappings} setMappings={setMappings} errors={mappingErrors} meta={meta} premium={premium} onUpgrade={() => setTab('premium')} /></div> : null}
                 {tab === 'voice' ? <VoiceTab draft={draft} set={set} errors={fieldErrors} meta={meta} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
@@ -277,10 +286,12 @@ export default function GuildEditor({ initial, meta }) {
                 </div>
             </div>
 
-            {dirty ? (
+            {canSave ? (
                 <div className="savebar" role="region" aria-label="Unsaved changes">
                     <div className="inner">
-                        <span className="small">You have unsaved changes{mappingsDirty && configDirty ? ' (settings and roles)' : mappingsDirty ? ' (roles)' : ''}.</span>
+                        <span className="small">{dirty
+                            ? `You have unsaved changes${mappingsDirty && configDirty ? ' (settings and roles)' : mappingsDirty ? ' (roles)' : ''}.`
+                            : `This server's language needs saving: it will be set to ${draft.language}.`}</span>
                         <div className="row">
                             <button className="btn" onClick={discard} disabled={busy === 'save'}>Discard</button>
                             <button className="btn btn-primary" onClick={save} disabled={busy === 'save'}>{busy === 'save' ? 'Saving…' : 'Save changes'}</button>
@@ -301,7 +312,7 @@ function PremiumNote({ children, onUpgrade }) {
     );
 }
 
-function BehaviourTab({ draft, set, errors, meta, premium, onUpgrade }) {
+function BehaviourTab({ draft, set, errors, meta, premium, staleLanguage = null, onUpgrade }) {
     return (
         <div className="stack">
             <div className="card stack">
@@ -330,11 +341,19 @@ function BehaviourTab({ draft, set, errors, meta, premium, onUpgrade }) {
                 <TextArea id="rules" label="Server rules and restrictions" value={draft.server_rules} onChange={set('server_rules')} max={meta.limits.serverRules} error={errors.server_rules} placeholder="e.g. No spoilers for ongoing anime. Never discuss politics." />
             </div>
             <div className="card grid-2">
-                <div className="field">
-                    <label htmlFor="language">Language</label>
-                    <input id="language" type="text" value={draft.language || ''} maxLength={meta.limits.language + 10} onChange={(e) => set('language')(e.target.value)} placeholder="English or Hinglish" aria-invalid={errors.language ? 'true' : undefined} />
-                    <span className="help">“English” = English-only replies with international humour; “Hinglish” = Hinglish with desi humour. Anything else is passed to the AI as a preference.</span>
-                    {errors.language ? <span className="error">{errors.language}</span> : null}
+                <div>
+                    <LanguageSelect
+                        id="language"
+                        label="Language"
+                        help="The language ZiGBoT replies in here. /setup sets the same thing."
+                        options={meta.languages}
+                        value={draft.language}
+                        onChange={set('language')}
+                        notice={staleLanguage === null ? null : staleLanguage
+                            ? `This server had “${staleLanguage}” saved, which isn’t a supported choice. It’s shown as ${draft.language} and will be saved that way next time you save.`
+                            : `No language was chosen yet (ZiGBoT has been using its original English–Hindi mix). It’s shown as ${draft.language} and will be saved that way next time you save.`}
+                    />
+                    {errors.language ? <span className="error" role="alert">{errors.language}</span> : null}
                 </div>
                 <div className="field">
                     <label htmlFor="length">Reply length</label>

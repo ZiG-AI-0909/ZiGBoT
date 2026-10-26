@@ -10,6 +10,7 @@ const {
     FEATURE_KEYS, TONES, TIERS, PRONOUNS, RESPONSE_LENGTHS, LIMITS, VOICE_SPEAKERS, VOICE_LANGUAGES
 } = require('./constants');
 const { defaultGuildConfig } = require('./defaults');
+const { LANGUAGE_VALUES, DEFAULT_LANGUAGE } = require('./languages');
 
 const SNOWFLAKE = /^\d{17,20}$/;
 
@@ -142,7 +143,10 @@ function validateGuildConfig(input, ctx = {}) {
         custom_system_prompt: checkText(errors, 'custom_system_prompt', input.custom_system_prompt, LIMITS.customSystemPrompt),
         response_instructions: checkText(errors, 'response_instructions', input.response_instructions, LIMITS.responseInstructions),
         server_rules: checkText(errors, 'server_rules', input.server_rules, LIMITS.serverRules),
-        language: checkText(errors, 'language', input.language, LIMITS.language),
+        // Only the supported languages (lib/shared/languages.js) can be saved;
+        // '' = "not chosen yet" (a new server's default, which keeps the
+        // original persona), so the stored defaults stay valid.
+        language: input.language === '' || input.language === null ? '' : checkEnum(errors, 'language', input.language, LANGUAGE_VALUES, DEFAULT_LANGUAGE),
         response_style: checkText(errors, 'response_style', input.response_style, LIMITS.responseStyle),
         response_length: checkEnum(errors, 'response_length', input.response_length, RESPONSE_LENGTHS, base.response_length),
         respond_to_all: checkBool(errors, 'respond_to_all', input.respond_to_all, base.respond_to_all),

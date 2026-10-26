@@ -9,5 +9,6 @@ module.exports = {
     ...require('./personas'),
     ...require('./access'),
     ...require('./premium'),
-    ...require('./identity')
+    ...require('./identity'),
+    ...require('./languages')
 };

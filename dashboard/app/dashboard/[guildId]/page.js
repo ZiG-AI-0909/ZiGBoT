@@ -10,7 +10,7 @@ import { identityEnabledFor } from '@/lib/identity';
 
 export const dynamic = 'force-dynamic';
 
-const { FEATURES, LIMITS, TONES, TIERS, PRONOUNS, premiumPerks, FREE_LIMITS, VOICE_SPEAKERS } = shared;
+const { FEATURES, LIMITS, TONES, TIERS, PRONOUNS, premiumPerks, FREE_LIMITS, VOICE_SPEAKERS, SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE } = shared;
 
 export default async function GuildPage({ params }) {
     const { guildId } = await params;
@@ -48,7 +48,7 @@ export default async function GuildPage({ params }) {
             ) : (
                 <GuildEditor
                     initial={bundle}
-                    meta={{ features: FEATURES, limits: LIMITS, tones: TONES, tiers: TIERS, pronouns: PRONOUNS, perks: premiumPerks({ customIdentity: identityEnabledFor(guildId) }), identityEnabled: identityEnabledFor(guildId), freeRoleMappings: FREE_LIMITS.roleMappings, voiceSpeakers: VOICE_SPEAKERS, contactUrl: contactUrl() }}
+                    meta={{ features: FEATURES, limits: LIMITS, tones: TONES, tiers: TIERS, pronouns: PRONOUNS, perks: premiumPerks({ customIdentity: identityEnabledFor(guildId) }), identityEnabled: identityEnabledFor(guildId), languages: SUPPORTED_LANGUAGES, defaultLanguage: DEFAULT_LANGUAGE, freeRoleMappings: FREE_LIMITS.roleMappings, voiceSpeakers: VOICE_SPEAKERS, contactUrl: contactUrl() }}
                 />
             )}
         </div>
