@@ -102,3 +102,10 @@ test('metadata always goes in <head> (no streaming into <body>, which some crawl
         assert.ok(config.htmlLimitedBots.test(ua), ua);
     }
 });
+
+test('Google Search Console verification file is served from the site root, publicly', () => {
+    // HTML-file method: https://zigbotai.vercel.app/google4f033dbcc41e6d42.html
+    const file = 'dashboard/public/google4f033dbcc41e6d42.html';
+    assert.equal(read(file), 'google-site-verification: google4f033dbcc41e6d42.html');
+    assert.ok(!seo.PRIVATE_PATHS.some((p) => '/google4f033dbcc41e6d42.html'.startsWith(p)), 'not under a noindex/disallowed path');
+});
