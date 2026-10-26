@@ -27,6 +27,37 @@ const { containsCredential, containsInstructionPayload } = require('../db/brain'
 
 const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
 
+const isReasoningModel = (model) => /gpt-oss/i.test(String(model || ''));
+
+// The summary request for a model. gpt-oss models think briefly and keep the
+// reasoning out of the reply (Groq: reasoning_effort, include_reasoning).
+function summaryRequest(model, messages, limits = SUMMARY_LIMITS) {
+    const request = {
+        model,
+        messages,
+        temperature: 0,
+        max_tokens: limits.maxTokens,
+        response_format: { type: 'json_object' },
+        stream: false
+    };
+    if (isReasoningModel(model)) {
+        request.max_tokens = limits.reasoningMaxTokens;
+        request.reasoning_effort = 'low';
+        request.include_reasoning = false;
+    }
+    return request;
+}
+
+// What a failed Groq call may log: the HTTP status and Groq's short error
+// code (e.g. model_decommissioned). Never the message text, which can quote
+// the request; a code that is not a plain identifier is dropped.
+function groqErrorFields(error) {
+    const status = Number.isInteger(error?.status) ? error.status : null;
+    const raw = error?.code ?? error?.error?.code ?? null;
+    const code = typeof raw === 'string' && /^[A-Za-z0-9_.-]{1,64}$/.test(raw) ? raw : null;
+    return { httpStatus: status, errorCode: code || (status ? null : String(error?.name || 'Error').slice(0, 40)) };
+}
+
 const SUMMARY_LIMITS = Object.freeze({
     batchMessages: 12, // summarise after this many eligible messages...
     idleMs: 10 * 60_000, // ...or after 10 minutes of inactivity
@@ -43,6 +74,9 @@ const SUMMARY_LIMITS = Object.freeze({
     queueMax: 50,
     pauseOn429Ms: 15 * 60_000,
     maxTokens: 300,
+    // Reasoning models (gpt-oss) think before answering, and that thinking
+    // uses the same token budget: 300 could leave no room for the JSON.
+    reasoningMaxTokens: 1024,
     timeoutMs: 20_000,
     roleplayMaxRatio: 0.5,
     groundingOverlap: 0.6,
@@ -352,7 +386,7 @@ function createSummaryService({
         recent.push(entry);
         if (recent.length > L.recentResults) recent.shift();
         // Status and counts only: never message or fact text.
-        logger.log?.(`[ZiGBoT SUMMARY] batch ${result.status}${result.origin ? ` origin=${result.origin}` : ''}${result.saved ? ` saved=${result.saved}` : ''}${result.rejected?.length ? ` rejected=${result.rejected.length}` : ''}`);
+        logger.log?.(`[ZiGBoT SUMMARY] batch ${result.status}${result.origin ? ` origin=${result.origin}` : ''}${result.httpStatus ? ` status=${result.httpStatus}` : ''}${result.errorCode ? ` code=${result.errorCode}` : ''}${result.saved ? ` saved=${result.saved}` : ''}${result.rejected?.length ? ` rejected=${result.rejected.length}` : ''}`);
         return entry;
     }
 
@@ -427,18 +461,14 @@ function createSummaryService({
         stats.calls += 1;
         let content;
         try {
-            const response = await client.chat.completions.create({
-                model: settings.groqSummaryModel,
-                messages: buildSummaryMessages(texts),
-                temperature: 0,
-                max_tokens: L.maxTokens,
-                response_format: { type: 'json_object' },
-                stream: false
-            }, { timeout: L.timeoutMs, maxRetries: 0 });
+            const response = await client.chat.completions.create(
+                summaryRequest(settings.groqSummaryModel, buildSummaryMessages(texts), L),
+                { timeout: L.timeoutMs, maxRetries: 0 }
+            );
             content = response?.choices?.[0]?.message?.content;
         } catch (error) {
             if (error?.status === 429) pausedUntil = now() + L.pauseOn429Ms;
-            return record(batch, { status: 'groq-failed', origin, code: error?.status || error?.code || error?.name || 'Error' });
+            return record(batch, { status: 'groq-failed', origin, ...groqErrorFields(error) });
         }
 
         const parsed = validateSummaryOutput(content);
@@ -613,8 +643,59 @@ function createSummaryService({
     };
 }
 
+/**
+ * Startup check for the summary model, like the chat model check in
+ * src/ai/providers.js: is it in this Groq key's model list, and does it
+ * answer a JSON-mode request? Logs HTTP status and Groq error code only,
+ * never message text or the key. Never throws.
+ */
+async function checkSummaryModel(settings, { fetchImpl = globalThis.fetch, logger = console } = {}) {
+    const model = settings.groqSummaryModel;
+    const tag = '[ZiGBoT SUMMARY CHECK]';
+    if (!settings.groqApiKey || !model) return { ok: false, skipped: true };
+    const headers = { Authorization: `Bearer ${settings.groqApiKey}`, 'Content-Type': 'application/json' };
+    try {
+        const list = await fetchImpl(`${GROQ_BASE_URL}/models`, { headers, signal: AbortSignal.timeout(10_000) });
+        if (!list.ok) {
+            logger.error?.(`${tag} could not list Groq models (status=${list.status}); check GROQ_API_KEY.`);
+            return { ok: false, status: list.status };
+        }
+        const ids = ((await list.json())?.data || []).map((m) => String(m.id));
+        if (!ids.includes(model)) {
+            const alternatives = ids.filter((id) => isReasoningModel(id) && !/safeguard/i.test(id)).slice(0, 3);
+            logger.error?.(`${tag} model ${model} is NOT available to this Groq key (retired or no access), so every summary batch will fail. Set GROQ_SUMMARY_MODEL to an available model${alternatives.length ? `, e.g. ${alternatives.join(', ')}` : ''}.`);
+            return { ok: false, listed: false };
+        }
+        const probe = await fetchImpl(`${GROQ_BASE_URL}/chat/completions`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(summaryRequest(model, [
+                { role: 'system', content: 'Reply with exactly this JSON object: {"ok": true}' },
+                { role: 'user', content: 'JSON check' }
+            ])),
+            signal: AbortSignal.timeout(20_000)
+        });
+        if (!probe.ok) {
+            let code = null;
+            try {
+                code = groqErrorFields({ status: probe.status, code: (await probe.json())?.error?.code }).errorCode;
+            } catch { /* no JSON body */ }
+            logger.error?.(`${tag} model ${model} failed a JSON-mode test request (status=${probe.status}${code ? ` code=${code}` : ''}).`);
+            return { ok: false, listed: true, status: probe.status, code };
+        }
+        logger.log?.(`${tag} model ${model} is available and answered a JSON-mode test request.`);
+        return { ok: true };
+    } catch (error) {
+        logger.error?.(`${tag} check failed (${error?.name || 'Error'}).`);
+        return { ok: false };
+    }
+}
+
 module.exports = {
     createSummaryService,
+    checkSummaryModel,
+    summaryRequest,
+    groqErrorFields,
     prepareMessage,
     isRoleplay,
     sensitiveCategory,

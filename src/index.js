@@ -55,7 +55,7 @@ const {
 const { createMemoryCommands } = require('./memory/commands');
 const { ownerMemoryStatus } = require('./memory/ownerLookup');
 const { resolvePersonalMemory, resolveSharedMemory, memoryQuestionReply } = require('./memory/retrieval');
-const { createSummaryService } = require('./memory/summaries');
+const { createSummaryService, checkSummaryModel } = require('./memory/summaries');
 const { createSummaryChannelCommands } = require('./memory/summaryChannels');
 const { createGiphyClient } = require('./gifs/giphy');
 const { createReactionGifs } = require('./gifs/reactions');
@@ -123,6 +123,8 @@ const summaryChannelCommands = createSummaryChannelCommands({ brain, summaryServ
     console.log(`[ZiGBoT MEMORY] Conversation summaries: ${summaryStatus.enabled
         ? `ON (${summaryStatus.guilds === 'all' ? 'all servers' : `${summaryStatus.guilds.length} listed server(s)`}, model ${summaryStatus.model}, opt-in per member; channel summaries ${summaryStatus.channelsEnabled ? 'ON' : 'OFF'})`
         : summaryStatus.switchOn ? 'OFF (GROQ_API_KEY missing)' : 'OFF (MEMORY_SUMMARIES_ENABLED)'}`);
+    // Log whether the summary model still exists and answers in JSON mode.
+    if (summaryStatus.enabled && !process.env.NODE_TEST_CONTEXT) void checkSummaryModel(settings);
 }
 
 console.log(`[ZiGBoT CONFIG] Per-server config mode: ${guildStore.mode}${guildStore.mode === 'legacy' ? ' (set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to enable the dashboard)' : ''}`);
