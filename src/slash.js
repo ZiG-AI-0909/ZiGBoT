@@ -189,6 +189,8 @@ function buildDefinitions({ identity = false } = {}) {
             .addStringOption((option) => option.setName('gif_frequency').setDescription('How often ZiGBoT adds a GIF')
                 .addChoices({ name: 'Rare', value: 'rare' }, { name: 'Normal', value: 'normal' }, { name: 'Often', value: 'often' }))
             .addBooleanOption((option) => option.setName('roast_gifs').setDescription('Roast GIFs in Savage mode (Gentle never roasts)'))
+            .addStringOption((option) => option.setName('roast_intensity').setDescription('How hard Savage mode roasts (hard limits apply at every level)')
+                .addChoices({ name: 'Mild: friendly teasing', value: 'mild' }, { name: 'Spicy: desi slang and attitude', value: 'spicy' }, { name: 'Savage: brutal, mild profanity', value: 'savage' }))
             .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
         // YouTube live-chat watching — owner-only, hidden from non-owners by
         // default_member_permissions and a silent ignore inside the handler.

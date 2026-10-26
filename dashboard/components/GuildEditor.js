@@ -24,6 +24,12 @@ const TONE_HELP = {
     savage: 'ZiGBoT’s dark-humour roast persona (needs the “roast” feature).',
     neutral: 'A friendly, helpful assistant without the persona.'
 };
+const INTENSITY_LABELS = { mild: 'Mild', spicy: 'Spicy', savage: 'Savage' };
+const INTENSITY_HELP = {
+    mild: 'Light, friendly teasing. No profanity.',
+    spicy: 'Sharp roasts with desi slang and attitude. No profanity.',
+    savage: 'Brutal roasts with attitude and mild profanity (like saala, kamina, damn).'
+};
 const TIER_LABELS = { admin: 'Admin', moderator: 'Moderator', member: 'Member', custom: 'Custom' };
 
 function stripMeta(config) {
@@ -403,6 +409,15 @@ function BehaviourTab({ draft, set, errors, meta, premium, channels, staleLangua
                 <p className="help" style={{ margin: 0 }}>{TONE_HELP[draft.default_tone]}</p>
                 <Switch id="owner-roast" checked={draft.owner_roast} onChange={set('owner_roast')} label="Roast the owner too" help="Off: the server owner always gets ZiGBoT's respectful assistant mode. On: the owner is roasted like everyone else (safety rules still apply)." />
                 {errors.default_tone ? <span className="error">{errors.default_tone}</span> : null}
+            </div>
+            <div className="card stack">
+                <div>
+                    <h2>Savage roast intensity</h2>
+                    <p className="help">How hard ZiGBoT roasts members who get the Savage tone. At every level it roasts only what someone said or did: never sexual content, family insults, slurs, or anything about caste, religion, gender, looks, or disability. Members with the under-18 role always get Gentle.</p>
+                </div>
+                <Segmented label="Savage roast intensity" value={draft.roast_intensity} onChange={set('roast_intensity')} options={meta.roastIntensities.map((v) => ({ value: v, label: INTENSITY_LABELS[v] }))} />
+                <p className="help" style={{ margin: 0 }}>{INTENSITY_HELP[draft.roast_intensity]}</p>
+                {errors.roast_intensity ? <span className="error" role="alert">{errors.roast_intensity}</span> : null}
             </div>
             <div className="card stack">
                 <div>

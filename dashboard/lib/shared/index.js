@@ -7,6 +7,7 @@ module.exports = {
     ...require('./prompt'),
     ...require('./safety'),
     ...require('./personas'),
+    ...require('./roast'),
     ...require('./access'),
     ...require('./premium'),
     ...require('./identity'),

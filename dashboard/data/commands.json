@@ -590,6 +590,17 @@
               "type": "yes/no",
               "required": false,
               "description": "Roast GIFs in Savage mode (Gentle never roasts)"
+            },
+            {
+              "name": "roast_intensity",
+              "type": "text",
+              "required": false,
+              "description": "How hard Savage mode roasts (hard limits apply at every level)",
+              "choices": [
+                "Mild: friendly teasing",
+                "Spicy: desi slang and attitude",
+                "Savage: brutal, mild profanity"
+              ]
             }
           ],
           "example": "/setup language:English owner_gender:Male (he/him)"

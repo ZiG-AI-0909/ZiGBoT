@@ -7,7 +7,7 @@
  * timestamps, or anything outside this whitelist.
  */
 const {
-    FEATURE_KEYS, TONES, TIERS, PRONOUNS, RESPONSE_LENGTHS, LIMITS, VOICE_SPEAKERS, VOICE_LANGUAGES
+    FEATURE_KEYS, TONES, ROAST_INTENSITIES, TIERS, PRONOUNS, RESPONSE_LENGTHS, LIMITS, VOICE_SPEAKERS, VOICE_LANGUAGES
 } = require('./constants');
 const { defaultGuildConfig } = require('./defaults');
 const { LANGUAGE_VALUES, DEFAULT_LANGUAGE } = require('./languages');
@@ -171,6 +171,7 @@ function validateGuildConfig(input, ctx = {}) {
         voice_language: checkEnum(errors, 'voice_language', input.voice_language, VOICE_LANGUAGES, base.voice_language),
         voice_speak_replies: checkBool(errors, 'voice_speak_replies', input.voice_speak_replies, base.voice_speak_replies),
         owner_roast: checkBool(errors, 'owner_roast', input.owner_roast, base.owner_roast),
+        roast_intensity: checkEnum(errors, 'roast_intensity', input.roast_intensity, ROAST_INTENSITIES, base.roast_intensity),
         // Server setup (also set by the bot's /setup command).
         owner_pronouns: input.owner_pronouns === undefined || input.owner_pronouns === null || input.owner_pronouns === '' ? null : checkEnum(errors, 'owner_pronouns', input.owner_pronouns, PRONOUNS, null),
         male_role_ids: checkIdList(errors, 'male_role_ids', input.male_role_ids, ctx.roleIds || null).slice(0, 10),
@@ -290,6 +291,7 @@ function sanitizeStoredConfig(row, { guildId } = {}) {
         }
     }
     if (!TONES.includes(out.default_tone)) out.default_tone = defaults.default_tone;
+    if (!ROAST_INTENSITIES.includes(out.roast_intensity)) out.roast_intensity = defaults.roast_intensity;
     if (!RESPONSE_LENGTHS.includes(out.response_length)) out.response_length = defaults.response_length;
     for (const [key, limit] of Object.entries(TEXT_LIMITS)) {
         out[key] = cleanText(out[key]).slice(0, limit);

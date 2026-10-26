@@ -23,6 +23,10 @@ const FEATURE_KEYS = Object.freeze(Object.keys(FEATURES));
 const DEFAULT_MEMBER_FEATURES = Object.freeze(['chat', 'music', 'voice', 'memory']);
 
 const TONES = Object.freeze(['gentle', 'savage', 'neutral']);
+// How hard Savage mode roasts (dashboard + /setup). Hard limits apply at
+// every level; only 'savage' allows mild profanity (lib/shared/roast.js).
+const ROAST_INTENSITIES = Object.freeze(['mild', 'spicy', 'savage']);
+const DEFAULT_ROAST_INTENSITY = 'spicy';
 const TIERS = Object.freeze(['admin', 'moderator', 'member', 'custom']);
 const PRONOUNS = Object.freeze(['she/her', 'he/him', 'they/them']);
 const RESPONSE_LENGTHS = Object.freeze(['short', 'medium', 'long']);
@@ -110,6 +114,8 @@ module.exports = {
     FEATURE_KEYS,
     DEFAULT_MEMBER_FEATURES,
     TONES,
+    ROAST_INTENSITIES,
+    DEFAULT_ROAST_INTENSITY,
     TIERS,
     PRONOUNS,
     RESPONSE_LENGTHS,

@@ -26,6 +26,7 @@ const {
     isPremiumActive,
     applyPlanToConfig,
     applyPlanToMappings,
+    ROAST_INTENSITIES,
     CONFIG_CACHE_TTL_MS
 } = require('../../dashboard/lib/shared');
 
@@ -35,7 +36,7 @@ const SNOWFLAKE = /^\d{17,20}$/;
 const SETUP_FIELDS = [
     'owner_pronouns', 'male_role_ids', 'female_role_ids', 'adult_role_ids', 'minor_role_ids',
     'music_dj_role_ids', 'music_channel_id', 'music_idle_minutes', 'music_default_volume',
-    'voice_speaker', 'voice_pace', 'voice_language', 'voice_speak_replies', 'owner_roast', 'gif_settings'
+    'voice_speaker', 'voice_pace', 'voice_language', 'voice_speak_replies', 'owner_roast', 'gif_settings', 'roast_intensity'
 ];
 const GIF_FREQUENCY_NAMES = ['rare', 'normal', 'often'];
 const SETUP_PRONOUNS = ['she/her', 'he/him', 'they/them'];
@@ -249,7 +250,7 @@ class GuildConfigStore {
      * Save the /setup answers for THIS guild. Only the language and the
      * setup columns are written; everything else an admin set stays as is.
      */
-    async saveSetup(guild, { language, ownerPronouns, maleRoleIds, femaleRoleIds, adultRoleIds, minorRoleIds, gifs = null }) {
+    async saveSetup(guild, { language, ownerPronouns, maleRoleIds, femaleRoleIds, adultRoleIds, minorRoleIds, gifs = null, roastIntensity = null }) {
         if (!this.enabled) throw new Error('Server settings are not available on this bot (no database configured).');
         const guildId = String(guild?.id || '');
         if (!SNOWFLAKE.test(guildId)) throw new Error('Invalid server.');
@@ -263,6 +264,9 @@ class GuildConfigStore {
             minor_role_ids: ids(minorRoleIds),
             updated_at: new Date(this.now()).toISOString()
         };
+        // Optional: only written when given, so /setup without it keeps
+        // working on a database without the roast_intensity column.
+        if (ROAST_INTENSITIES.includes(roastIntensity)) body.roast_intensity = roastIntensity;
         await this.ensureGuild(guild);
         // Optional GIF answers: only the fields given change; everything else
         // in the stored GIF settings (styles, custom style, channels) is kept.
