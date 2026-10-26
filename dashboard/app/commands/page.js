@@ -1,12 +1,10 @@
 import TopBar from '@/components/TopBar';
 import CommandsBrowser from '@/components/CommandsBrowser';
 import catalog from '@/data/commands.json';
+import seo from '@/lib/seo';
 
-export const metadata = {
-    title: 'Commands · ZiGBoT',
-    description: 'Every ZiGBoT slash command for members and admins, with examples, plus what you can ask ZiGBoT by mentioning it.',
-    robots: { index: true, follow: true }
-};
+// Title, description, canonical and sharing tags: lib/seo.js.
+export const metadata = seo.pageMetadata('/commands');
 
 // Dynamic so the top bar's contact link uses the runtime env, like the other
 // pages. The command data itself is static: it is generated from the bot's

@@ -1,11 +1,10 @@
 import Link from 'next/link';
 import TopBar from '@/components/TopBar';
 import { contactUrl } from '@/lib/discord';
+import seo from '@/lib/seo';
 
-export const metadata = {
-    title: 'Privacy Policy · ZiGBoT',
-    description: 'What data ZiGBoT collects, why, who processes it, and how long it is kept.'
-};
+// Title, description, canonical and sharing tags: lib/seo.js.
+export const metadata = seo.pageMetadata('/privacy');
 
 // Dynamic so the contact link uses the runtime env, like the other pages.
 export const dynamic = 'force-dynamic';

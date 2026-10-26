@@ -11,12 +11,10 @@ import { getCurrentUser } from '@/lib/auth';
 import { inviteUrl, contactUrl } from '@/lib/discord';
 import { env } from '@/lib/env';
 import landing from '@/lib/landing';
+import seo from '@/lib/seo';
 
-export const metadata = {
-    title: 'ZiGBoT · the Discord bot with a personality and memory you control',
-    description: 'ZiGBoT chats, roasts (nicely), plays music and helps moderate your Discord server — and lets you see, fix and delete anything it remembers about you.',
-    robots: { index: true, follow: true }
-};
+// Title, description, canonical and sharing tags: lib/seo.js.
+export const metadata = seo.pageMetadata('/');
 
 // Dynamic: the page knows whether you are signed in and reads runtime config.
 export const dynamic = 'force-dynamic';
@@ -67,8 +65,16 @@ export default async function Home({ searchParams }) {
         customIdentity: env.customIdentityEnabled && env.customIdentityGuilds.length === 0
     });
 
+    // Structured data only for what this page shows: the product (pitch and
+    // the feature cards below) and the FAQ rendered below.
+    const jsonLd = [
+        seo.softwareApplicationJsonLd({ description: landing.hero.pitch, features }),
+        seo.faqJsonLd(faq)
+    ];
+
     return (
         <div className="shell home landing">
+            {jsonLd.map((data) => <script key={data['@type']} type="application/ld+json" dangerouslySetInnerHTML={{ __html: seo.jsonLdScript(data) }} />)}
             <HomeBackground />
             <div className="grain" aria-hidden="true" />
             <TopBar profile={profile} />
