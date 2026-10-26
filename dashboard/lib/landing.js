@@ -6,7 +6,7 @@
  *
  * CommonJS like lib/shared, so the root test suite can load it directly.
  */
-const { FREE_LIMITS, PREMIUM_ONLY_FEATURES, PREMIUM_PERKS } = require('./shared/premium');
+const { FREE_LIMITS, PREMIUM_ONLY_FEATURES, PREMIUM_PERKS, premiumPerks } = require('./shared/premium');
 const { LIMITS } = require('./shared/constants');
 
 const OPT_IN_LABEL = 'Opt-in · when enabled';
@@ -120,8 +120,37 @@ const PREMIUM_FEATURE_LABELS = {
     voice: 'Voice chat (it talks back)'
 };
 
+// Custom bot identity (Premium). Shown only while the dashboard has it
+// switched on for every server (see app/page.js). It changes ZiGBoT's name,
+// picture and bio in that server only — the copy claims nothing more.
+const IDENTITY_FEATURE = {
+    id: 'identity',
+    icon: '🪪',
+    title: 'Your bot, your name',
+    badge: PREMIUM_LABEL,
+    premiumPerk: 'custom_identity',
+    preview: 'identity',
+    text: 'Rename ZiGBoT, give it a fresh pfp and a bio — just for your server. Set it from the dashboard’s Identity tab. The APP tag always stays, so it never pretends to be a person.',
+    sources: ['dashboard/components/IdentityTab.js', 'dashboard/lib/shared/identity.js', 'src/identity/sync.js']
+};
+const IDENTITY_FAQ = {
+    q: 'Can I rename the bot?',
+    a: 'Yes, on Premium. Open your server in the dashboard, go to the 🪪 Identity tab, and give ZiGBoT its own name, picture and bio in that server. Pictures are reviewed before they go live, and Discord’s APP tag always shows.'
+};
+const IDENTITY_OWNER_STEP = {
+    title: 'Make it yours',
+    text: 'On Premium, give ZiGBoT its own name, picture and bio from the 🪪 Identity tab. Pictures are reviewed before they go live.',
+    link: 'Open the dashboard'
+};
+
+// Comparison rows for perks that are a simple Free ✗ / Premium ✓ line.
+// Every perk premiumPerks() can return must have a row (or a label here).
+const PERK_ROW_LABELS = {
+    custom_identity: 'Custom bot name & avatar'
+};
+
 // Free vs Premium, built from the plan rules the bot and dashboard enforce.
-function premiumComparison() {
+function premiumComparison({ customIdentity = false } = {}) {
     const perk = Object.fromEntries(PREMIUM_PERKS.map((p) => [p.key, p]));
     const rows = [
         { id: 'chat', label: 'Chat, personalities & comebacks', free: true, premium: true },
@@ -136,14 +165,27 @@ function premiumComparison() {
         if (!PREMIUM_FEATURE_LABELS[feature]) throw new Error(`Add a landing label for Premium feature "${feature}" in lib/landing.js`);
         rows.push({ id: `feature_${feature}`, perk: 'voice_music', feature, label: PREMIUM_FEATURE_LABELS[feature], free: false, premium: true });
     }
+    // Any other perk on the list gets its own row.
+    const covered = new Set(rows.map((r) => r.perk).filter(Boolean));
+    for (const p of premiumPerks({ customIdentity })) {
+        if (covered.has(p.key)) continue;
+        if (!PERK_ROW_LABELS[p.key]) throw new Error(`Add a landing comparison label for Premium perk "${p.key}" in lib/landing.js`);
+        rows.push({ id: p.key, perk: p.key, label: PERK_ROW_LABELS[p.key], free: false, premium: true });
+    }
     return rows;
+}
+
+// Built from the real plan numbers, so it cannot overstate them.
+function freeAnswer({ customIdentity = false } = {}) {
+    const perks = ['higher AI reply limits', 'a custom persona', ...(customIdentity ? ['a custom bot name and avatar'] : []), `up to ${LIMITS.roleMappingsPerGuild} role mappings`];
+    const features = PREMIUM_ONLY_FEATURES.map((f) => PREMIUM_FEATURE_LABELS[f].toLowerCase()).join(' and ');
+    return `Yes. Chat, memory, moderation and setup are free (with up to ${FREE_LIMITS.roleMappings} role mappings). Premium, per server, adds ${perks.join(', ')}, and ${features}.`;
 }
 
 const faq = [
     {
         q: 'Is it free?',
-        // Built from the real plan numbers, so it cannot overstate them.
-        a: `Yes. Chat, memory, moderation and setup are free (with up to ${FREE_LIMITS.roleMappings} role mappings). Premium, per server, adds higher AI reply limits, a custom persona, up to ${LIMITS.roleMappingsPerGuild} role mappings, and ${PREMIUM_ONLY_FEATURES.map((f) => PREMIUM_FEATURE_LABELS[f].toLowerCase()).join(' and ')}.`
+        a: freeAnswer()
     },
     {
         q: 'What does it remember about me?',
@@ -163,7 +205,28 @@ const faq = [
     }
 ];
 
+/**
+ * The parts of the page that depend on optional features. Without options
+ * this is exactly the default page; customIdentity adds the identity card
+ * (after voice), its comparison row, owner step and FAQ answer.
+ */
+function landingContent({ customIdentity = false } = {}) {
+    if (!customIdentity) return { features, faq, ownerSteps, comparison: premiumComparison() };
+    const voiceAt = features.findIndex((f) => f.id === 'voice');
+    return {
+        features: [...features.slice(0, voiceAt + 1), IDENTITY_FEATURE, ...features.slice(voiceAt + 1)],
+        faq: [{ ...faq[0], a: freeAnswer({ customIdentity }) }, ...faq.slice(1), IDENTITY_FAQ],
+        ownerSteps: [...ownerSteps, IDENTITY_OWNER_STEP],
+        comparison: premiumComparison({ customIdentity })
+    };
+}
+
 module.exports = {
+    landingContent,
+    IDENTITY_FEATURE,
+    IDENTITY_FAQ,
+    IDENTITY_OWNER_STEP,
+    PERK_ROW_LABELS,
     hero,
     demoScenes,
     steps,

@@ -190,7 +190,28 @@
     .l-compare th, .l-compare td { padding: 9px 4px; }
 }
 
+/* Identity card preview (components/landing/IdentitySwap.js): the default
+   name/picture and an example custom one cross-fade on a loop. Both sit in
+   the same grid cell, so nothing shifts. */
+.l-idswap { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: #1e1f22; color: #dbdee1; font-size: 13px; min-height: 52px; }
+.l-idswap-avatars, .l-idswap-names { display: grid; }
+.l-idswap-avatars > *, .l-idswap-names > * { grid-area: 1 / 1; }
+.l-idswap-av { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; }
+.l-idswap-custom { display: grid; place-items: center; background: linear-gradient(135deg, #f59e0b, #e040fb); font-size: 17px; }
+.l-idswap-body { display: grid; gap: 2px; min-width: 0; }
+.l-idswap-head { display: flex; align-items: center; gap: 6px; }
+.l-idswap-names { font-weight: 700; color: #f2f3f5; white-space: nowrap; }
+.l-idswap-app { font-size: 10px; font-weight: 700; line-height: 1; padding: 3px 4px; border-radius: 4px; background: #5865f2; color: #fff; }
+.l-idswap-msg { overflow-wrap: anywhere; }
+.l-idswap-a { animation: l-idswap-out 6s ease-in-out infinite; }
+.l-idswap-b { opacity: 0; animation: l-idswap-in 6s ease-in-out infinite; }
+@keyframes l-idswap-out { 0%, 35% { opacity: 1; } 45%, 90% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes l-idswap-in { 0%, 35% { opacity: 0; } 45%, 90% { opacity: 1; } 100% { opacity: 0; } }
+
 @media (prefers-reduced-motion: reduce) {
+    .l-idswap-a, .l-idswap-b { animation: none !important; }
+    .l-idswap-a { opacity: 0; }
+    .l-idswap-b { opacity: 1; }
     .l-word, .orb-ring, .orb, .orb-eye, .orb-chip, .l-glow::after, .l-premium::before, .demo-line, .demo-dots i { animation: none !important; }
     .l-premium::before { display: none; }
     .reveal-hidden { opacity: 1; transform: none; }

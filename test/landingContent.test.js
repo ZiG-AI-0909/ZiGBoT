@@ -9,7 +9,7 @@ const path = require('node:path');
 // providers — and block made-up stats, testimonials, and features that do
 // not exist (e.g. XP/levels).
 const landing = require('../dashboard/lib/landing');
-const { FREE_LIMITS, PREMIUM_ONLY_FEATURES, PREMIUM_PERKS } = require('../dashboard/lib/shared/premium');
+const { FREE_LIMITS, PREMIUM_ONLY_FEATURES, PREMIUM_PERKS, CUSTOM_IDENTITY_PERK, premiumPerks } = require('../dashboard/lib/shared/premium');
 const { LIMITS } = require('../dashboard/lib/shared/constants');
 const { buildMemoryAnswer } = require('../src/ai/client');
 const brain = require('../src/db/brain');
@@ -26,12 +26,12 @@ function allCopy() {
         else if (Array.isArray(value)) value.forEach(walk);
         else if (value && typeof value === 'object') Object.entries(value).forEach(([key, v]) => { if (key !== 'sources') walk(v); });
     };
-    walk({ ...landing, comparison: landing.premiumComparison() });
+    walk({ ...landing, comparison: landing.premiumComparison(), withIdentity: landing.landingContent({ customIdentity: true }) });
     return out;
 }
 
 test('every feature, step and demo scene names source files that exist', () => {
-    for (const item of [...landing.features, ...landing.steps, ...landing.demoScenes]) {
+    for (const item of [...landing.features, landing.IDENTITY_FEATURE, ...landing.steps, ...landing.demoScenes]) {
         assert.ok(item.sources.length > 0, `${item.id || item.title} needs a source`);
         for (const file of item.sources) assert.ok(fs.existsSync(path.join(root, file)), `${file} (for ${item.id || item.title}) does not exist`);
     }
@@ -119,7 +119,9 @@ test('commands, retention and AI providers named in the copy are real', () => {
 test('the landing page renders this data, shows to everyone, and links the real flows', () => {
     const page = read('dashboard/app/page.js');
     assert.match(page, /from '@\/lib\/landing'/);
-    assert.match(page, /landing\.premiumComparison\(\)/);
+    assert.match(page, /landing\.landingContent\(\{\s*customIdentity: env\.customIdentityEnabled && env\.customIdentityGuilds\.length === 0\s*\}\)/,
+        'custom identity is advertised only when it is on for every server');
+    assert.doesNotMatch(page, /landing\.(features|faq|ownerSteps)\b|landing\.premiumComparison\(/, 'the page uses landingContent(), never the defaults directly');
     assert.match(page, /inviteUrl\(\)/, 'Add to Discord uses the real invite link');
     assert.doesNotMatch(page, /redirect\(/, 'signed-in visitors see the landing too');
     assert.match(page, /href="\/commands"/);
@@ -129,4 +131,72 @@ test('the landing page renders this data, shows to everyone, and links the real 
     const css = read('dashboard/app/landing.css');
     assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
     assert.doesNotMatch(css, /^\.btn\s*\{/m, 'landing styles never restyle buttons on other pages');
+});
+
+// Custom bot identity on the landing page (only while it is switched on).
+const identityOn = () => landing.landingContent({ customIdentity: true });
+const identityCopy = () => [landing.IDENTITY_FEATURE.title, landing.IDENTITY_FEATURE.text, landing.IDENTITY_FAQ.q, landing.IDENTITY_FAQ.a,
+    landing.IDENTITY_OWNER_STEP.title, landing.IDENTITY_OWNER_STEP.text, landing.IDENTITY_OWNER_STEP.link, landing.PERK_ROW_LABELS.custom_identity];
+
+test('custom identity: off by default, the page is exactly as before', () => {
+    const off = landing.landingContent();
+    assert.equal(off.features, landing.features);
+    assert.equal(off.faq, landing.faq);
+    assert.equal(off.ownerSteps, landing.ownerSteps);
+    assert.deepEqual(off.comparison, landing.premiumComparison());
+    assert.ok(!off.comparison.some((r) => r.perk === 'custom_identity'));
+    assert.ok(!off.features.some((f) => f.id === 'identity') && !off.faq.some((f) => /rename/i.test(f.q)));
+    assert.doesNotMatch(off.faq[0].a, /bot name/);
+});
+
+test('custom identity: the comparison row comes from the perk list and matches the perk', () => {
+    const on = identityOn();
+    for (const perk of premiumPerks({ customIdentity: true })) {
+        assert.ok(on.comparison.some((r) => r.perk === perk.key), `perk "${perk.key}" has a comparison row`);
+    }
+    const row = on.comparison.find((r) => r.perk === CUSTOM_IDENTITY_PERK.key);
+    assert.deepEqual(row, { id: 'custom_identity', perk: 'custom_identity', label: 'Custom bot name & avatar', free: false, premium: true });
+    assert.equal(on.comparison.filter((r) => r.perk === 'custom_identity').length, 1);
+    assert.match(CUSTOM_IDENTITY_PERK.title, /identity/i, 'the perk is the bot identity one');
+    assert.deepEqual(on.comparison.slice(0, -1), landing.premiumComparison(), 'every other row is unchanged');
+});
+
+test('custom identity: the card, FAQ and owner step say only what is verified', () => {
+    const on = identityOn();
+    const card = on.features.find((f) => f.id === 'identity');
+    assert.equal(card, landing.IDENTITY_FEATURE);
+    assert.equal(card.title, 'Your bot, your name');
+    assert.equal(card.badge, landing.PREMIUM_LABEL);
+    assert.equal(card.premiumPerk, CUSTOM_IDENTITY_PERK.key);
+    assert.equal(on.features.indexOf(card), on.features.findIndex((f) => f.id === 'voice') + 1);
+    assert.match(card.text, /Identity tab/);
+    assert.match(card.text, /APP tag always stays/);
+    const faq = on.faq.find((f) => f.q === 'Can I rename the bot?');
+    assert.match(faq.a, /^Yes, on Premium\./);
+    assert.match(faq.a, /🪪 Identity tab/);
+    assert.match(faq.a, /reviewed before they go live/);
+    const step = on.ownerSteps.at(-1);
+    assert.equal(step, landing.IDENTITY_OWNER_STEP);
+    assert.match(step.text, /Identity tab/);
+    assert.ok(step.link);
+    assert.match(on.faq[0].a, /a custom bot name and avatar/);
+    for (const text of identityCopy()) {
+        assert.doesNotMatch(text, /voice|reaction|\bDMs?\b|direct message|app directory/i, `"${text.slice(0, 50)}…" claims a place the identity does not change`);
+        assert.doesNotMatch(text, /human|real person|look(s)? like (a )?(person|user)|no one will know/i, `"${text.slice(0, 50)}…" implies it can pass as a person`);
+    }
+    // The "Is it free?" answer still mentions voice — as the separate voice feature, not identity.
+    assert.match(on.faq[0].a, /voice chat \(it talks back\)/);
+});
+
+test('custom identity: the page wires the preview, owner-step link and reduced motion', () => {
+    const page = read('dashboard/app/page.js');
+    assert.match(page, /feature\.preview === 'identity' \? <IdentitySwap \/> : null/);
+    assert.match(page, /step\.link \? <a className="l-link small" href=\{dashboardHref\}>/);
+    const swap = read('dashboard/components/landing/IdentitySwap.js');
+    assert.doesNotMatch(swap, /use client|useEffect|useState/, 'CSS only, no JavaScript');
+    assert.match(swap, /aria-hidden="true"/);
+    assert.match(swap, />APP</, 'the APP tag is always in the preview');
+    const css = read('dashboard/app/landing.css');
+    const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
+    assert.match(reduced, /\.l-idswap-a, \.l-idswap-b \{ animation: none !important; \}/);
 });

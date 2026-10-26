@@ -5,6 +5,7 @@ import HomeBackground from '@/components/HomeBackground';
 import Reveal from '@/components/landing/Reveal';
 import HeroOrb from '@/components/landing/HeroOrb';
 import ChatDemo from '@/components/landing/ChatDemo';
+import IdentitySwap from '@/components/landing/IdentitySwap';
 import { getCurrentUser } from '@/lib/auth';
 import { inviteUrl, contactUrl } from '@/lib/discord';
 import { env } from '@/lib/env';
@@ -59,7 +60,11 @@ export default async function Home({ searchParams }) {
     }
     const contact = contactUrl();
     const dashboardHref = current ? '/dashboard' : '/auth/login';
-    const comparison = landing.premiumComparison();
+    // Custom bot identity is advertised only while it is on for every server
+    // (no CUSTOM_IDENTITY_GUILDS pilot list), so "Premium servers can" is true.
+    const { features, faq, ownerSteps, comparison } = landing.landingContent({
+        customIdentity: env.customIdentityEnabled && env.customIdentityGuilds.length === 0
+    });
 
     return (
         <div className="shell home landing">
@@ -114,13 +119,14 @@ export default async function Home({ searchParams }) {
             <section className="l-section" aria-labelledby="features-title">
                 <Reveal><h2 id="features-title" className="l-h2">What it does</h2></Reveal>
                 <div className="l-features">
-                    {landing.features.map((feature, i) => (
+                    {features.map((feature, i) => (
                         <Reveal as="article" key={feature.id} className="l-feature card" delay={(i % 3) * 80}>
                             <div className="spread">
                                 <span className="l-feature-icon" aria-hidden="true">{feature.icon}</span>
                                 {feature.badge ? <span className={`pill ${feature.badge === landing.PREMIUM_LABEL ? 'pill-premium' : 'pill-optin'}`}>{feature.badge}</span> : null}
                             </div>
                             <h3>{feature.title}</h3>
+                            {feature.preview === 'identity' ? <IdentitySwap /> : null}
                             <p className="muted small">{feature.text}</p>
                         </Reveal>
                     ))}
@@ -183,11 +189,12 @@ export default async function Home({ searchParams }) {
             <section className="l-section" aria-labelledby="owners-title">
                 <Reveal><h2 id="owners-title" className="l-h2">For server owners</h2></Reveal>
                 <ol className="l-owner-steps">
-                    {landing.ownerSteps.map((step, i) => (
+                    {ownerSteps.map((step, i) => (
                         <Reveal as="li" key={step.title} className="card" delay={i * 90}>
                             <span className="l-step-n" aria-hidden="true">{i + 1}</span>
                             <h3>{step.title}</h3>
                             <p className="muted small">{step.text}</p>
+                            {step.link ? <a className="l-link small" href={dashboardHref}>{current ? step.link : 'Sign in to the dashboard'} →</a> : null}
                         </Reveal>
                     ))}
                 </ol>
@@ -203,7 +210,7 @@ export default async function Home({ searchParams }) {
             <section className="l-section" aria-labelledby="faq-title">
                 <Reveal><h2 id="faq-title" className="l-h2">FAQ</h2></Reveal>
                 <div className="l-faq">
-                    {landing.faq.map((item) => (
+                    {faq.map((item) => (
                         <details key={item.q} className="l-faq-item">
                             <summary>{item.q}</summary>
                             <p className="muted">{item.a}</p>
