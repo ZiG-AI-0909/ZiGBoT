@@ -11,5 +11,6 @@ module.exports = {
     ...require('./premium'),
     ...require('./identity'),
     ...require('./languages'),
-    ...require('./gifs')
+    ...require('./gifs'),
+    ...require('./personaTemplates')
 };

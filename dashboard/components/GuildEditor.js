@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import IdentityTab from './IdentityTab';
 import LanguageSelect from './LanguageSelect';
+import PersonaTemplates from './PersonaTemplates';
 
 const TABS = [
     { id: 'behaviour', label: 'AI behaviour' },
@@ -256,7 +257,7 @@ export default function GuildEditor({ initial, meta }) {
             </div>
 
             <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
-                {tab === 'behaviour' ? <BehaviourTab draft={draft} saved={saved} set={set} errors={fieldErrors} meta={meta} premium={premium} channels={channels} staleLanguage={staleLanguage} onUpgrade={() => setTab('premium')} /> : null}
+                {tab === 'behaviour' ? <BehaviourTab draft={draft} saved={saved} set={set} errors={fieldErrors} meta={meta} premium={premium} channels={channels} staleLanguage={staleLanguage} updateDraft={setDraft} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'roles' ? <ServerSetupCard draft={draft} set={set} errors={fieldErrors} roles={roles} /> : null}
                 {tab === 'roles' ? <div style={{ marginTop: 16 }}><RolesTab roles={roles} roleById={roleById} mappings={mappings} setMappings={setMappings} errors={mappingErrors} meta={meta} premium={premium} onUpgrade={() => setTab('premium')} /></div> : null}
                 {tab === 'voice' ? <VoiceTab draft={draft} set={set} errors={fieldErrors} meta={meta} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
@@ -387,7 +388,7 @@ function GifSettings({ value, onChange, meta, premium, channels, error, onUpgrad
     );
 }
 
-function BehaviourTab({ draft, set, errors, meta, premium, channels, staleLanguage = null, onUpgrade }) {
+function BehaviourTab({ draft, set, errors, meta, premium, channels, staleLanguage = null, updateDraft, onUpgrade }) {
     return (
         <div className="stack">
             <div className="card stack">
@@ -409,6 +410,7 @@ function BehaviourTab({ draft, set, errors, meta, premium, channels, staleLangua
                     <p className="help">Describe who ZiGBoT should be here. ZiGBoT’s safety rules always apply and cannot be switched off from here.</p>
                 </div>
                 {premium ? null : <PremiumNote onUpgrade={onUpgrade}>A custom personality is a Premium feature. Anything saved here earlier is kept but not used until this server is Premium.</PremiumNote>}
+                <PersonaTemplates draft={draft} updateDraft={updateDraft} premium={premium} />
                 <Switch id="replace" disabled={!premium} checked={draft.replace_base_persona} onChange={set('replace_base_persona')} label="Replace the ZiGBoT persona entirely" help="Off: your text is added on top of the selected tone. On: your text becomes the whole personality." />
                 {errors.replace_base_persona ? <span className="error">{errors.replace_base_persona}</span> : null}
                 <TextArea id="prompt" disabled={!premium} label="Personality / system prompt" value={draft.custom_system_prompt} onChange={set('custom_system_prompt')} max={meta.limits.customSystemPrompt} error={errors.custom_system_prompt} rows={7} placeholder="e.g. You are the cheerful mascot of an anime art server. Hype up people's artwork and answer art questions." />

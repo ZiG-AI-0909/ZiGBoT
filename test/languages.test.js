@@ -81,7 +81,6 @@ test('the dashboard dropdown reads the shared list and replaced the free-text fi
         assert.ok(select.includes(a11y), `dropdown supports ${a11y}`);
     }
     const css = read('dashboard/app/globals.css');
-    const reduced = css.slice(css.lastIndexOf('@media (prefers-reduced-motion: reduce)'));
-    assert.match(reduced, /\.choice-list[^{]*\{ transition: none; \}/, 'no open/close animation with reduced motion');
+    assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.choice-list[^{]*\{ transition: none; \}/, 'no open/close animation with reduced motion');
     assert.match(css, /\.choice-button \{[^}]*min-height: 44px/, 'big tap target');
 });
