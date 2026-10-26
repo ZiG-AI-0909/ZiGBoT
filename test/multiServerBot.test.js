@@ -5,7 +5,7 @@ const { PermissionFlagsBits } = require('discord.js');
 const { GuildConfigStore, isHomeGuild } = require('../src/guildConfig/store');
 const { behaviorForMember, channelAllowed, isChatChannel, buildGuildSettings } = require('../src/guildConfig/context');
 const { executeTool, isAuthorizedActor } = require('../src/tools/router');
-const { buildReplySystemPrompt, getCreatorResponse, creatorResponse } = require('../src/ai/client');
+const { buildReplySystemPrompt, getCreatorResponse } = require('../src/ai/client');
 const { auditLog } = require('../src/logging/auditLog');
 const { neutralizeMassMentions } = require('../src/reply/delivery');
 const { PLATFORM_SAFETY_RULES, GUEST_IDENTITY, HOME_IDENTITY } = require('../dashboard/lib/shared');
@@ -271,10 +271,12 @@ test('reply prompt: legacy path unchanged, multi path layered and identity-safe'
 });
 
 test('creator answer does not claim ZiG owns other servers', () => {
-    assert.equal(getCreatorResponse('who made you'), creatorResponse);
-    const guest = getCreatorResponse('who made you', { isHomeGuild: false });
-    assert.match(guest, /not the owner of this server/);
-    assert.doesNotMatch(guest, /main owner of this server/);
+    // Every variation, in every tone and language: creator of ZiGBoT, never an owner.
+    for (const tone of ['neutral', 'gentle', 'savage']) {
+        for (const language of ['English', 'Hinglish', '']) {
+            for (const roll of [0, 0.5, 0.99]) assert.doesNotMatch(getCreatorResponse({ tone, language, rng: () => roll }), /owner/i);
+        }
+    }
 });
 
 test('audit log never mirrors into another server\'s log channel', async () => {
