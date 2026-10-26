@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import Link from 'next/link';
 import './landing.css';
 import TopBar from '@/components/TopBar';
@@ -79,8 +80,13 @@ export default async function Home({ searchParams }) {
                 <div className="l-hero-copy">
                     <p className="l-kicker">Discord bot · chat · memory · music · moderation</p>
                     <h1 id="hero-title" className="l-title">
+                        {/* The space goes BETWEEN the inline-block words: a trailing
+                            space inside an inline-block is dropped by the browser. */}
                         {landing.hero.headline.split(' ').map((word, i) => (
-                            <span key={`${word}-${i}`} className="l-word" style={{ '--i': i }}>{word} </span>
+                            <Fragment key={`${word}-${i}`}>
+                                {i > 0 ? ' ' : null}
+                                <span className="l-word" style={{ '--i': i }}>{word}</span>
+                            </Fragment>
                         ))}
                     </h1>
                     <p className="l-pitch">{landing.hero.pitch}</p>

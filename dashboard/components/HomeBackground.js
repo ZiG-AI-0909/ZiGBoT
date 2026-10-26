@@ -6,7 +6,9 @@ const STICKERS = [
     { text: '🔥', left: '31%', delay: '-13s', duration: '17s' },
     { text: 'W', left: '44%', delay: '-3s', duration: '21s' },
     { text: '😭', left: '57%', delay: '-10s', duration: '18s' },
-    { text: 'fr fr', left: '69%', delay: '-16s', duration: '24s' },
+    // Kept out of the landing hero's mascot column (which also has a solid
+    // backdrop, so stickers pass behind it rather than through it).
+    { text: 'fr fr', left: '3%', delay: '-16s', duration: '24s' },
     { text: '✨', left: '80%', delay: '-5s', duration: '20s' },
     { text: '🗿', left: '91%', delay: '-12s', duration: '22s' },
     { text: 'slay', left: '12%', delay: '-18s', duration: '26s' },
