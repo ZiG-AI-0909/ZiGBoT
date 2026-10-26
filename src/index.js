@@ -670,6 +670,7 @@ client.on(Events.MessageCreate, async (message) => {
                 authorName: targetName,
                 contextMessages: history,
                 tone: 'savage',
+                roastIntensity: guildCtx?.config?.roast_intensity,
                 userId: message.author.id,
                 rateLimitMax: gSettings.aiRateLimitMax,
                 gender: getMemberGender(

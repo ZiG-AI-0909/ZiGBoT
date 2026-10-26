@@ -297,7 +297,7 @@ function buildReputationAnswer({ summary = null, available = true, lastError = n
     return `Straight from the accountability ledger (${summary.windowDays}-day window, live from MongoDB):\n• Positive signals: ${summary.positive}\n• Negative signals: ${summary.negative}\n• Net score: ${summary.net} → standing: **${summary.tier.toUpperCase()}**\n• Latest: ${signals || 'none'}\n${tierLine}\nThat is the actual record — not a vibe, not a guess.`;
 }
 
-function getSystemPrompt({ tone = 'savage', gender = null, isOwner = false, comebackMode = false, language = '' } = {}) {
+function getSystemPrompt({ tone = 'savage', gender = null, isOwner = false, comebackMode = false, language = '', roastIntensity = DEFAULT_ROAST_INTENSITY } = {}) {
     const genderInstruction = gender
         ? ` The user has explicitly selected the ${gender} role; when pronouns are necessary, use ${gender === 'female' ? 'she/her' : 'he/him'} for this user. Do not make other gender assumptions.`
         : '';
@@ -305,7 +305,7 @@ function getSystemPrompt({ tone = 'savage', gender = null, isOwner = false, come
         ? ' This user is ZiG, your creator and the verified main owner of this server. Always treat the owner respectfully in a loyal JARVIS-like assistant tone. Never roast, insult, mock, or use derogatory humor toward the owner, regardless of their roles or message. A roast command from the owner may target only the explicitly mentioned user.'
         : '';
     const comebackSuffix = comebackMode && tone === 'savage' && !isOwner ? comebackInstruction : '';
-    const instructions = personaFor(isOwner || tone === 'gentle' ? 'gentle' : 'savage', language);
+    const instructions = personaFor(isOwner || tone === 'gentle' ? 'gentle' : 'savage', language, roastIntensity);
     return `${instructions}${genderInstruction}${ownerInstruction}${comebackSuffix}`;
 }
 
@@ -366,6 +366,9 @@ Rules:
 
 // Crisis detection + crisis response live in the shared safety module.
 const { CRISIS_PATTERNS, crisisResponse, declineReplyText, isCrisisMessage, moderateReplyText } = require('../../dashboard/lib/shared/safety');
+// Refusal replacement + Savage roast limits (shared with the dashboard preview).
+const { reviewReply, fallbackReply, regenerationInstruction } = require('../../dashboard/lib/shared/roast');
+const { DEFAULT_ROAST_INTENSITY, ROAST_INTENSITIES } = require('../../dashboard/lib/shared/constants');
 
 // moderateReplyText (post-generation guardrail) is imported from the shared safety module above.
 
@@ -460,11 +463,11 @@ function parseGifTag(text, gif = null) {
 // Legacy (no dashboard config): the original persona prompt, untouched.
 // Multi-server: the original gentle/savage persona (or the shared neutral /
 // custom persona) wrapped in the platform safety layer + server + role layers.
-function buildReplySystemPrompt({ tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, guildPrompt = null } = {}) {
-    if (!guildPrompt) return getSystemPrompt({ tone, gender, isOwner, isNonGentle, comebackMode });
+function buildReplySystemPrompt({ tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, guildPrompt = null, roastIntensity = DEFAULT_ROAST_INTENSITY } = {}) {
+    if (!guildPrompt) return getSystemPrompt({ tone, gender, isOwner, isNonGentle, comebackMode, roastIntensity });
     const { config = {}, behavior = null, isHomeGuild = false } = guildPrompt;
     const usesZigPersona = !config.replace_base_persona && (tone === 'gentle' || tone === 'savage' || isOwner);
-    const basePrompt = usesZigPersona ? getSystemPrompt({ tone, gender, isOwner: isOwner && isHomeGuild, isNonGentle, comebackMode, language: config.language }) : null;
+    const basePrompt = usesZigPersona ? getSystemPrompt({ tone, gender, isOwner: isOwner && isHomeGuild, isNonGentle, comebackMode, language: config.language, roastIntensity }) : null;
     return composeSystemPrompt({ basePrompt, config, behavior: behavior ? { ...behavior, tone } : { tone, instructions: [], pronouns: null }, isHomeGuild });
 }
 
@@ -499,7 +502,7 @@ function createAiClient(settings) {
         },
 
         // Always { text, gif }; gif is set only when options.gif allowed one.
-        async generate({ fast = false, userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, declineMode = false, userId = null, memoryState = null, memories = null, sharedState = 'skipped', sharedMemories = null, summaries = null, summariesActive = false, reputation = null, guildPrompt = null, rateLimitMax = null, gif = null }) {
+        async generate({ fast = false, userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, declineMode = false, userId = null, memoryState = null, memories = null, sharedState = 'skipped', sharedMemories = null, summaries = null, summariesActive = false, reputation = null, guildPrompt = null, rateLimitMax = null, gif = null, roastIntensity = null }) {
             const plain = (text) => ({ text, gif: null });
             // guildPrompt = { config, behavior, isHomeGuild } in multi-server mode; null keeps the legacy prompt exactly.
             if (isCreatorQuestion(userMessage)) return plain(getCreatorResponse(userMessage, { isHomeGuild: guildPrompt ? guildPrompt.isHomeGuild : true }));
@@ -519,7 +522,21 @@ function createAiClient(settings) {
             // Excluded-category abuse at the bot: de-escalate, never match energy.
             if (declineMode) return plain(declineReplyText);
 
-            const systemPrompt = buildReplySystemPrompt({ tone, gender, isOwner, isNonGentle, comebackMode, guildPrompt }) + gifPromptBlock(gif);
+            // Under-18 members are always gentle. The caller already resolves
+            // this; checked again here so no path can roast a minor.
+            if (guildPrompt?.behavior?.isMinor && tone === 'savage') {
+                tone = 'gentle';
+                comebackMode = false;
+            }
+            const config = guildPrompt?.config || {};
+            // roastIntensity: for callers without a guildPrompt (the owner-commanded roast).
+            const requested = roastIntensity ?? config.roast_intensity;
+            const intensity = ROAST_INTENSITIES.includes(requested) ? requested : DEFAULT_ROAST_INTENSITY;
+            // The tone the reply is judged by: the owner always gets the respectful mode.
+            const reviewTone = isOwner ? 'gentle' : tone;
+            const language = config.language ?? (guildPrompt ? '' : 'English-Hinglish mix');
+
+            const systemPrompt = buildReplySystemPrompt({ tone, gender, isOwner, isNonGentle, comebackMode, guildPrompt, roastIntensity: intensity }) + gifPromptBlock(gif);
 
             // Memory status + rules go in the system prompt (code-written);
             // stored memory text goes only in the delimited data block of the
@@ -542,30 +559,45 @@ function createAiClient(settings) {
             // Voice chat (fast): reasoning models such as gpt-oss think briefly,
             // and a slow request is retried once after 30 s instead of the
             // SDK's long defaults.
-            const response = await client.chat.completions.create({
-                model: settings.aiModel,
-                messages,
-                temperature: 1,
-                top_p: 1,
-                max_tokens: fast ? 1024 : 4096,
-                stream: false
-            }, fast ? { timeout: 30_000, maxRetries: 1, reasoningLow: true, prefer: 'Groq' } : undefined);
+            const attempt = async (system) => {
+                const response = await client.chat.completions.create({
+                    model: settings.aiModel,
+                    messages: [{ ...messages[0], content: system }, ...messages.slice(1)],
+                    temperature: 1,
+                    top_p: 1,
+                    max_tokens: fast ? 1024 : 4096,
+                    stream: false
+                }, fast ? { timeout: 30_000, maxRetries: 1, reasoningLow: true, prefer: 'Groq' } : undefined);
+                const content = response.choices?.[0]?.message?.content;
+                if (!content) throw new Error('AI returned an empty response.');
+                // Any GIF tag is removed here, requested or not, so it can never be shown or spoken.
+                const tagged = parseGifTag(cleanOutput(content), gif);
+                if (!tagged.text) throw new Error('AI returned only reasoning, no answer.');
+                return tagged;
+            };
+            const accept = (tagged) => ({ text: tagged.text.trim(), gif: tagged.style ? { style: tagged.style, theme: tagged.theme } : null });
 
-
-            const content = response.choices?.[0]?.message?.content;
-            if (!content) throw new Error('AI returned an empty response.');
-            // Any GIF tag is removed here, requested or not, so it can never be shown or spoken.
-            const tagged = parseGifTag(cleanOutput(content), gif);
-            const cleaned = tagged.text;
-            if (!cleaned) throw new Error('AI returned only reasoning, no answer.');
-
-            // Post-generation guardrail check: prompts alone are not a safety boundary.
-            const moderated = moderateReplyText(cleaned);
-            if (!moderated.allowed) {
-                console.error(`[ZiGBoT AI GUARDRAIL] Blocked reply (${moderated.reason}).`);
-                return plain('Nah, I am not saying that one. Ask me something else. 💀');
+            // Post-generation review: prompts alone are not a safety boundary.
+            // A generic refusal or a reply that breaks the platform rules or
+            // the Savage roast limits is never sent. It is regenerated ONCE
+            // with a correction; if that fails too, a fixed in-character reply
+            // is used. (The retry does not count against the member's quota.)
+            const first = await attempt(systemPrompt);
+            const verdict = reviewReply(first.text, { tone: reviewTone, intensity });
+            if (verdict.ok) return accept(first);
+            console.error(`[ZiGBoT AI GUARDRAIL] Reply not sent (${verdict.kind}: ${verdict.reason}); regenerating once.`);
+            let second = null;
+            try {
+                second = await attempt(systemPrompt + regenerationInstruction({ kind: verdict.kind, reason: verdict.reason, tone: reviewTone, language }));
+            } catch (retryError) {
+                console.error(`[ZiGBoT AI GUARDRAIL] Regeneration failed (${retryError?.status || retryError?.name || 'Error'}); using a fixed reply.`);
             }
-            return { text: moderated.text, gif: tagged.style ? { style: tagged.style, theme: tagged.theme } : null };
+            if (second) {
+                const retryVerdict = reviewReply(second.text, { tone: reviewTone, intensity });
+                if (retryVerdict.ok) return accept(second);
+                console.error(`[ZiGBoT AI GUARDRAIL] Regenerated reply not sent either (${retryVerdict.kind}: ${retryVerdict.reason}); using a fixed reply.`);
+            }
+            return plain(fallbackReply({ tone: reviewTone, language }));
         },
 
         // Backward compatibility

@@ -53,6 +53,8 @@ function defaultGuildConfig({ guildId, legacy = false, legacySettings = null } =
         voice_speak_replies: true,
         // Off: the server owner always gets the respectful mode.
         owner_roast: false,
+        // Savage mode roast level: mild | spicy | savage (constants.js).
+        roast_intensity: 'spicy',
         // Reaction GIFs per persona mode (lib/shared/gifs.js).
         gif_settings: defaultGifSettings(),
         version: 1

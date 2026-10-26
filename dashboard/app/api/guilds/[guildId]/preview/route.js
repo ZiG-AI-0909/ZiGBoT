@@ -8,7 +8,7 @@ import { loadPlan } from '@/lib/billing';
 
 const {
     validateGuildConfig, resolveMemberBehavior, composeSystemPrompt,
-    isCrisisMessage, crisisResponse, moderateReplyText, cleanText, LIMITS, FEATURE_KEYS, TONES, applyPlanToConfig
+    isCrisisMessage, crisisResponse, cleanText, LIMITS, FEATURE_KEYS, TONES, applyPlanToConfig, reviewReply, fallbackReply
 } = shared;
 
 export const dynamic = 'force-dynamic';
@@ -89,7 +89,13 @@ export const POST = handler(async (request, { params }) => {
         clearTimeout(timer);
     }
     if (!content) throw new HttpError(502, 'The AI returned an empty reply. Try again.');
-    const moderated = moderateReplyText(content.replace(/^\[?ZiGBoT\]?:?\s*/i, ''));
-    if (!moderated.allowed) return json({ reply: 'Nah, I am not saying that one. Ask me something else. 💀', note: `The live guardrail blocked the raw reply (${moderated.reason}).`, summary });
-    return json({ reply: moderated.text.slice(0, 2000), summary });
+    // Same review as the live bot (lib/shared/roast.js). The bot rewrites a
+    // failed reply once before using a fixed one; the preview shows the fixed one.
+    const text = content.replace(/^\[?ZiGBoT\]?:?\s*/i, '').trim();
+    const verdict = reviewReply(text, { tone: behavior.tone, intensity: config.roast_intensity });
+    if (!verdict.ok) {
+        const why = verdict.kind === 'refusal' ? 'it was a generic refusal' : `it broke a limit (${verdict.reason})`;
+        return json({ reply: fallbackReply({ tone: behavior.tone, language: config.language }), note: `The raw reply was not used because ${why}. The live bot rewrites it once in character, and uses a fixed reply like this one if that fails too.`, summary });
+    }
+    return json({ reply: text.slice(0, 2000), summary });
 });

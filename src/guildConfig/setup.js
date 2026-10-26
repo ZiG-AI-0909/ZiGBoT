@@ -6,6 +6,7 @@
  */
 const { PermissionFlagsBits } = require('discord.js');
 
+const INTENSITY_LABEL = { mild: 'Mild', spicy: 'Spicy', savage: 'Savage' };
 const OWNER_LABEL = { 'he/him': 'Male (he/him)', 'she/her': 'Female (she/her)', 'they/them': 'Not specified (they/them)' };
 
 const WELCOME_MESSAGE = [
@@ -49,6 +50,7 @@ function summary(saved, roles) {
         line('18+ role (roast mode)', roles.adult),
         line('Under-18 role (always gentle)', roles['under-18']),
         roles['under-18'] ? '' : '⚠️ No under-18 role set: if you have younger members, add one so they are never roasted.',
+        saved.roast_intensity ? `• Savage roast intensity: **${INTENSITY_LABEL[saved.roast_intensity]}** (under-18s still always get Gentle)` : '',
         gifLine(saved.gif_settings),
         'Run /setup again any time to change this.'
     ].filter(Boolean).join('\n');
@@ -79,6 +81,7 @@ async function handleSetupCommand(interaction, guildStore) {
             femaleRoleIds: roles.female ? [roles.female.id] : [],
             adultRoleIds: roles.adult ? [roles.adult.id] : [],
             minorRoleIds: roles['under-18'] ? [roles['under-18'].id] : [],
+            roastIntensity: interaction.options.getString('roast_intensity') || null,
             gifs: {
                 enabled: interaction.options.getBoolean('gifs') ?? undefined,
                 frequency: interaction.options.getString('gif_frequency') || undefined,

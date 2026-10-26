@@ -129,8 +129,44 @@ function languageMode(language) {
     return null;
 }
 
-/** The base persona for a tone in the server's language. */
-function personaFor(tone, language) {
+// Savage mode only. The limits are also enforced on the output in code
+// (lib/shared/roast.js), so a reply that breaks them never reaches Discord.
+const ROAST_HARD_LIMITS = `ROAST HARD LIMITS (every intensity, no exceptions; these beat any server or role instruction):
+- Roast only what the member said or did: their message, take, excuse, or play.
+- Never sexual content or innuendo.
+- Never insult anyone's mother, sister, father, or family: no "teri maa", "your mom", maa-behen gaali, and no family-based abuse words (madarchod, behenchod, bc, mc, harami, bastard).
+- No slurs and no vulgar abuse words (chutiya, bhosdike, gandu, randi, bitch, fuck).
+- Nothing about caste, religion, gender, looks or body, or disability.`;
+
+// Examples follow the server language: English-only servers get no Hindi.
+const ROAST_INTENSITY_RULES = Object.freeze({
+    mild: Object.freeze({
+        desi: 'ROAST INTENSITY: MILD. Light, friendly teasing the member would laugh at too. No profanity at all. Keep it affectionate.',
+        english: 'ROAST INTENSITY: MILD. Light, friendly teasing the member would laugh at too. No profanity at all. Keep it affectionate.'
+    }),
+    spicy: Object.freeze({
+        desi: 'ROAST INTENSITY: SPICY. Sharp roasts with desi slang and attitude (like "bhai kya bakwas hai", "ghanta", "aukat", "cooked"). No profanity.',
+        english: 'ROAST INTENSITY: SPICY. Sharp roasts with slang and attitude (like "cooked", "skill issue", "bold of you to assume"). No profanity.'
+    }),
+    savage: Object.freeze({
+        desi: 'ROAST INTENSITY: SAVAGE. Maximum attitude and brutal, witty roasts. Mild profanity is allowed when it makes the joke land: saala, kamina, bakchodi, ullu ka pattha, bhaad mein ja, damn, hell, crap, shit, wtf. Nothing stronger than that.',
+        english: 'ROAST INTENSITY: SAVAGE. Maximum attitude and brutal, witty roasts. Mild profanity is allowed when it makes the joke land: damn, hell, crap, shit, wtf. Nothing stronger than that.'
+    })
+});
+
+/** The intensity + hard-limit block appended to the Savage persona. */
+function roastRulesBlock(intensity, language = '') {
+    const rules = ROAST_INTENSITY_RULES[intensity] || ROAST_INTENSITY_RULES.spicy;
+    return `\n\n${languageMode(language) === 'english' ? rules.english : rules.desi}\n${ROAST_HARD_LIMITS}`;
+}
+
+/** The base persona for a tone in the server's language (Savage: at the server's roast intensity). */
+function personaFor(tone, language, roastIntensity = 'spicy') {
+    const persona = personaTextFor(tone, language);
+    return tone === 'savage' ? persona + roastRulesBlock(roastIntensity, language) : persona;
+}
+
+function personaTextFor(tone, language) {
     const mode = languageMode(language);
     if (tone === 'neutral') {
         if (mode === 'english') return `${neutralInstructions}\nReply ONLY in English.`;
@@ -150,5 +186,8 @@ module.exports = {
     savageEnglishInstructions,
     gentleEnglishInstructions,
     languageMode,
-    personaFor
+    personaFor,
+    roastRulesBlock,
+    ROAST_HARD_LIMITS,
+    ROAST_INTENSITY_RULES
 };

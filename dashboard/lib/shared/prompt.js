@@ -32,8 +32,8 @@ const LENGTH_HINTS = {
     long: 'Longer, detailed replies are fine when the question needs it (stay under ~1500 characters).'
 };
 
-function basePersona(tone, language = '') {
-    return personaFor(tone === 'savage' || tone === 'neutral' ? tone : 'gentle', language);
+function basePersona(tone, language = '', roastIntensity = 'spicy') {
+    return personaFor(tone === 'savage' || tone === 'neutral' ? tone : 'gentle', language, roastIntensity);
 }
 
 function fence(label, text) {
@@ -57,7 +57,7 @@ function composeSystemPrompt({ basePrompt = null, config = {}, behavior = null, 
     if (config.replace_base_persona && config.custom_system_prompt) {
         persona = `You are ZiGBoT, a Discord bot. This server's admins defined your persona below.\n${fence('persona', config.custom_system_prompt)}\nOutput ONLY the direct reply text.`;
     } else {
-        persona = basePrompt || basePersona(tone, config.language);
+        persona = basePrompt || basePersona(tone, config.language, config.roast_intensity);
     }
     if (!isHomeGuild) persona = persona.split(HOME_IDENTITY).join(GUEST_IDENTITY);
 
