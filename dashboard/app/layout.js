@@ -11,6 +11,8 @@ const display = Bebas_Neue({ weight: '400', subsets: ['latin'], variable: '--fon
 // canonical origin (lib/seo.js), never the request's host.
 export const metadata = {
     metadataBase: new URL(seo.CANONICAL_ORIGIN),
+    // Google Search Console ownership (meta-tag method).
+    verification: { google: seo.SITE_VERIFICATION.google },
     title: 'ZiGBoT Dashboard',
     description: 'Configure ZiGBoT for your Discord servers: AI personality, role behaviour, and channels.'
 };

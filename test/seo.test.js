@@ -109,3 +109,8 @@ test('Google Search Console verification file is served from the site root, publ
     assert.equal(read(file), 'google-site-verification: google4f033dbcc41e6d42.html');
     assert.ok(!seo.PRIVATE_PATHS.some((p) => '/google4f033dbcc41e6d42.html'.startsWith(p)), 'not under a noindex/disallowed path');
 });
+
+test('Google Search Console verification meta tag is set site-wide from lib/seo.js', () => {
+    assert.equal(seo.SITE_VERIFICATION.google, 'cWplGzZ-DLyFscyRzBmgugKqMVFaMEkEy8cwa4Zx33o');
+    assert.match(read('dashboard/app/layout.js'), /verification: \{ google: seo\.SITE_VERIFICATION\.google \}/);
+});

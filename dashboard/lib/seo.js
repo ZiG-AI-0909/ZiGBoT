@@ -10,6 +10,9 @@
  */
 const CANONICAL_ORIGIN = 'https://zigbotai.vercel.app';
 const SITE_NAME = 'ZiGBoT';
+// Search engine ownership checks (public tokens, not secrets). Google also
+// has the HTML-file method: public/google4f033dbcc41e6d42.html.
+const SITE_VERIFICATION = Object.freeze({ google: 'cWplGzZ-DLyFscyRzBmgugKqMVFaMEkEy8cwa4Zx33o' });
 const OG_IMAGE = Object.freeze({ path: '/opengraph-image', width: 1200, height: 630, alt: 'ZiGBoT, the ZiG mascot, a Discord bot with a personality and memory you control' });
 
 /** Indexable pages, each with a unique title and description. */
@@ -114,6 +117,7 @@ function jsonLdScript(data) {
 module.exports = {
     CANONICAL_ORIGIN,
     SITE_NAME,
+    SITE_VERIFICATION,
     OG_IMAGE,
     PUBLIC_PAGES,
     PRIVATE_PATHS,
