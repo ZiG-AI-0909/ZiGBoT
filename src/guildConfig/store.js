@@ -22,6 +22,7 @@ const {
     sanitizeStoredMappings,
     LANGUAGE_VALUES,
     DEFAULT_LANGUAGE,
+    sanitizeGifSettings,
     isPremiumActive,
     applyPlanToConfig,
     applyPlanToMappings,
@@ -34,8 +35,9 @@ const SNOWFLAKE = /^\d{17,20}$/;
 const SETUP_FIELDS = [
     'owner_pronouns', 'male_role_ids', 'female_role_ids', 'adult_role_ids', 'minor_role_ids',
     'music_dj_role_ids', 'music_channel_id', 'music_idle_minutes', 'music_default_volume',
-    'voice_speaker', 'voice_pace', 'voice_language', 'voice_speak_replies', 'owner_roast'
+    'voice_speaker', 'voice_pace', 'voice_language', 'voice_speak_replies', 'owner_roast', 'gif_settings'
 ];
+const GIF_FREQUENCY_NAMES = ['rare', 'normal', 'often'];
 const SETUP_PRONOUNS = ['she/her', 'he/him', 'they/them'];
 
 function isHomeGuild(guild, settings) {
@@ -247,7 +249,7 @@ class GuildConfigStore {
      * Save the /setup answers for THIS guild. Only the language and the
      * setup columns are written; everything else an admin set stays as is.
      */
-    async saveSetup(guild, { language, ownerPronouns, maleRoleIds, femaleRoleIds, adultRoleIds, minorRoleIds }) {
+    async saveSetup(guild, { language, ownerPronouns, maleRoleIds, femaleRoleIds, adultRoleIds, minorRoleIds, gifs = null }) {
         if (!this.enabled) throw new Error('Server settings are not available on this bot (no database configured).');
         const guildId = String(guild?.id || '');
         if (!SNOWFLAKE.test(guildId)) throw new Error('Invalid server.');
@@ -262,6 +264,18 @@ class GuildConfigStore {
             updated_at: new Date(this.now()).toISOString()
         };
         await this.ensureGuild(guild);
+        // Optional GIF answers: only the fields given change; everything else
+        // in the stored GIF settings (styles, custom style, channels) is kept.
+        if (gifs && (gifs.enabled !== undefined || gifs.frequency || gifs.roast !== undefined)) {
+            const rows = await this.request(`zb_guild_configs?guild_id=eq.${encodeURIComponent(guildId)}&select=gif_settings`);
+            const current = sanitizeGifSettings(Array.isArray(rows) ? rows[0]?.gif_settings : null);
+            if (typeof gifs.enabled === 'boolean') current.enabled = gifs.enabled;
+            if (GIF_FREQUENCY_NAMES.includes(gifs.frequency)) {
+                for (const mode of Object.keys(current.modes)) current.modes[mode].frequency = gifs.frequency;
+            }
+            if (typeof gifs.roast === 'boolean') current.modes.savage.roast = gifs.roast;
+            body.gif_settings = current;
+        }
         await this.request(`zb_guild_configs?guild_id=eq.${encodeURIComponent(guildId)}`, {
             method: 'PATCH',
             prefer: 'return=minimal',

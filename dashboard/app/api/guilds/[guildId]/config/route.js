@@ -33,10 +33,12 @@ export const PUT = handler(async (request, { params }) => {
     // Premium again), so a lapsed server can still edit everything else.
     const plan = await loadPlan(guild);
     if (!plan.premium) {
-        const { data: stored } = await supabase.from('zb_guild_configs').select('custom_system_prompt, replace_base_persona').eq('guild_id', String(guild.id)).maybeSingle();
+        const { data: stored } = await supabase.from('zb_guild_configs').select('custom_system_prompt, replace_base_persona, gif_settings').eq('guild_id', String(guild.id)).maybeSingle();
+        const gifStyle = result.value.gif_settings?.custom_style || '';
         const changed = {
             custom_system_prompt: result.value.custom_system_prompt !== (stored?.custom_system_prompt || '') ? result.value.custom_system_prompt : '',
-            replace_base_persona: Boolean(result.value.replace_base_persona) !== Boolean(stored?.replace_base_persona) ? result.value.replace_base_persona : false
+            replace_base_persona: Boolean(result.value.replace_base_persona) !== Boolean(stored?.replace_base_persona) ? result.value.replace_base_persona : false,
+            gif_custom_style: gifStyle !== (stored?.gif_settings?.custom_style || '') ? gifStyle : ''
         };
         const premiumErrors = configPremiumErrors(changed);
         if (Object.keys(premiumErrors).length > 0) throw new HttpError(403, 'That needs ZiGBoT Premium for this server.', { fieldErrors: premiumErrors });

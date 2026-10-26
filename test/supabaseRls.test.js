@@ -246,3 +246,14 @@ test('custom identity: audit accepts the identity actions, still rejects unknown
     await db.query("delete from public.zb_guilds where guild_id = '333333333333333333'");
     assert.equal((await db.query("select 1 from public.zb_guild_identity where guild_id = '333333333333333333'")).rows.length, 0);
 });
+
+test('reaction GIFs: gif_settings defaults to {} and must be a small JSON object', async () => {
+    await asService();
+    const row = await db.query('select gif_settings from public.zb_guild_configs where guild_id = $1', [G1]);
+    assert.deepEqual(row.rows[0].gif_settings, {});
+    await db.query("update public.zb_guild_configs set gif_settings = $1 where guild_id = $2", [JSON.stringify({ enabled: false }), G1]);
+    await rejects("update public.zb_guild_configs set gif_settings = '[1,2]'::jsonb where guild_id = $1", [G1], /check constraint/);
+    await rejects("update public.zb_guild_configs set gif_settings = '\"on\"'::jsonb where guild_id = $1", [G1], /check constraint/);
+    await rejects('update public.zb_guild_configs set gif_settings = $1 where guild_id = $2', [JSON.stringify({ custom_style: 'x'.repeat(9000) }), G1], /check constraint/);
+    await db.query("update public.zb_guild_configs set gif_settings = '{}'::jsonb where guild_id = $1", [G1]);
+});

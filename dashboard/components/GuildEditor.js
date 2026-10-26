@@ -256,7 +256,7 @@ export default function GuildEditor({ initial, meta }) {
             </div>
 
             <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
-                {tab === 'behaviour' ? <BehaviourTab draft={draft} saved={saved} set={set} errors={fieldErrors} meta={meta} premium={premium} staleLanguage={staleLanguage} onUpgrade={() => setTab('premium')} /> : null}
+                {tab === 'behaviour' ? <BehaviourTab draft={draft} saved={saved} set={set} errors={fieldErrors} meta={meta} premium={premium} channels={channels} staleLanguage={staleLanguage} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'roles' ? <ServerSetupCard draft={draft} set={set} errors={fieldErrors} roles={roles} /> : null}
                 {tab === 'roles' ? <div style={{ marginTop: 16 }}><RolesTab roles={roles} roleById={roleById} mappings={mappings} setMappings={setMappings} errors={mappingErrors} meta={meta} premium={premium} onUpgrade={() => setTab('premium')} /></div> : null}
                 {tab === 'voice' ? <VoiceTab draft={draft} set={set} errors={fieldErrors} meta={meta} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
@@ -312,7 +312,82 @@ function PremiumNote({ children, onUpgrade }) {
     );
 }
 
-function BehaviourTab({ draft, set, errors, meta, premium, staleLanguage = null, onUpgrade }) {
+const GIF_MODE_LABELS = { gentle: 'Gentle', neutral: 'Neutral helper', savage: 'Savage roast' };
+const GIF_MODE_HELP = {
+    gentle: 'Wholesome only. Roast GIFs are always off here, and under-18 members always get these rules.',
+    neutral: 'Wholesome plus facepalm and mind-blown. No roasts.',
+    savage: 'Everything, including roast GIFs when someone trash-talks ZiGBoT or bullies a member.'
+};
+
+// Reaction GIFs per persona mode (rules: lib/shared/gifs.js, enforced again on save and by the bot).
+function GifSettings({ value, onChange, meta, premium, channels, error, onUpgrade }) {
+    const gifs = value || {};
+    const modes = gifs.modes || {};
+    const update = (patch) => onChange({ ...gifs, ...patch });
+    const updateMode = (mode, patch) => update({ modes: { ...modes, [mode]: { ...modes[mode], ...patch } } });
+    const toggleStyle = (mode, style, on) => {
+        const current = modes[mode]?.styles || [];
+        const next = on ? [...current, style] : current.filter((s) => s !== style);
+        updateMode(mode, { styles: meta.gif.modeStyles[mode].filter((s) => next.includes(s)) });
+    };
+    return (
+        <div className="card stack">
+            <div>
+                <h2>Reaction GIFs</h2>
+                <p className="help">Now and then ZiGBoT adds a GIF that fits the moment. GIFs come from GIPHY at its strictest rating (G), searched only from ZiGBoT’s own short style list — never from what members type.</p>
+            </div>
+            <Switch id="gifs-enabled" checked={gifs.enabled} onChange={(on) => update({ enabled: on })} label="Reaction GIFs" help="Off: no GIFs anywhere in this server." />
+            <div className="field">
+                <label htmlFor="gifs-channels">Where</label>
+                <select id="gifs-channels" value={gifs.channels || 'chat'} disabled={!gifs.enabled} onChange={(e) => update({ channels: e.target.value })}>
+                    <option value="chat">Only in chat channels (where ZiGBoT chats freely)</option>
+                    <option value="all">Anywhere ZiGBoT replies</option>
+                </select>
+            </div>
+            <ChannelPicker id="gifs-blocked" label="Never send GIFs in" channels={channels} selected={gifs.blocked_channel_ids || []} onChange={(ids) => update({ blocked_channel_ids: ids })} />
+            {meta.gif && Object.keys(meta.gif.modeStyles).map((mode) => {
+                const settings = modes[mode] || {};
+                return (
+                    <fieldset key={mode} className="gif-mode" disabled={!gifs.enabled}>
+                        <legend>{GIF_MODE_LABELS[mode] || mode}</legend>
+                        <p className="help" style={{ margin: 0 }}>{GIF_MODE_HELP[mode]}</p>
+                        <div className="grid-2">
+                            <Switch id={`gifs-${mode}`} checked={settings.enabled !== false} onChange={(on) => updateMode(mode, { enabled: on })} label="GIFs in this mode" />
+                            <div className="field">
+                                <label htmlFor={`gifs-${mode}-freq`}>How often</label>
+                                <select id={`gifs-${mode}-freq`} value={settings.frequency || 'normal'} onChange={(e) => updateMode(mode, { frequency: e.target.value })}>
+                                    <option value="rare">Rare (at most 1 in 20 replies)</option>
+                                    <option value="normal">Normal (at most 1 in 8)</option>
+                                    <option value="often">Often (at most 1 in 4)</option>
+                                </select>
+                            </div>
+                        </div>
+                        {mode === 'savage' ? (
+                            <Switch id="gifs-savage-roast" checked={settings.roast !== false} onChange={(on) => updateMode(mode, { roast: on })} label="Roast GIFs" help="Mic drop, side-eye, “you tried”… for trash talk at ZiGBoT and for backing up a bullied member." />
+                        ) : null}
+                        <div className="checklist gif-styles" role="group" aria-label={`${GIF_MODE_LABELS[mode]} GIF styles`}>
+                            {meta.gif.modeStyles[mode].map((style) => (
+                                <label key={style}>
+                                    <input type="checkbox" checked={(settings.styles || []).includes(style)} disabled={mode === 'savage' && meta.gif.styles[style].roast && settings.roast === false} onChange={(e) => toggleStyle(mode, style, e.target.checked)} />
+                                    <span>{meta.gif.styles[style].label}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </fieldset>
+                );
+            })}
+            <div className="field">
+                <label htmlFor="gifs-custom-style">GIF style for your custom persona {premium ? null : <span className="pill pill-premium">Premium</span>}</label>
+                <span className="help" id="gifs-custom-style-help">Optional, e.g. “pirate”, “anime” or “90s cartoons”. Added to GIF searches when your custom persona replies. Empty: ZiGBoT guesses from the persona. It goes through the same safety filters as everything else.</span>
+                <input id="gifs-custom-style" type="text" value={gifs.custom_style || ''} maxLength={meta.gif.styleMax} disabled={!premium || !gifs.enabled} onChange={(e) => update({ custom_style: e.target.value })} aria-describedby="gifs-custom-style-help" aria-invalid={error ? 'true' : undefined} />
+                {premium ? null : <PremiumNote onUpgrade={onUpgrade}>A custom persona GIF style is a Premium feature, like custom personas.</PremiumNote>}
+            </div>
+            {error ? <span className="error" role="alert">{error}</span> : null}
+        </div>
+    );
+}
+
+function BehaviourTab({ draft, set, errors, meta, premium, channels, staleLanguage = null, onUpgrade }) {
     return (
         <div className="stack">
             <div className="card stack">
@@ -369,6 +444,7 @@ function BehaviourTab({ draft, set, errors, meta, premium, staleLanguage = null,
                     {errors.response_style ? <span className="error">{errors.response_style}</span> : null}
                 </div>
             </div>
+            <GifSettings value={draft.gif_settings} onChange={set('gif_settings')} meta={meta} premium={premium} channels={channels} error={errors.gif_settings} onUpgrade={onUpgrade} />
         </div>
     );
 }

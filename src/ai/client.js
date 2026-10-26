@@ -428,6 +428,35 @@ function cleanOutput(text) {
     return cleaned.trim() || text.trim();
 }
 
+// Reaction GIFs (src/gifs/): the model may END its reply with one tag naming
+// a style from the list it is given. It never writes a search query; code
+// maps the style to a fixed query. The tag is always stripped before the
+// reply is shown, spoken or stored.
+const GIF_TAG = /\[gif:\s*([a-z_]{2,20})\s*(?:\|\s*([^\]\n]{0,40}))?\]/gi;
+
+function gifPromptBlock(gif) {
+    if (!gif || !Array.isArray(gif.styles) || gif.styles.length === 0) return '';
+    const theme = gif.inferStyle
+        ? ' You may add a short visual theme (1-2 plain words) that fits your persona after a bar, like [gif: cheer | pirate].'
+        : '';
+    return `\n\nREACTION GIF (optional): only if a reaction GIF would genuinely add to this reply, end it with one extra final line exactly like [gif: STYLE], where STYLE is one of: ${gif.styles.join(', ')}. Most replies need no GIF. Put nothing else in the brackets and never mention the tag.${theme}`;
+}
+
+/** Remove every GIF tag; return the cleaned text and the first allowed style (and theme). */
+function parseGifTag(text, gif = null) {
+    let style = null;
+    let theme = null;
+    const cleaned = String(text || '').replace(GIF_TAG, (_match, rawStyle, rawTheme) => {
+        const id = rawStyle.toLowerCase();
+        if (!style && gif && Array.isArray(gif.styles) && gif.styles.includes(id)) {
+            style = id;
+            theme = gif.inferStyle && rawTheme ? rawTheme.trim() || null : null;
+        }
+        return '';
+    }).replace(/[ \t]+\n/g, '\n').trim();
+    return { text: cleaned, style, theme };
+}
+
 // Legacy (no dashboard config): the original persona prompt, untouched.
 // Multi-server: the original gentle/savage persona (or the shared neutral /
 // custom persona) wrapped in the platform safety layer + server + role layers.
@@ -462,9 +491,18 @@ function createAiClient(settings) {
         model: settings.aiModel,
         rateLimiter,
 
-        async reply({ fast = false, userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, declineMode = false, userId = null, memoryState = null, memories = null, sharedState = 'skipped', sharedMemories = null, summaries = null, summariesActive = false, reputation = null, guildPrompt = null, rateLimitMax = null }) {
+        // With `gif` ({ styles, inferStyle }) the result is { text, gif: { style, theme } | null };
+        // without it, a plain string as before.
+        async reply(options) {
+            const result = await this.generate(options);
+            return options?.gif ? result : result.text;
+        },
+
+        // Always { text, gif }; gif is set only when options.gif allowed one.
+        async generate({ fast = false, userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, declineMode = false, userId = null, memoryState = null, memories = null, sharedState = 'skipped', sharedMemories = null, summaries = null, summariesActive = false, reputation = null, guildPrompt = null, rateLimitMax = null, gif = null }) {
+            const plain = (text) => ({ text, gif: null });
             // guildPrompt = { config, behavior, isHomeGuild } in multi-server mode; null keeps the legacy prompt exactly.
-            if (isCreatorQuestion(userMessage)) return getCreatorResponse(userMessage, { isHomeGuild: guildPrompt ? guildPrompt.isHomeGuild : true });
+            if (isCreatorQuestion(userMessage)) return plain(getCreatorResponse(userMessage, { isHomeGuild: guildPrompt ? guildPrompt.isHomeGuild : true }));
 
             // AI quota protection: applied per user before any LLM call.
             // rateLimitMax: the server's plan limit (Premium servers get more).
@@ -476,12 +514,12 @@ function createAiClient(settings) {
 
             // Crisis language overrides every persona: sincere support, never roasts.
             // This ordering is deliberate and must stay above comeback/decline.
-            if (isCrisisMessage(userMessage)) return crisisResponse;
+            if (isCrisisMessage(userMessage)) return plain(crisisResponse);
 
             // Excluded-category abuse at the bot: de-escalate, never match energy.
-            if (declineMode) return declineReplyText;
+            if (declineMode) return plain(declineReplyText);
 
-            const systemPrompt = buildReplySystemPrompt({ tone, gender, isOwner, isNonGentle, comebackMode, guildPrompt });
+            const systemPrompt = buildReplySystemPrompt({ tone, gender, isOwner, isNonGentle, comebackMode, guildPrompt }) + gifPromptBlock(gif);
 
             // Memory status + rules go in the system prompt (code-written);
             // stored memory text goes only in the delimited data block of the
@@ -516,16 +554,18 @@ function createAiClient(settings) {
 
             const content = response.choices?.[0]?.message?.content;
             if (!content) throw new Error('AI returned an empty response.');
-            const cleaned = cleanOutput(content);
+            // Any GIF tag is removed here, requested or not, so it can never be shown or spoken.
+            const tagged = parseGifTag(cleanOutput(content), gif);
+            const cleaned = tagged.text;
             if (!cleaned) throw new Error('AI returned only reasoning, no answer.');
 
             // Post-generation guardrail check: prompts alone are not a safety boundary.
             const moderated = moderateReplyText(cleaned);
             if (!moderated.allowed) {
                 console.error(`[ZiGBoT AI GUARDRAIL] Blocked reply (${moderated.reason}).`);
-                return 'Nah, I am not saying that one. Ask me something else. 💀';
+                return plain('Nah, I am not saying that one. Ask me something else. 💀');
             }
-            return moderated.text;
+            return { text: moderated.text, gif: tagged.style ? { style: tagged.style, theme: tagged.theme } : null };
         },
 
         // Backward compatibility
@@ -552,6 +592,8 @@ module.exports = {
     getCreatorResponse,
     getSystemPrompt,
     buildReplySystemPrompt,
+    gifPromptBlock,
+    parseGifTag,
     guestCreatorResponse,
     buildMemoryStatusBlock,
     buildMemoryDataBlock,

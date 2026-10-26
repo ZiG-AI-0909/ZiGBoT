@@ -113,10 +113,11 @@ function shouldReplaceSubscription(existing, incoming, now = Date.now()) {
     return !(isPremiumActive(existing, now) && !isPremiumActive(incoming, now));
 }
 
-/** Free servers: custom persona is ignored. */
+/** Free servers: custom persona (and its custom GIF style) is ignored. */
 function applyPlanToConfig(config, premium) {
     if (premium || !config) return config;
-    return { ...config, custom_system_prompt: '', replace_base_persona: false };
+    const gifSettings = config.gif_settings ? { ...config.gif_settings, custom_style: '' } : config.gif_settings;
+    return { ...config, custom_system_prompt: '', replace_base_persona: false, gif_settings: gifSettings };
 }
 
 /** Free servers: only the top FREE_LIMITS.roleMappings mappings (by priority) apply. */
@@ -135,6 +136,7 @@ function configPremiumErrors(config) {
     const errors = {};
     if (config?.custom_system_prompt) errors.custom_system_prompt = 'A custom persona needs ZiGBoT Premium for this server.';
     if (config?.replace_base_persona) errors.replace_base_persona = 'Replacing the ZiGBoT persona needs ZiGBoT Premium for this server.';
+    if (config?.gif_custom_style) errors.gif_settings = 'A custom persona GIF style needs ZiGBoT Premium for this server.';
     return errors;
 }
 

@@ -57,6 +57,10 @@ const { ownerMemoryStatus } = require('./memory/ownerLookup');
 const { resolvePersonalMemory, resolveSharedMemory, memoryQuestionReply } = require('./memory/retrieval');
 const { createSummaryService } = require('./memory/summaries');
 const { createSummaryChannelCommands } = require('./memory/summaryChannels');
+const { createGiphyClient } = require('./gifs/giphy');
+const { createReactionGifs } = require('./gifs/reactions');
+const { detectBullying, createBullyTracker, buildBullyInstruction, severeReplyText, modSuggestion } = require('./gifs/bully');
+const { resolveGifRules, defaultGifSettings } = require('../dashboard/lib/shared');
 const { createIdentityStore } = require('./identity/store');
 const { createIdentitySync } = require('./identity/sync');
 const { createIdentityCommands } = require('./identity/commands');
@@ -122,6 +126,22 @@ const summaryChannelCommands = createSummaryChannelCommands({ brain, summaryServ
 }
 
 console.log(`[ZiGBoT CONFIG] Per-server config mode: ${guildStore.mode}${guildStore.mode === 'legacy' ? ' (set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to enable the dashboard)' : ''}`);
+
+// Reaction GIFs (GIPHY). Without GIPHY_API_KEY no GIF is ever sent.
+const reactionGifs = createReactionGifs({ giphy: createGiphyClient({ apiKey: settings.giphyApiKey }) });
+const bullyTracker = createBullyTracker();
+console.log(`[ZiGBoT GIF] Reaction GIFs: ${settings.giphyApiKey ? 'ON (GIPHY, rating G)' : 'OFF (GIPHY_API_KEY not set)'}`);
+
+// The GIF rules for one reply: the member's resolved tone, under-18 → Gentle,
+// and a Premium custom persona's GIF style.
+function gifRulesFor(ctx, behavior, tone) {
+    return resolveGifRules({
+        settings: ctx?.config?.gif_settings,
+        tone,
+        isMinor: Boolean(behavior?.isMinor),
+        customPersona: Boolean(ctx?.premium && ctx?.config?.custom_system_prompt)
+    });
+}
 
 // Resolve everything the handlers need for one guild event. Never throws.
 async function guildRuntime(guild, member) {
@@ -406,6 +426,61 @@ async function recordBehaviorSignals(guildId, userId, signals, source) {
     }
 }
 
+// A member insulted another member (src/gifs/bully.js). ZiGBoT backs the
+// target: a savage-but-fair clap-back at the author's WORDS when the author's
+// tone allows roasting, otherwise a calm "not cool". Severe abuse gets a fixed
+// reply and no GIF. Repeats (or severe abuse) add a mod suggestion.
+async function handleBullying({ message, bullying, guildCtx, behavior, gSettings, tone, isOwner, gender, guildPrompt, inChatChannel, reputationAllowed }) {
+    const guild = message.guild;
+    const nameOf = (id) => {
+        const member = guild.members.cache.get(id);
+        const user = member?.user || message.mentions.users.get(id);
+        return member?.displayName || user?.globalName || user?.username || 'that member';
+    };
+    const authorName = message.member?.displayName || message.author.username;
+    const targetName = nameOf(bullying.targetId);
+    const severe = bullying.severity === 'severe';
+    const count = bullyTracker.record(guild.id, message.author.id);
+    const savage = !severe && tone === 'savage' && !isOwner && !behavior?.isMinor && hasFeature(behavior, 'roast');
+    logReplyPacing(`bullying (${bullying.severity}) of another member in #${message.channel.id} -> ${severe ? 'severe' : savage ? 'clap-back' : 'calm'} reply`);
+    try {
+        let text = severe
+            ? severeReplyText(targetName)
+            : await ai.reply({
+                userMessage: buildBullyInstruction({ authorName, targetName, savage }),
+                authorName,
+                contextMessages: defaultMemory.getHistory(message.channel.id),
+                tone: savage ? 'savage' : 'gentle',
+                gender,
+                isOwner,
+                userId: message.author.id,
+                guildPrompt,
+                rateLimitMax: gSettings.aiRateLimitMax
+            });
+        if (severe || count >= bullyTracker.threshold) text = `${text}\n${modSuggestion({ authorName, count, severe })}`;
+        await message.reply({ content: neutralizeMassMentions(text), allowedMentions: { parse: [], repliedUser: false } });
+        reactionGifs.noteReply(message.channel.id);
+        if (!severe) {
+            await reactionGifs.maybeSend({
+                channel: message.channel,
+                guildId: guild.id,
+                userId: message.author.id,
+                gifSettings: guildCtx?.config?.gif_settings || defaultGifSettings(),
+                rules: gifRulesFor(guildCtx, behavior, savage ? 'savage' : 'gentle'),
+                inChatChannel,
+                moment: 'defend'
+            });
+        }
+    } catch (error) {
+        logAiError(error);
+        await message.reply(error.rateLimited ? rateLimitReplyFor(gSettings) : aiFailureReply).catch(() => {});
+    }
+    if (reputationAllowed) {
+        const { negative } = detectBehaviorSignals(message.content);
+        await recordBehaviorSignals(guild.id, message.author.id, negative.length ? [...new Set(negative)] : ['toxic'], 'bullying');
+    }
+}
+
 // ZiGBoT talks: a typed chat reply is also spoken out loud when it is in the
 // voice channel the conversation is about (that channel's own text chat, or
 // the writer is sitting in it). Never over music — that would cut the song.
@@ -470,11 +545,14 @@ client.on(Events.MessageCreate, async (message) => {
 
     // Check if the user is directly replying to a message originally sent by ZiGBoT
     let isReplyToBot = false;
+    let repliedToId = null; // the author of the message being replied to (bullying check)
     if (message.reference && message.reference.messageId) {
         try {
             const referenced = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
             if (referenced && referenced.author.id === client.user.id) {
                 isReplyToBot = true;
+            } else if (referenced && !referenced.author.bot) {
+                repliedToId = referenced.author.id;
             }
         } catch {
             isReplyToBot = false;
@@ -708,6 +786,17 @@ client.on(Events.MessageCreate, async (message) => {
         logReplyPacing(`profanity-at-bot (${profanityAtBot.category}: "${profanityAtBot.term}") in #${message.channel.id} -> ${comebackMode ? 'comeback' : declineMode ? 'decline' : 'standard'} reply`);
     }
 
+    // Someone insulting ANOTHER member: ZiGBoT backs the target and only ever
+    // criticises the author's words (src/gifs/bully.js). Repeats suggest a
+    // mod action; nothing is punished automatically.
+    const bullying = message.guild && !profanityAtBot.matched
+        ? detectBullying({ text: userMessage, authorId: message.author.id, botId: client.user.id, mentionedIds: [...message.mentions.users.keys()], repliedToId })
+        : null;
+    if (bullying) {
+        await handleBullying({ message, bullying, guildCtx, behavior, gSettings, tone, isOwner, gender, guildPrompt, inChatChannel, reputationAllowed });
+        return;
+    }
+
     // Occasional hesitation on keyword-triggered chit-chat only. Never
     // applies to mentions, replies, chat channels, tool/admin intents, or
     // anything the router has already answered above. Stress triggers always
@@ -776,7 +865,9 @@ client.on(Events.MessageCreate, async (message) => {
             }
         }
 
-        const replyText = await ai.reply({
+        // The AI may suggest a GIF style, only from what this member's mode allows.
+        const gifRules = gifRulesFor(guildCtx, behavior, tone);
+        const { text: replyText, gif: aiGif } = await ai.generate({
             userMessage,
             authorName,
             contextMessages: history,
@@ -795,11 +886,27 @@ client.on(Events.MessageCreate, async (message) => {
             summariesActive: personal.summariesActive === true,
             reputation,
             guildPrompt,
-            rateLimitMax: gSettings.aiRateLimitMax
+            rateLimitMax: gSettings.aiRateLimitMax,
+            gif: gifRules.enabled && !declineMode ? { styles: gifRules.styles, inferStyle: gifRules.inferStyle } : null
         });
 
         await deliverAiReply(message, replyText, { log: logReplyPacing });
         speakReplyInVoice(message, gSettings, replyText, behavior);
+        // Reaction GIF: an extra after the text; never for a decline reply.
+        reactionGifs.noteReply(message.channel.id);
+        if (message.guild && !declineMode) {
+            const gifResult = await reactionGifs.maybeSend({
+                channel: message.channel,
+                guildId: message.guild.id,
+                userId: message.author.id,
+                gifSettings: guildCtx?.config?.gif_settings || defaultGifSettings(),
+                rules: gifRules,
+                inChatChannel,
+                moment: comebackMode ? 'roast' : 'chat',
+                aiGif
+            });
+            if (gifResult.sent) logReplyPacing(`reaction GIF (${gifResult.style}) in #${message.channel.id}`);
+        }
 
         // Opt-in summaries: hand over ONLY this member's own message, after
         // the reply is out. Fire-and-forget: it never delays or breaks a reply.

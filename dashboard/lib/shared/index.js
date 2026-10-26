@@ -10,5 +10,6 @@ module.exports = {
     ...require('./access'),
     ...require('./premium'),
     ...require('./identity'),
-    ...require('./languages')
+    ...require('./languages'),
+    ...require('./gifs')
 };

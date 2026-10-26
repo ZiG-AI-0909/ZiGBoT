@@ -248,5 +248,7 @@ module.exports = {
     identityPatch,
     isDefaultIdentity,
     decideIdentitySave,
-    identityAuditReason
+    identityAuditReason,
+    // Also used by the reaction-GIF style filter (lib/shared/gifs.js).
+    offensiveTerm
 };

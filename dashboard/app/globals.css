@@ -360,3 +360,9 @@ textarea:disabled, input:disabled { opacity: 0.55; cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
     .choice-list, .choice[data-open="true"] .choice-list, .choice-caret, .choice-button { transition: none; }
 }
+
+/* Reaction GIF settings (GuildEditor.js GifSettings) */
+.gif-mode { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; display: grid; gap: 10px; margin: 0; min-width: 0; }
+.gif-mode legend { font-weight: 700; padding: 0 6px; }
+.gif-mode:disabled { opacity: 0.6; }
+.gif-styles { display: flex; flex-wrap: wrap; gap: 6px 14px; max-height: none; }

@@ -8,6 +8,8 @@
  * gentle/savage role behaviour exactly.
  */
 
+const { defaultGifSettings } = require('./gifs');
+
 function defaultGuildConfig({ guildId, legacy = false, legacySettings = null } = {}) {
     const s = legacySettings || {};
     return {
@@ -51,6 +53,8 @@ function defaultGuildConfig({ guildId, legacy = false, legacySettings = null } =
         voice_speak_replies: true,
         // Off: the server owner always gets the respectful mode.
         owner_roast: false,
+        // Reaction GIFs per persona mode (lib/shared/gifs.js).
+        gif_settings: defaultGifSettings(),
         version: 1
     };
 }

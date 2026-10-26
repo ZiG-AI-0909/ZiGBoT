@@ -30,6 +30,14 @@ function setupRoleProblem({ guildId, roles }) {
     return null;
 }
 
+// Only shown when /setup changed GIF settings.
+function gifLine(gifs) {
+    if (!gifs) return '';
+    if (!gifs.enabled) return '• Reaction GIFs: **off**';
+    const frequency = gifs.modes?.gentle?.frequency || 'normal';
+    return `• Reaction GIFs: **on** (${frequency}), roast GIFs in Savage mode: **${gifs.modes?.savage?.roast === false ? 'off' : 'on'}**. Styles per mode are in the dashboard.`;
+}
+
 function summary(saved, roles) {
     const line = (label, role) => `• ${label}: ${role ? `<@&${role.id}>` : 'not set'}`;
     return [
@@ -41,6 +49,7 @@ function summary(saved, roles) {
         line('18+ role (roast mode)', roles.adult),
         line('Under-18 role (always gentle)', roles['under-18']),
         roles['under-18'] ? '' : '⚠️ No under-18 role set: if you have younger members, add one so they are never roasted.',
+        gifLine(saved.gif_settings),
         'Run /setup again any time to change this.'
     ].filter(Boolean).join('\n');
 }
@@ -69,7 +78,12 @@ async function handleSetupCommand(interaction, guildStore) {
             maleRoleIds: roles.male ? [roles.male.id] : [],
             femaleRoleIds: roles.female ? [roles.female.id] : [],
             adultRoleIds: roles.adult ? [roles.adult.id] : [],
-            minorRoleIds: roles['under-18'] ? [roles['under-18'].id] : []
+            minorRoleIds: roles['under-18'] ? [roles['under-18'].id] : [],
+            gifs: {
+                enabled: interaction.options.getBoolean('gifs') ?? undefined,
+                frequency: interaction.options.getString('gif_frequency') || undefined,
+                roast: interaction.options.getBoolean('roast_gifs') ?? undefined
+            }
         });
         return summary(saved, roles);
     } catch (error) {

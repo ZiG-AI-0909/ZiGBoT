@@ -152,6 +152,9 @@ function loadSettings() {
         // (server ids) limits it to those servers; others are reverted.
         // The dashboard reads the same variables.
         customIdentityEnabled: process.env.CUSTOM_IDENTITY_ENABLED === 'true',
+        // Reaction GIFs (src/gifs/): GIPHY search key. Empty = no GIFs at all.
+        // Never logged; only ever sent to api.giphy.com.
+        giphyApiKey: (process.env.GIPHY_API_KEY || '').trim(),
         customIdentityGuilds: parseIdentityGuilds(process.env.CUSTOM_IDENTITY_GUILDS),
         groqSummaryModel: process.env.GROQ_SUMMARY_MODEL || 'llama-3.1-8b-instant',
         sttCommand: process.env.STT_COMMAND || '',

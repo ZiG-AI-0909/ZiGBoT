@@ -185,6 +185,10 @@ function buildDefinitions({ identity = false } = {}) {
             .addRoleOption((option) => option.setName('female_role').setDescription('Role that means female (she/her)'))
             .addRoleOption((option) => option.setName('adult_role').setDescription('Role for members 18+ (roast mode)'))
             .addRoleOption((option) => option.setName('under18_role').setDescription('Role for members under 18 (always gentle, never roasted)'))
+            .addBooleanOption((option) => option.setName('gifs').setDescription('Reaction GIFs on or off (styles per mode are in the dashboard)'))
+            .addStringOption((option) => option.setName('gif_frequency').setDescription('How often ZiGBoT adds a GIF')
+                .addChoices({ name: 'Rare', value: 'rare' }, { name: 'Normal', value: 'normal' }, { name: 'Often', value: 'often' }))
+            .addBooleanOption((option) => option.setName('roast_gifs').setDescription('Roast GIFs in Savage mode (Gentle never roasts)'))
             .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
         // YouTube live-chat watching — owner-only, hidden from non-owners by
         // default_member_permissions and a silent ignore inside the handler.

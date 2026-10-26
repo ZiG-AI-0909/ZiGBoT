@@ -567,6 +567,29 @@
               "type": "role",
               "required": false,
               "description": "Role for members under 18 (always gentle, never roasted)"
+            },
+            {
+              "name": "gifs",
+              "type": "yes/no",
+              "required": false,
+              "description": "Reaction GIFs on or off (styles per mode are in the dashboard)"
+            },
+            {
+              "name": "gif_frequency",
+              "type": "text",
+              "required": false,
+              "description": "How often ZiGBoT adds a GIF",
+              "choices": [
+                "Rare",
+                "Normal",
+                "Often"
+              ]
+            },
+            {
+              "name": "roast_gifs",
+              "type": "yes/no",
+              "required": false,
+              "description": "Roast GIFs in Savage mode (Gentle never roasts)"
             }
           ],
           "example": "/setup language:English owner_gender:Male (he/him)"

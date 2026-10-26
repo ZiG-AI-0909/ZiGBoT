@@ -10,7 +10,13 @@ import { identityEnabledFor } from '@/lib/identity';
 
 export const dynamic = 'force-dynamic';
 
-const { FEATURES, LIMITS, TONES, TIERS, PRONOUNS, premiumPerks, FREE_LIMITS, VOICE_SPEAKERS, SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE } = shared;
+const { FEATURES, LIMITS, TONES, TIERS, PRONOUNS, premiumPerks, FREE_LIMITS, VOICE_SPEAKERS, GIF_STYLES, GIF_MODE_STYLES, GIF_STYLE_MAX, SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE } = shared;
+// Reaction-GIF choices for the editor (labels and which styles each mode allows).
+const GIF_META = {
+    styles: Object.fromEntries(Object.entries(GIF_STYLES).map(([id, s]) => [id, { label: s.label, roast: Boolean(s.roast) }])),
+    modeStyles: GIF_MODE_STYLES,
+    styleMax: GIF_STYLE_MAX
+};
 
 export default async function GuildPage({ params }) {
     const { guildId } = await params;
@@ -48,7 +54,7 @@ export default async function GuildPage({ params }) {
             ) : (
                 <GuildEditor
                     initial={bundle}
-                    meta={{ features: FEATURES, limits: LIMITS, tones: TONES, tiers: TIERS, pronouns: PRONOUNS, perks: premiumPerks({ customIdentity: identityEnabledFor(guildId) }), identityEnabled: identityEnabledFor(guildId), languages: SUPPORTED_LANGUAGES, defaultLanguage: DEFAULT_LANGUAGE, freeRoleMappings: FREE_LIMITS.roleMappings, voiceSpeakers: VOICE_SPEAKERS, contactUrl: contactUrl() }}
+                    meta={{ features: FEATURES, limits: LIMITS, tones: TONES, tiers: TIERS, pronouns: PRONOUNS, perks: premiumPerks({ customIdentity: identityEnabledFor(guildId) }), identityEnabled: identityEnabledFor(guildId), gif: GIF_META, languages: SUPPORTED_LANGUAGES, defaultLanguage: DEFAULT_LANGUAGE, freeRoleMappings: FREE_LIMITS.roleMappings, voiceSpeakers: VOICE_SPEAKERS, contactUrl: contactUrl() }}
                 />
             )}
         </div>

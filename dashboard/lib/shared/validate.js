@@ -11,6 +11,7 @@ const {
 } = require('./constants');
 const { defaultGuildConfig } = require('./defaults');
 const { LANGUAGE_VALUES, DEFAULT_LANGUAGE } = require('./languages');
+const { validateGifSettings, sanitizeGifSettings } = require('./gifs');
 
 const SNOWFLAKE = /^\d{17,20}$/;
 
@@ -175,8 +176,12 @@ function validateGuildConfig(input, ctx = {}) {
         male_role_ids: checkIdList(errors, 'male_role_ids', input.male_role_ids, ctx.roleIds || null).slice(0, 10),
         female_role_ids: checkIdList(errors, 'female_role_ids', input.female_role_ids, ctx.roleIds || null).slice(0, 10),
         adult_role_ids: checkIdList(errors, 'adult_role_ids', input.adult_role_ids, ctx.roleIds || null).slice(0, 10),
-        minor_role_ids: checkIdList(errors, 'minor_role_ids', input.minor_role_ids, ctx.roleIds || null).slice(0, 10)
+        minor_role_ids: checkIdList(errors, 'minor_role_ids', input.minor_role_ids, ctx.roleIds || null).slice(0, 10),
+        gif_settings: null
     };
+    const gifs = validateGifSettings(input.gif_settings, { channelIds: channels });
+    if (gifs.error) errors.gif_settings = gifs.error;
+    value.gif_settings = gifs.value;
     for (const field of ['male_role_ids', 'female_role_ids', 'adult_role_ids', 'minor_role_ids']) {
         if (value[field].includes(String(ctx.guildId))) errors[field] = '@everyone cannot be used here.';
     }
@@ -276,6 +281,8 @@ function sanitizeStoredConfig(row, { guildId } = {}) {
             if (Array.isArray(row[key])) out[key] = row[key].map(String).filter((id) => SNOWFLAKE.test(id));
         } else if (key === 'log_channel_id' || key === 'music_channel_id') {
             out[key] = SNOWFLAKE.test(String(row[key])) ? String(row[key]) : null;
+        } else if (key === 'gif_settings') {
+            out[key] = sanitizeGifSettings(row[key]);
         } else if (key === 'owner_pronouns') {
             out[key] = PRONOUNS.includes(row[key]) ? row[key] : null;
         } else if (expected === typeof row[key]) {

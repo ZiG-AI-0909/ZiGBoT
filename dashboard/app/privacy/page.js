@@ -90,6 +90,7 @@ export default function Privacy() {
                     <li><strong>Supabase</strong> and <strong>MongoDB</strong>: databases for settings, accounts, memories and records. Supabase also stores custom bot identity pictures, privately.</li>
                     <li><strong>Render</strong>: hosting.</li>
                     <li><strong>Razorpay</strong>: payments.</li>
+                    <li><strong>GIPHY</strong>: reaction GIF searches. It receives only ZiGBoT&apos;s own short search words (like &quot;mic drop&quot;) — never your messages or who you are.</li>
                     <li><strong>YouTube (Google)</strong>: live-chat features.</li>
                 </ul>
                 <p>These services may process data outside your country. We do not share your data with anyone else unless the law requires it.</p>
