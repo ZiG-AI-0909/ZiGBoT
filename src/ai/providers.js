@@ -57,6 +57,22 @@ function withReasoningLow(params, model) {
 // stalled provider does not add its full timeout to every message.
 const PROVIDER_COOLDOWN_MS = 3 * 60_000;
 
+// A 200 response can still carry no usable answer: an empty message, or a
+// reasoning model (gpt-oss, DeepSeek) that spent its whole budget thinking.
+// That counts as a failure, so the next provider gets a turn.
+function hasUsableContent(response) {
+    const content = response?.choices?.[0]?.message?.content;
+    if (typeof content !== 'string') return false;
+    return content.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*$/i, '').trim() !== '';
+}
+
+function emptyResponseError(response) {
+    const finish = response?.choices?.[0]?.finish_reason;
+    const error = new Error(`empty response${finish ? ` (finish_reason=${finish})` : ''}`);
+    error.emptyResponse = true;
+    return error;
+}
+
 /** An OpenAI-compatible client that fails over between the configured providers. */
 function createChatClient(settings, { providers = buildProviders(settings), logger = console, now = Date.now } = {}) {
     if (providers.length === 0) throw new Error('No chat AI configured: set GROQ_API_KEY or NVIDIA_API_KEY.');
@@ -78,13 +94,16 @@ function createChatClient(settings, { providers = buildProviders(settings), logg
             if (reasoningLow) request = withReasoningLow(request, provider.model);
             try {
                 const response = await provider.client.chat.completions.create(request, Object.keys(requestOptions).length ? requestOptions : undefined);
+                if (!hasUsableContent(response)) throw emptyResponseError(response);
                 downUntil.delete(provider.name);
                 return response;
             } catch (error) {
                 lastError = error;
                 const next = ordered[index + 1];
-                if (next) markDown(provider.name);
-                logger.error?.(`[ZiGBoT AI] ${provider.name} (${provider.model}) failed: ${describeError(error)}${next ? ` — trying ${next.name}; ${provider.name} goes last for ${PROVIDER_COOLDOWN_MS / 60_000} min` : ''}`);
+                // An empty answer is a one-off, not an outage: no cooldown for it.
+                if (next && !error?.emptyResponse) markDown(provider.name);
+                const cooldown = error?.emptyResponse ? '' : `; ${provider.name} goes last for ${PROVIDER_COOLDOWN_MS / 60_000} min`;
+                logger.error?.(`[ZiGBoT AI] ${provider.name} (${provider.model}) failed: ${describeError(error)}${next ? ` — trying ${next.name}${cooldown}` : ''}`);
             }
         }
         throw lastError;
@@ -184,4 +203,4 @@ async function checkProviders(settings, { fetchImpl = globalThis.fetch, logger =
     return results;
 }
 
-module.exports = { createChatClient, buildProviders, checkProviders, DEFAULT_GROQ_CHAT_MODEL };
+module.exports = { createChatClient, buildProviders, checkProviders, hasUsableContent, DEFAULT_GROQ_CHAT_MODEL };

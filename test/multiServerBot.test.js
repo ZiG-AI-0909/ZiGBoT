@@ -263,7 +263,7 @@ test('reply prompt: legacy path unchanged, multi path layered and identity-safe'
     assert.match(guest, /No spoilers/);
 
     const neutral = buildReplySystemPrompt({ tone: 'neutral', guildPrompt: { config: {}, behavior: null, isHomeGuild: false } });
-    assert.match(neutral, /friendly, helpful Discord assistant/);
+    assert.match(neutral, /friendly, knowledgeable Discord assistant/);
 
     // Owner JARVIS treatment applies only in the home server.
     const ownerElsewhere = buildReplySystemPrompt({ tone: 'gentle', isOwner: true, guildPrompt: { config: {}, behavior: null, isHomeGuild: false } });

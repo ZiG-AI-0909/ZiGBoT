@@ -65,6 +65,15 @@ const MULTI_MESSAGE_MIN_WORDS = 15;
 // Maximum number of messages a split reply may produce.
 const MULTI_MESSAGE_MAX_PARTS = 3;
 
+// Discord rejects messages over 2000 characters; a little headroom is kept
+// for the fence markers a code-block split adds.
+const DISCORD_MESSAGE_LIMIT = 2000;
+const CHUNK_TARGET = 1900;
+
+// AI-written replies may show mentions but never ping anyone; replying still
+// notifies the member who asked.
+const AI_ALLOWED_MENTIONS = Object.freeze({ parse: [], repliedUser: true });
+
 // --------------------------------------------------------------------------------
 
 const DEFAULT_RNG = () => Math.random();
@@ -153,6 +162,44 @@ function splitReply(text, rng = DEFAULT_RNG) {
     return parts;
 }
 
+// Each ``` toggles a code block; returns the opener ('```js') still open at
+// the end of `text`, starting from `open` (null = outside any block).
+function fenceStateAfter(text, open) {
+    let state = open;
+    for (const match of text.matchAll(/```([^\s`]*)/g)) state = state ? null : `\`\`\`${match[1]}`;
+    return state;
+}
+
+// Split text into Discord-sized messages on line (then word) boundaries. A
+// message that ends inside a ``` code block is closed and the next one
+// reopens it with the same language, so code never turns into plain text.
+function chunkForDiscord(text, limit = CHUNK_TARGET) {
+    const clean = String(text ?? '').trim();
+    if (!clean) return [];
+    if (clean.length <= limit) return [clean];
+    const chunks = [];
+    let rest = clean;
+    let open = null;
+    while (rest) {
+        const prefix = open ? `${open}\n` : '';
+        if (prefix.length + rest.length <= limit) {
+            chunks.push(prefix + rest);
+            break;
+        }
+        const budget = limit - prefix.length - 4; // room for a closing "\n```"
+        let cut = rest.lastIndexOf('\n', budget);
+        if (cut < budget / 2) cut = rest.lastIndexOf(' ', budget);
+        const atBoundary = cut >= budget / 2;
+        if (!atBoundary) cut = budget;
+        let piece = rest.slice(0, cut).replace(/\s+$/, '');
+        rest = rest.slice(atBoundary ? cut + 1 : cut);
+        open = fenceStateAfter(piece, open);
+        if (open) piece += '\n```';
+        chunks.push(prefix + piece);
+    }
+    return chunks;
+}
+
 // True when this keyword-triggered reply should be dropped entirely.
 // Applies ONLY to fun-keyword triggers — stress never skips.
 function shouldSkipReply({ isKeywordTriggered = false, triggerType = null, rng = DEFAULT_RNG } = {}) {
@@ -191,13 +238,15 @@ async function deliverAiReply(message, rawReplyText, {
     const replyText = neutralizeMassMentions(rawReplyText);
     // Roll the split chance first so the rng call order stays deterministic
     // for tests: split decision -> (split tie-breaks) -> typing delay.
-    const shouldAttemptSplit = !isToolResult && rng() < MULTI_MESSAGE_SPLIT_CHANCE;
-    const parts = shouldAttemptSplit
-        ? splitReply(replyText, rng)
-        : [replyText];
+    // Code is never split for pacing: a sentence break can land inside it.
+    const hasCode = replyText.includes('```');
+    const shouldAttemptSplit = !isToolResult && !hasCode && rng() < MULTI_MESSAGE_SPLIT_CHANCE;
+    // Every part is then cut to Discord's message limit.
+    const parts = (shouldAttemptSplit ? splitReply(replyText, rng) : [replyText])
+        .flatMap((part) => chunkForDiscord(part));
+    if (parts.length === 0) return 0;
 
-    const shouldSplit = parts.length > 1;
-    const firstChunk = shouldSplit ? parts[0] : replyText;
+    const firstChunk = parts[0];
 
     // Keep typing alive for the full computed delay of the first chunk;
     // re-send the indicator if the delay outlives Discord's window.
@@ -221,7 +270,8 @@ async function deliverAiReply(message, rawReplyText, {
             await message.channel.sendTyping().catch(() => {});
             await sleep(MULTI_MESSAGE_BASE_GAP_MS + rng() * MULTI_MESSAGE_JITTER_MS);
         }
-        await message.reply(parts[i]);
+        // failIfNotExists: a question deleted while ZiGBoT was typing still gets its answer.
+        await message.reply({ content: parts[i], allowedMentions: AI_ALLOWED_MENTIONS, failIfNotExists: false });
         log(`delivered part ${i + 1}/${parts.length}`);
     }
 
@@ -243,8 +293,11 @@ module.exports = {
     MULTI_MESSAGE_SPLIT_CHANCE,
     MULTI_MESSAGE_MIN_WORDS,
     MULTI_MESSAGE_MAX_PARTS,
+    DISCORD_MESSAGE_LIMIT,
+    AI_ALLOWED_MENTIONS,
     // functions
     neutralizeMassMentions,
+    chunkForDiscord,
     computeTypingDelay,
     canSplit,
     splitReply,

@@ -75,7 +75,7 @@ test('tool results are never split even when long', () => {
 
 test('deliverAiReply never splits tool results', async () => {
     const sent = [];
-    const message = fakeMessage({ reply: (payload) => sent.push(payload) });
+    const message = fakeMessage({ reply: (payload) => sent.push(payload.content) });
     const parts = await deliverAiReply(message, LONG_REPLY, { isToolResult: true, rng: alwaysAbove, sleep: instantSleep() });
     assert.equal(parts, 1);
     assert.deepEqual(sent, [LONG_REPLY]);
@@ -100,7 +100,7 @@ test('deliverAiReply splits multi-sentence replies with gaps and typing between 
     const sent = [];
     const typingCalls = [];
     const message = fakeMessage({
-        reply: (payload) => sent.push(payload),
+        reply: (payload) => sent.push(payload.content),
         typing: typingCalls
     });
     const sleeps = [];
@@ -194,3 +194,51 @@ function fakeMessage({ reply, typing } = {}) {
         reply: reply || (() => {})
     };
 }
+
+// ---------- Discord limits and mention safety ----------
+
+const { chunkForDiscord, DISCORD_MESSAGE_LIMIT, AI_ALLOWED_MENTIONS } = require('../src/reply/delivery');
+
+test('long replies are cut into messages Discord accepts, without losing words', async () => {
+    const words = Array.from({ length: 900 }, (_, i) => `word${i}`).join(' ');
+    const chunks = chunkForDiscord(words);
+    assert.ok(chunks.length >= 3);
+    for (const chunk of chunks) assert.ok(chunk.length <= DISCORD_MESSAGE_LIMIT, `chunk of ${chunk.length}`);
+    assert.equal(chunks.join(' '), words);
+
+    const sent = [];
+    const parts = await deliverAiReply(fakeMessage({ reply: (payload) => sent.push(payload) }), words, { rng: alwaysAbove, sleep: instantSleep() });
+    assert.equal(parts, chunks.length);
+    assert.ok(sent.every((payload) => payload.content.length <= DISCORD_MESSAGE_LIMIT));
+});
+
+test('a code block split across messages is closed and reopened with its language', () => {
+    const code = Array.from({ length: 120 }, (_, i) => `    console.log("line ${i} of a long example program");`).join('\n');
+    const reply = `Here is the fix:\n\`\`\`js\n${code}\n\`\`\`\nThat should work.`;
+    const chunks = chunkForDiscord(reply);
+    assert.ok(chunks.length >= 2);
+    for (const chunk of chunks) {
+        assert.ok(chunk.length <= DISCORD_MESSAGE_LIMIT);
+        assert.equal((chunk.match(/```/g) || []).length % 2, 0, 'every message has balanced fences');
+    }
+    assert.ok(chunks[1].startsWith('```js\n'), 'the next message reopens the js block');
+    // Indentation inside code is kept.
+    assert.ok(chunks.join('\n').includes('\n    console.log("line 60'));
+});
+
+test('replies with code are never split for pacing, and empty text sends nothing', async () => {
+    const sent = [];
+    const message = fakeMessage({ reply: (payload) => sent.push(payload.content) });
+    const text = 'Try this one. It loops twice and then prints the total for you.\n```py\nfor i in range(2):\n    print(i)\n```';
+    await deliverAiReply(message, text, { rng: alwaysBelow, sleep: instantSleep() });
+    assert.deepEqual(sent, [text]);
+    assert.equal(await deliverAiReply(message, '   ', { rng: alwaysAbove, sleep: instantSleep() }), 0);
+});
+
+test('AI replies never ping anyone and survive a deleted question', async () => {
+    const sent = [];
+    await deliverAiReply(fakeMessage({ reply: (payload) => sent.push(payload) }), 'hey <@123> look', { rng: alwaysAbove, sleep: instantSleep() });
+    assert.deepEqual(sent[0].allowedMentions, AI_ALLOWED_MENTIONS);
+    assert.deepEqual(AI_ALLOWED_MENTIONS.parse, []);
+    assert.equal(sent[0].failIfNotExists, false);
+});

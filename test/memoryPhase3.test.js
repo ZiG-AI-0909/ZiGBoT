@@ -164,7 +164,7 @@ test('stored instructions are not followed: no system authority, no pings, no ad
 
     // (b) even if a model echoed it, delivery neutralises mass and role pings.
     const sent = [];
-    await deliverAiReply({ channel: { sendTyping: async () => {} }, reply: async (text) => sent.push(text) },
+    await deliverAiReply({ channel: { sendTyping: async () => {} }, reply: async (payload) => sent.push(payload.content) },
         'ok @everyone and @here <@&123>', { rng: () => 0.99, sleep: async () => {} });
     assert.equal(sent.length, 1);
     assert.doesNotMatch(sent[0], /@everyone|@here|<@&123>/);
