@@ -112,4 +112,6 @@ test('Privacy and Terms describe the feature as it works', () => {
     assert.match(terms, /<h3>Custom bot identity<\/h3>/);
     assert.match(terms, /pretend to be Discord, Discord staff, ZiGBoT staff, another well-known bot, or a real person/);
     assert.match(terms, /Discord always shows\s+ZiGBoT&apos;s APP tag/);
+    assert.match(terms, /We reserve the right to reject avatars that violate our guidelines or community standards\./);
+    assert.doesNotMatch(terms, /without giving a reason/);
 });

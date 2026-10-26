@@ -312,3 +312,47 @@ test('/identity is only registered while CUSTOM_IDENTITY_ENABLED is on, and need
     assert.deepEqual(identity.options.map((o) => o.name), ['show', 'reset']);
     assert.equal(identity.default_member_permissions, String(PermissionFlagsBits.ManageGuild));
 });
+
+test('a missing identity table is logged once (then daily), retries continue, recovery and other errors still logged', async () => {
+    let t = NOW;
+    const errors = [];
+    const logs = [];
+    let listing = 'missing';
+    const store = {
+        ...fakeStore({ rows: [] }),
+        listRows: async () => {
+            if (listing === 'missing') throw new Error('Supabase GET zb_guild_identity failed: 404 {"code":"PGRST205","details":null,"hint":null,"message":"Could not find the table \'public.zb_guild_identity\' in the schema cache"}');
+            if (listing === 'down') throw new Error('Supabase GET zb_guild_identity failed: 503 upstream timeout');
+            return [];
+        }
+    };
+    let calls = 0;
+    const counted = { ...store, listRows: async () => { calls += 1; return store.listRows(); } };
+    const client = { guilds: { cache: new Map() }, isReady: () => true };
+    const sync = createIdentitySync({ client, store: counted, getContext: async () => ({ premium: true }), enabled: false, logger: { log: (m) => logs.push(m), error: (m) => errors.push(m) }, now: () => t });
+
+    for (let i = 0; i < 6 * 23; i += 1) {
+        await sync.sweep(); // every 10 minutes for 23 hours
+        t += 10 * 60 * 1000;
+    }
+    assert.equal(calls, 138, 'it keeps retrying every sweep');
+    assert.equal(errors.length, 1, 'reported once, not every 10 minutes');
+    assert.match(errors[0], /custom identity tables are missing .*20261024000000_zigbot_custom_identity\.sql/);
+    t += 60 * 60 * 1000; // past 24 hours since the first report
+    await sync.sweep();
+    assert.equal(errors.length, 2, 'a daily reminder');
+
+    listing = 'ok';
+    await sync.sweep();
+    assert.match(logs.at(-1), /tables found: identity sync is running normally again/);
+
+    listing = 'down';
+    await sync.sweep();
+    await sync.sweep();
+    assert.equal(errors.length, 4, 'genuine failures are still logged every time');
+    assert.match(errors.at(-1), /Listing identities failed for all servers: Supabase GET zb_guild_identity failed: 503/);
+
+    listing = 'missing';
+    await sync.sweep();
+    assert.equal(errors.length, 5, 'a table that goes missing again is reported again');
+});

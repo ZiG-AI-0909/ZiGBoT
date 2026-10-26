@@ -31,6 +31,10 @@ const {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SYNC_INTERVAL_MS = 10 * 60 * 1000;
+// The identity tables do not exist yet (migration 20261024000000 not applied):
+// PostgREST answers PGRST205 ("Could not find the table"), Postgres 42P01.
+const MISSING_TABLE = /\b(PGRST205|42P01)\b|could not find the table|relation "?[\w.]*zb_(guild_identity|identity_blocks)"? does not exist/i;
+const isMissingTable = (error) => MISSING_TABLE.test(String(error?.message || ''));
 
 const auditView = (row) => (row ? {
     nick: row.nick, bio: row.bio, avatar_sha256: row.avatar_sha256, pending_avatar_sha256: row.pending_avatar_sha256,
@@ -44,7 +48,29 @@ function createIdentitySync({ client, store, getContext, enabled, guilds = [], l
     const revertOnly = mode === 'revert-only';
     const running = new Set();
     const log = (message) => logger.log?.(`[ZiGBoT IDENTITY] ${message}`);
-    const fail = (guildId, step, error) => logger.error?.(`[ZiGBoT IDENTITY] ${step} failed for ${guildId}: ${error?.code || error?.status || error?.message || 'Error'}`);
+    // A missing table is reported once, then at most once a day, while the
+    // sweep keeps retrying every 10 minutes; recovery is logged too. Every
+    // other failure is still logged each time it happens.
+    let missingSince = null;
+    let missingReportedAt = 0;
+    const reportFailure = (guildId, step, error) => {
+        if (isMissingTable(error)) {
+            if (missingSince === null) missingSince = now();
+            if (!missingReportedAt || now() - missingReportedAt >= DAY_MS) {
+                missingReportedAt = now();
+                logger.error?.('[ZiGBoT IDENTITY] The custom identity tables are missing (supabase/migrations/20261024000000_zigbot_custom_identity.sql has not been applied). Identity sync keeps retrying every 10 minutes; this message repeats at most once a day until it is fixed.');
+            }
+            return;
+        }
+        logger.error?.(`[ZiGBoT IDENTITY] ${step} failed for ${guildId}: ${error?.code || error?.status || error?.message || 'Error'}`);
+    };
+    const fail = reportFailure;
+    const tablesFound = () => {
+        if (missingSince === null) return;
+        log('Custom identity tables found: identity sync is running normally again.');
+        missingSince = null;
+        missingReportedAt = 0;
+    };
 
     async function deleteIdentity(guildId, row, reason) {
         await store.removeAvatars([row.avatar_path, row.pending_avatar_path]);
@@ -134,6 +160,7 @@ function createIdentitySync({ client, store, getContext, enabled, guilds = [], l
             fail('all servers', 'Listing identities', error);
             return;
         }
+        tablesFound();
         for (const row of rows) {
             const guildId = String(row.guild_id);
             const guild = client.guilds.cache.get(guildId);

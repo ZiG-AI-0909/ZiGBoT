@@ -74,7 +74,7 @@ export default function Terms() {
                     <li>contain links, invites or mentions in the bio.</li>
                 </ul>
                 <p>
-                    Pictures are checked by us before they go live, and we can reject them without giving a reason. Discord always shows
+                    Pictures are checked by us before they go live. We reserve the right to reject avatars that violate our guidelines or community standards. Discord always shows
                     ZiGBoT&apos;s APP tag. If Premium ends, or we turn the feature off for a server or an admin who breaks these rules,
                     ZiGBoT goes back to its default profile.
                 </p>
