@@ -195,6 +195,12 @@
 .l-compare thead th:not(:first-child) { text-align: center; }
 .l-compare tbody th { font-weight: 600; }
 .l-compare-diff td:last-child { color: #f0abfc; font-weight: 700; text-shadow: 0 0 12px rgba(224, 64, 251, 0.45); }
+.l-templates { margin: 4px 0 16px; }
+.l-templates h3 { margin: 0; font-size: 16px; }
+.l-templates p { margin: 0; }
+.l-template-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.l-template-list li { line-height: 1.5; }
+.l-attribution { margin: 0; color: var(--muted); font-size: 12px; letter-spacing: 0.02em; }
 .tick { color: var(--ok); font-weight: 800; }
 .cross { color: var(--muted); }
 

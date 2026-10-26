@@ -8,6 +8,15 @@
  */
 const { FREE_LIMITS, PREMIUM_ONLY_FEATURES, PREMIUM_PERKS, premiumPerks } = require('./shared/premium');
 const { LIMITS } = require('./shared/constants');
+const { SUPPORTED_LANGUAGES } = require('./shared/languages');
+const { GIF_FREQUENCIES } = require('./shared/gifs');
+const { PERSONA_TEMPLATES } = require('./shared/personaTemplates');
+
+// "English or Hinglish": the same list /setup and the dashboard dropdown use.
+const LANGUAGE_LABELS = SUPPORTED_LANGUAGES.map((l) => l.label);
+const orList = (items) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} or ${items.at(-1)}`);
+// GIPHY's terms ask apps to show this attribution next to its content.
+const GIPHY_ATTRIBUTION = 'Powered by GIPHY';
 
 const OPT_IN_LABEL = 'Opt-in · when enabled';
 const PREMIUM_LABEL = 'Premium';
@@ -82,13 +91,22 @@ const steps = [
 
 const features = [
     { id: 'personas', icon: '🎭', title: 'Personalities per role', text: 'Gentle for some roles, savage for others. Your server decides, role by role.', sources: ['dashboard/lib/shared/personas.js', 'src/guildConfig/context.js'] },
-    { id: 'languages', icon: '🗣️', title: 'English or Hinglish', text: 'Pick the vibe in /setup. The humour follows.', sources: ['src/guildConfig/setup.js', 'dashboard/lib/shared/personas.js'] },
+    { id: 'languages', icon: '🗣️', title: orList(LANGUAGE_LABELS), text: `Pick ${orList(LANGUAGE_LABELS)} in /setup or the dashboard. The humour follows: international jokes in English, desi humour in Hinglish.`, sources: ['src/guildConfig/setup.js', 'dashboard/lib/shared/languages.js', 'dashboard/lib/shared/personas.js'] },
     { id: 'comebacks', icon: '🔥', title: 'Comebacks with limits', text: 'Swear at it and it claps back — but never sexual, never about your family, never hateful.', sources: ['src/ai/profanityDetector.js', 'src/ai/client.js'] },
     { id: 'care', icon: '🫶', title: 'Knows when to stop joking', text: 'If someone sounds like they\'re in crisis, ZiGBoT drops the roast and answers sincerely.', sources: ['dashboard/lib/shared/safety.js'] },
     { id: 'memory', icon: '🧠', title: 'Memory you control', text: 'View, search, correct, export, forget, or clear it. Or turn it off.', sources: ['src/memory/commands.js', 'src/db/brain.js'] },
     { id: 'summaries', icon: '📝', title: 'Conversation summaries', badge: OPT_IN_LABEL, text: 'Short facts from your own chats with ZiGBoT — only if the bot has the feature on and you opt in with /memory summaries.', sources: ['src/memory/summaries.js'] },
+    { id: 'summary_channels', icon: '📌', title: 'Summary channels', badge: OPT_IN_LABEL, text: 'Admins can pick channels with /summarychannels where your own messages may be summarised too — only if you opted in, only channels on the list when you did, and never threads or age-restricted channels.', sources: ['src/memory/summaryChannels.js', 'src/memory/summaries.js'] },
     { id: 'music', icon: '🎵', title: 'Music', badge: PREMIUM_LABEL, text: 'Play from YouTube (SoundCloud as backup), with a queue and buttons.', sources: ['src/music/player.js', 'src/music/sources.js', 'src/music/panel.js'], premiumFeature: 'music' },
     { id: 'voice', icon: '🎙️', title: 'Voice chat', badge: PREMIUM_LABEL, text: 'Talk to ZiGBoT in a voice channel and it talks back.', sources: ['src/voice/voiceConversation.js'], premiumFeature: 'voice' },
+    {
+        id: 'gifs',
+        icon: '🎞️',
+        title: 'Reaction GIFs',
+        text: `Now and then a GIF that matches the moment, rated G and picked from ZiGBoT's own style list — never from what members type. Roast GIFs only in Savage mode, and anyone with the under-18 role gets the gentle ones. Admins pick how often (${orList(Object.keys(GIF_FREQUENCIES))}) or switch them off in /setup or the dashboard.`,
+        attribution: GIPHY_ATTRIBUTION,
+        sources: ['src/gifs/reactions.js', 'src/gifs/giphy.js', 'dashboard/lib/shared/gifs.js']
+    },
     { id: 'moderation', icon: '🛡️', title: 'Moderation that asks first', text: 'Warn, timeout, kick, ban, clean up — with confirm buttons and an audit trail.', sources: ['src/tools/router.js', 'src/security/confirmation.js', 'src/logging/auditLog.js'] },
     { id: 'reputation', icon: '📈', title: 'Reputation', text: 'Helpful, kind members earn warmth; toxic streaks get a colder ZiGBoT. Based on the last 30 days.', sources: ['src/ai/behaviorDetector.js', 'src/db/brain.js'] },
     { id: 'dashboard', icon: '🖥️', title: 'A real dashboard', text: 'Persona, role behaviour, channels, and a live preview — on the web.', sources: ['dashboard/components/GuildEditor.js', 'dashboard/app/api/guilds/[guildId]/preview/route.js'] }
@@ -154,12 +172,16 @@ function premiumComparison({ customIdentity = false } = {}) {
     const perk = Object.fromEntries(PREMIUM_PERKS.map((p) => [p.key, p]));
     const rows = [
         { id: 'chat', label: 'Chat, personalities & comebacks', free: true, premium: true },
+        { id: 'languages', label: `${orList(LANGUAGE_LABELS)} replies`, free: true, premium: true },
+        { id: 'gifs', label: 'Reaction GIFs', free: true, premium: true },
         { id: 'memory', label: 'Memory you control (/memory)', free: true, premium: true },
+        { id: 'summaries', label: 'Opt-in summaries & summary channels', free: true, premium: true },
         { id: 'moderation', label: 'Moderation tools & audit trail', free: true, premium: true },
         { id: 'setup', label: '/setup & web dashboard', free: true, premium: true },
         { id: 'ai_limits', perk: 'ai_limits', label: 'AI reply limits', free: 'Standard', premium: 'Higher' },
         { id: 'role_mappings', perk: 'role_mappings', label: 'Role mappings', free: `Up to ${FREE_LIMITS.roleMappings}`, premium: `Up to ${LIMITS.roleMappingsPerGuild}` },
-        { id: 'custom_persona', perk: 'custom_persona', label: perk.custom_persona.title, free: false, premium: true }
+        { id: 'custom_persona', perk: 'custom_persona', label: perk.custom_persona.title, free: false, premium: true },
+        { id: 'persona_templates', perk: 'custom_persona', label: `${PERSONA_TEMPLATES.length} ready-made personas`, free: false, premium: true }
     ];
     for (const feature of PREMIUM_ONLY_FEATURES) {
         if (!PREMIUM_FEATURE_LABELS[feature]) throw new Error(`Add a landing label for Premium feature "${feature}" in lib/landing.js`);
@@ -175,9 +197,17 @@ function premiumComparison({ customIdentity = false } = {}) {
     return rows;
 }
 
+// Ready-made custom personas (Premium), straight from the shared templates
+// file the dashboard's AI behaviour tab uses.
+const personaTemplates = {
+    title: 'Ready-made personas',
+    text: `Premium servers can start their custom persona from ${PERSONA_TEMPLATES.length} templates, then edit it in the dashboard. ZiGBoT's safety rules still apply.`,
+    items: PERSONA_TEMPLATES.map(({ id, emoji, name, description }) => ({ id, emoji, name, description }))
+};
+
 // Built from the real plan numbers, so it cannot overstate them.
 function freeAnswer({ customIdentity = false } = {}) {
-    const perks = ['higher AI reply limits', 'a custom persona', ...(customIdentity ? ['a custom bot name and avatar'] : []), `up to ${LIMITS.roleMappingsPerGuild} role mappings`];
+    const perks = ['higher AI reply limits', `a custom persona (or one of ${PERSONA_TEMPLATES.length} ready-made ones)`, ...(customIdentity ? ['a custom bot name and avatar'] : []), `up to ${LIMITS.roleMappingsPerGuild} role mappings`];
     const features = PREMIUM_ONLY_FEATURES.map((f) => PREMIUM_FEATURE_LABELS[f].toLowerCase()).join(' and ');
     return `Yes. Chat, memory, moderation and setup are free (with up to ${FREE_LIMITS.roleMappings} role mappings). Premium, per server, adds ${perks.join(', ')}, and ${features}.`;
 }
@@ -189,7 +219,7 @@ const faq = [
     },
     {
         q: 'What does it remember about me?',
-        a: 'Notes you save with /memory remember, for 30 days. Conversation summaries only if the bot has them enabled and you opt in. Your memories are private unless you share one.'
+        a: 'Notes you save with /memory remember, for 30 days. Conversation summaries only if the bot has them enabled and you opt in — from your chats with ZiGBoT and, if your admins chose summary channels, your own messages there. Your memories are private unless you share one.'
     },
     {
         q: 'How do I delete my data?',
@@ -236,6 +266,9 @@ module.exports = {
     ownerControls,
     premiumComparison,
     faq,
+    personaTemplates,
+    GIPHY_ATTRIBUTION,
+    LANGUAGE_LABELS,
     OPT_IN_LABEL,
     PREMIUM_LABEL,
     PREMIUM_FEATURE_LABELS

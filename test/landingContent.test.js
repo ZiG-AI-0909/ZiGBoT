@@ -200,3 +200,87 @@ test('custom identity: the page wires the preview, owner-step link and reduced m
     const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
     assert.match(reduced, /\.l-idswap-a, \.l-idswap-b \{ animation: none !important; \}/);
 });
+
+// ---------- Features shipped on master that the page must describe ----------
+// Each claim below is checked against the code it describes, so the copy
+// cannot drift from the bot.
+
+const { GIF_STYLES, GIF_MODE_STYLES, GIF_FREQUENCIES, defaultGifSettings } = require('../dashboard/lib/shared/gifs');
+const { PERSONA_TEMPLATES } = require('../dashboard/lib/shared/personaTemplates');
+const { SUPPORTED_LANGUAGES } = require('../dashboard/lib/shared/languages');
+
+test('reaction GIFs: the card matches the GIF rules, is free, and credits GIPHY', () => {
+    const card = landing.features.find((f) => f.id === 'gifs');
+    assert.ok(card, 'reaction GIFs card');
+    assert.equal(card.badge, undefined, 'GIFs are free and on by default, so no Premium or opt-in badge');
+    assert.equal(defaultGifSettings().enabled, true);
+    assert.ok(!PREMIUM_ONLY_FEATURES.includes('gifs'));
+    assert.equal(card.attribution, 'Powered by GIPHY');
+    assert.equal(card.attribution, landing.GIPHY_ATTRIBUTION);
+    assert.match(read('dashboard/app/page.js'), /feature\.attribution \? <p className="small l-attribution">\{feature\.attribution\}<\/p> : null/);
+    // "Roast GIFs only in Savage": no roast style is allowed in Gentle or Neutral.
+    assert.match(card.text, /Roast GIFs only in Savage mode/);
+    const roastStyles = Object.keys(GIF_STYLES).filter((id) => GIF_STYLES[id].roast);
+    assert.ok(roastStyles.length > 0);
+    for (const style of roastStyles) {
+        assert.ok(GIF_MODE_STYLES.savage.includes(style));
+        assert.ok(!GIF_MODE_STYLES.gentle.includes(style) && !GIF_MODE_STYLES.neutral.includes(style), `${style} must stay Savage-only`);
+    }
+    // "rated G" and "never from what members type"
+    assert.match(card.text, /rated G/);
+    assert.match(read('src/gifs/giphy.js'), /rating: 'g'/);
+    assert.match(card.text, /never from what members type/);
+    // Frequencies named on the card are exactly the configurable ones.
+    for (const name of Object.keys(GIF_FREQUENCIES)) assert.ok(card.text.split(/[^a-z]+/i).includes(name), `card names the "${name}" frequency`);
+    assert.ok(buildDefinitions().find((d) => d.name === 'setup').options.some((o) => o.name === 'gif_frequency'), 'GIFs are set in /setup');
+    assert.match(read('dashboard/app/privacy/page.js'), /GIPHY/, 'the privacy page names GIPHY as a processor');
+    assert.deepEqual(landing.premiumComparison().find((r) => r.id === 'gifs'), { id: 'gifs', label: 'Reaction GIFs', free: true, premium: true });
+});
+
+test('persona templates: shown from the shared templates file, as Premium', () => {
+    assert.deepEqual(landing.personaTemplates.items, PERSONA_TEMPLATES.map(({ id, emoji, name, description }) => ({ id, emoji, name, description })));
+    assert.match(landing.personaTemplates.text, new RegExp(`from ${PERSONA_TEMPLATES.length} templates`));
+    assert.match(landing.personaTemplates.text, /^Premium servers/);
+    const row = landing.premiumComparison().find((r) => r.id === 'persona_templates');
+    assert.deepEqual(row, { id: 'persona_templates', perk: 'custom_persona', label: `${PERSONA_TEMPLATES.length} ready-made personas`, free: false, premium: true });
+    assert.ok(PREMIUM_PERKS.some((p) => p.key === row.perk), 'templates sit under the real custom persona perk');
+    assert.ok(landing.faq[0].a.includes(`a custom persona (or one of ${PERSONA_TEMPLATES.length} ready-made ones)`));
+    const page = read('dashboard/app/page.js');
+    assert.match(page, /landing\.personaTemplates\.items\.map/);
+    assert.match(page, /landing\.personaTemplates\.title/);
+});
+
+test('channel summaries: opt-in, admin-chosen channels, with the real limits', () => {
+    const card = landing.features.find((f) => f.id === 'summary_channels');
+    assert.ok(card, 'summary channels card');
+    assert.equal(card.badge, landing.OPT_IN_LABEL);
+    assert.match(card.text, /\/summarychannels/);
+    assert.ok(buildDefinitions().some((d) => d.name === 'summarychannels'), '/summarychannels exists');
+    assert.match(card.text, /your own messages/);
+    assert.match(card.text, /only if you opted in/);
+    assert.match(card.text, /never threads or age-restricted channels/);
+    const guards = read('src/memory/summaryChannels.js');
+    assert.match(guards, /Threads cannot be summary channels/);
+    assert.match(guards, /NSFW\) channels cannot be summary channels/);
+    assert.match(read('src/memory/summaries.js'), /consent snapshot/, '"only channels on the list when you did" is the consent snapshot');
+    assert.match(landing.faq.find((f) => f.q === 'What does it remember about me?').a, /summary channels, your own messages there/);
+});
+
+test('languages: every supported language is on the page, and /setup offers exactly those', () => {
+    const labels = SUPPORTED_LANGUAGES.map((l) => l.label);
+    assert.deepEqual(landing.LANGUAGE_LABELS, labels);
+    const card = landing.features.find((f) => f.id === 'languages');
+    for (const label of labels) {
+        assert.match(card.title, new RegExp(label));
+        assert.match(card.text, new RegExp(label));
+    }
+    const choices = buildDefinitions().find((d) => d.name === 'setup').options.find((o) => o.name === 'language').choices.map((c) => c.value);
+    assert.deepEqual(choices, SUPPORTED_LANGUAGES.map((l) => l.value));
+    assert.ok(landing.premiumComparison().some((r) => r.id === 'languages' && r.free === true));
+});
+
+test('feature cards have unique ids and every card is rendered by id', () => {
+    const ids = landing.landingContent({ customIdentity: true }).features.map((f) => f.id);
+    assert.equal(new Set(ids).size, ids.length);
+    for (const id of ['gifs', 'summary_channels', 'languages', 'summaries']) assert.ok(ids.includes(id), id);
+});
