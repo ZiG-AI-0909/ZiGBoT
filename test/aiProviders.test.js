@@ -158,3 +158,28 @@ test('a provider that just failed is tried last until its cooldown ends', async 
     const demoted = await client.chat.completions.create({ messages: [] });
     assert.equal(demoted.choices[0].message.content, 'from groq');
 });
+
+test('an empty or reasoning-only answer fails over to the next provider without a cooldown', async () => {
+    const empty = fakeProvider('NVIDIA', 'openai/gpt-oss-20b', () => ({ choices: [{ message: { content: '' }, finish_reason: 'length' }] }));
+    const groq = fakeProvider('Groq', 'openai/gpt-oss-20b', ok('real answer'));
+    const client = createChatClient({}, { providers: [empty, groq], logger: quiet });
+    const response = await client.chat.completions.create({ messages: [] });
+    assert.equal(response.choices[0].message.content, 'real answer');
+    // A one-off empty answer does not demote NVIDIA for the next message.
+    await client.chat.completions.create({ messages: [] });
+    assert.equal(empty.calls.length, 2);
+
+    const thinking = fakeProvider('A', 'a', ok('<think>hmm, let me consider'));
+    const only = createChatClient({}, { providers: [thinking], logger: quiet });
+    await assert.rejects(only.chat.completions.create({ messages: [] }), (error) => error.emptyResponse === true);
+});
+
+test('hasUsableContent ignores whitespace and think blocks', () => {
+    const { hasUsableContent } = require('../src/ai/providers');
+    const wrap = (content) => ({ choices: [{ message: { content } }] });
+    assert.equal(hasUsableContent(wrap('  ')), false);
+    assert.equal(hasUsableContent(wrap('<think>x</think>  ')), false);
+    assert.equal(hasUsableContent(wrap(null)), false);
+    assert.equal(hasUsableContent({}), false);
+    assert.equal(hasUsableContent(wrap('<think>x</think> hi')), true);
+});

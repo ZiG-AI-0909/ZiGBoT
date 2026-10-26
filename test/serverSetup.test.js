@@ -60,7 +60,7 @@ test('language picks English-only or Hinglish personas; unset keeps the original
     assert.doesNotMatch(english, /bhai|Hinglish slang|Samay Raina/);
     assert.match(personaFor('gentle', 'English'), /Reply ONLY in English/);
 
-    assert.match(personaFor('savage', 'Hinglish'), /Reply in Hinglish in every message/);
+    assert.match(personaFor('savage', 'Hinglish'), /Reply in Hinglish by default/);
     assert.match(personaFor('savage', 'Hinglish'), /Sharma ji ka beta/);
     assert.doesNotMatch(personaFor('savage', ''), /LANGUAGE:/);
 });

@@ -82,7 +82,8 @@ function logAiError(error) {
     console.error(`[ZiGBoT AI ERROR] ${details}`);
 }
 
-const aiFailureReply = 'I am dead';
+// Shown when every chat provider failed; the real error is only logged.
+const aiFailureReply = 'My AI brain is not responding right now (the AI service is busy or down). Please try again in a minute.';
 
 const logReplyPacing = (message) => console.log(`[ZiGBoT REPLY] ${message}`);
 
@@ -408,9 +409,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await interaction.editReply('⚠️ Check the confirmation request above.');
     } catch (error) {
         logAiError(error);
+        // Details stay in the server log; members get a plain notice.
+        const notice = '❌ That command failed. Please try again in a moment.';
         const reply = interaction.deferred || interaction.replied
-            ? interaction.editReply(error.message)
-            : interaction.reply(error.message);
+            ? interaction.editReply(notice)
+            : interaction.reply({ content: notice, ephemeral: true });
         await reply.catch(() => {});
     }
 });
@@ -827,6 +830,9 @@ client.on(Events.MessageCreate, async (message) => {
     const authorName = message.member?.displayName || message.author.username;
 
     try {
+        // Show "typing…" while the memory lookups and the AI call run, not
+        // only once the answer is ready. Missing permission is not an error.
+        message.channel.sendTyping?.()?.catch?.(() => {});
         const history = defaultMemory.getHistory(message.channel.id);
 
         // Persistent memory retrieval: real MongoDB records for THIS user in
