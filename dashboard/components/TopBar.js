@@ -1,8 +1,7 @@
 import Link from 'next/link';
-import { contactUrl } from '@/lib/discord';
+import { PORTFOLIO_CONTACT_URL } from '@/lib/discord';
 
 export default function TopBar({ profile }) {
-    const contact = contactUrl();
     return (
         <header className="topbar">
             <Link href={profile ? '/dashboard' : '/'} className="brand">
@@ -11,7 +10,7 @@ export default function TopBar({ profile }) {
             </Link>
             <div className="topbar-actions">
                 <Link className="btn btn-ghost" href="/commands">📖 Commands</Link>
-                {contact ? <a className="btn btn-ghost" href={contact} target="_blank" rel="noreferrer" title="Message ZiG on Discord">💬 Contact</a> : null}
+                <a className="btn btn-ghost" href={PORTFOLIO_CONTACT_URL} target="_blank" rel="noreferrer" title="Contact the creator">💬 Contact</a>
                 {profile ? (
                     <div className="user-chip">
                         {profile.avatar_url ? <img className="avatar" src={profile.avatar_url} alt="" /> : null}

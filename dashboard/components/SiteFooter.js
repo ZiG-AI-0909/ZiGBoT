@@ -1,8 +1,7 @@
 import Link from 'next/link';
-import { contactUrl } from '@/lib/discord';
+import { PORTFOLIO_CONTACT_URL } from '@/lib/discord';
 
 export default function SiteFooter() {
-    const contact = contactUrl();
     return (
         <footer className="site-footer">
             <span>© {new Date().getFullYear()} ZiGBoT</span>
@@ -10,7 +9,7 @@ export default function SiteFooter() {
                 <Link href="/commands">Commands</Link>
                 <Link href="/terms">Terms of Service</Link>
                 <Link href="/privacy">Privacy Policy</Link>
-                {contact ? <a href={contact} target="_blank" rel="noreferrer">Contact</a> : null}
+                <a href={PORTFOLIO_CONTACT_URL} target="_blank" rel="noreferrer">Contact</a>
             </nav>
         </footer>
     );
