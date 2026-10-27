@@ -8,7 +8,7 @@ import HeroOrb from '@/components/landing/HeroOrb';
 import ChatDemo from '@/components/landing/ChatDemo';
 import IdentitySwap from '@/components/landing/IdentitySwap';
 import { getCurrentUser } from '@/lib/auth';
-import { inviteUrl, PORTFOLIO_CONTACT_URL } from '@/lib/discord';
+import { inviteUrl } from '@/lib/discord';
 import { env } from '@/lib/env';
 import landing from '@/lib/landing';
 import seo from '@/lib/seo';
@@ -99,7 +99,6 @@ export default async function Home({ searchParams }) {
                         {invite ? <a className="btn btn-primary btn-lg l-glow" href={invite} target="_blank" rel="noreferrer">➕ Add to Discord</a> : null}
                         <Link className="btn btn-lg" href="/commands">See commands →</Link>
                         {current ? <Link className="btn btn-ghost btn-lg" href="/dashboard">Open dashboard</Link> : null}
-                        <a className="btn btn-ghost btn-lg" href={PORTFOLIO_CONTACT_URL} target="_blank" rel="noreferrer">💬 Contact</a>
                     </div>
                     <p className="small muted">{landing.hero.note} 🔒</p>
                 </div>
@@ -247,7 +246,6 @@ export default async function Home({ searchParams }) {
                 <div className="row l-ctas">
                     {invite ? <a className="btn btn-primary btn-lg l-glow" href={invite} target="_blank" rel="noreferrer">➕ Add to Discord</a> : null}
                     <Link className="btn btn-lg" href="/commands">See commands</Link>
-                    <a className="btn btn-ghost btn-lg" href={PORTFOLIO_CONTACT_URL} target="_blank" rel="noreferrer">💬 Contact</a>
                 </div>
             </Reveal>
         </div>
