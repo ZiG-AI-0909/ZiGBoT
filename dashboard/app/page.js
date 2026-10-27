@@ -99,6 +99,7 @@ export default async function Home({ searchParams }) {
                         {invite ? <a className="btn btn-primary btn-lg l-glow" href={invite} target="_blank" rel="noreferrer">➕ Add to Discord</a> : null}
                         <Link className="btn btn-lg" href="/commands">See commands →</Link>
                         {current ? <Link className="btn btn-ghost btn-lg" href="/dashboard">Open dashboard</Link> : null}
+                        <a className="btn btn-ghost btn-lg" href={PORTFOLIO_CONTACT_URL} target="_blank" rel="noreferrer">💬 Contact</a>
                     </div>
                     <p className="small muted">{landing.hero.note} 🔒</p>
                 </div>
