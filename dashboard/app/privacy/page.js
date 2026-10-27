@@ -53,9 +53,9 @@ export default function Privacy() {
                     <li>
                         <strong>Custom bot identity (Premium, when available).</strong> If a server&apos;s admins give ZiGBoT its own name, picture
                         and bio there, we store that name and bio, the uploaded picture, and which admin made each change. Pictures are cropped,
-                        re-saved as a new image with their metadata (such as location or camera details) removed, kept in private storage, and
-                        checked by the bot owner before they are used. The name, bio and approved picture are sent to Discord to show on
-                        ZiGBoT&apos;s profile in that server only.
+                        re-saved as a new image with their metadata (such as location or camera details) removed, and kept in private storage.
+                        The name, bio and picture are sent to Discord to show on ZiGBoT&apos;s profile in that server only. The bot owner can
+                        block a server or an admin from this feature.
                     </li>
                 </ul>
 

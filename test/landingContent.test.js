@@ -174,7 +174,7 @@ test('custom identity: the card, FAQ and owner step say only what is verified', 
     const faq = on.faq.find((f) => f.q === 'Can I rename the bot?');
     assert.match(faq.a, /^Yes, on Premium\./);
     assert.match(faq.a, /🪪 Identity tab/);
-    assert.match(faq.a, /reviewed before they go live/);
+    assert.match(faq.a, /Changes go live as soon as you save/);
     const step = on.ownerSteps.at(-1);
     assert.equal(step, landing.IDENTITY_OWNER_STEP);
     assert.match(step.text, /Identity tab/);

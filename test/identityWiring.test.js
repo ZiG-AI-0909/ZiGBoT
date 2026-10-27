@@ -77,6 +77,27 @@ test('dashboard routes: gated, admin-checked server-side, owner-only review', ()
     assert.match(avatar, /'X-Content-Type-Options': 'nosniff'/);
 });
 
+test('uploaded pictures go live straight away unless IDENTITY_AVATAR_REVIEW=true', () => {
+    const env = read('dashboard/lib/env.js');
+    assert.match(env, /get identityAvatarReview\(\) \{ return process\.env\.IDENTITY_AVATAR_REVIEW === 'true'; \}/, 'review is off unless exactly "true"');
+    const route = read('dashboard/app/api/guilds/[guildId]/identity/route.js');
+    const put = route.slice(route.indexOf('export const PUT'), route.indexOf('export const DELETE'));
+    assert.match(put, /const review = env\.identityAvatarReview;/);
+    // Direct: the upload becomes the live picture and any pending one is cleared.
+    assert.match(put, /Object\.assign\(next, \{ avatar_path: path, avatar_sha256: processed\.sha256, \.\.\.noPending \}\)/);
+    // A picture left pending from review mode goes live on the next save.
+    assert.match(put, /else if \(!review && row\?\.pending_avatar_path && !removeAvatar\)/);
+    assert.match(put, /avatar_path: row\.pending_avatar_path, avatar_sha256: row\.pending_avatar_sha256, \.\.\.noPending/);
+    // The live picture is pushed to Discord in the same request, before saving.
+    assert.ok(put.indexOf('noPending }') < put.indexOf('pushIdentity('), 'the picture is set before the Discord push');
+    // The owner is only asked to review in review mode.
+    assert.match(put, /if \(review && uploadedPath && uploadedPath !== row\?\.pending_avatar_path\) await notifyOwnerOfPending\(guild\)/);
+    assert.match(route, /avatarReview: env\.identityAvatarReview/, 'the Identity tab knows which mode is on');
+    const tab = read('dashboard/components/IdentityTab.js');
+    assert.match(tab, /goes live \{data\.avatarReview \? 'after a quick review' : 'as soon as you save'\}/);
+    assert.match(tab, /identity\?\.hasPending && !data\.avatarReview \? .*Click <strong>Save<\/strong> to publish it/);
+});
+
 test('Premium lapse reverts from the billing webhook too (best effort; the bot sync is the safety net)', () => {
     const webhook = read('dashboard/app/api/billing/razorpay/webhook/route.js');
     assert.ok(webhook.indexOf('await syncSubscription(subscription)') < webhook.indexOf('await revertLapsedIdentity('));
@@ -105,7 +126,8 @@ test('Privacy and Terms describe the feature as it works', () => {
     const privacy = read('dashboard/app/privacy/page.js');
     assert.match(privacy, /Custom bot identity \(Premium, when available\)/);
     assert.match(privacy, /metadata \(such as location or camera details\) removed/);
-    assert.match(privacy, /checked by the bot owner before they are used/);
+    assert.match(privacy, /The bot owner can\s+block a server or an admin from this feature/);
+    assert.doesNotMatch(privacy, /checked by the bot owner before they are used/, 'pictures are no longer reviewed by default');
     assert.match(privacy, /deleted 30 days later/);
     assert.match(privacy, /<code>\/identity reset<\/code>/);
     const terms = read('dashboard/app/terms/page.js');

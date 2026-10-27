@@ -1,6 +1,7 @@
 import shared from '@/lib/shared';
 import { handler, json, HttpError } from '@/lib/http';
 import { requireGuildAdmin } from '@/lib/auth';
+import { env } from '@/lib/env';
 import { loadPlan } from '@/lib/billing';
 import { processAvatar, IdentityImageError } from '@/lib/identityImage';
 import {
@@ -19,6 +20,8 @@ function view(row, { premium, blocks }) {
     return {
         enabled: true,
         premium,
+        // false: uploaded pictures go live straight away (no owner review).
+        avatarReview: env.identityAvatarReview,
         blocked: blocks.guildBlocked || blocks.userBlocked,
         limits: IDENTITY_LIMITS,
         identity: row ? {
@@ -48,7 +51,8 @@ export const GET = handler(async (_request, { params }) => {
 
 // PUT (multipart): nick, bio, optional avatar file, optional remove_avatar=1.
 // Nickname and bio go live straight away (Discord checks them too, so a name
-// Discord refuses is never saved). A new avatar waits for the owner's review.
+// Discord refuses is never saved). A new avatar goes live straight away too,
+// unless IDENTITY_AVATAR_REVIEW=true: then it waits for the owner's review.
 export const PUT = handler(async (request, { params }) => {
     const { guildId } = await params;
     if (!identityEnabledFor(guildId)) throw new HttpError(404, 'Custom bot identity isn’t available in this server yet.', { code: 'identity_disabled' });
@@ -106,14 +110,26 @@ export const PUT = handler(async (request, { params }) => {
         stale.push(row?.avatar_path, row?.pending_avatar_path);
         Object.assign(next, { avatar_path: null, avatar_sha256: null, pending_avatar_path: null, pending_avatar_sha256: null, pending_submitted_at: null, pending_submitted_by: null });
     }
+    const review = env.identityAvatarReview;
+    const noPending = { pending_avatar_path: null, pending_avatar_sha256: null, pending_submitted_at: null, pending_submitted_by: null, review_note: null };
     let uploadedPath = null;
     if (processed) {
         const path = identityImagePath(guild.id, processed.sha256);
         if (path !== row?.avatar_path) {
             uploadedPath = path !== row?.pending_avatar_path ? await uploadAvatar(guild.id, processed.png, processed.sha256) : path;
             if (row?.pending_avatar_path && row.pending_avatar_path !== path) stale.push(row.pending_avatar_path);
-            Object.assign(next, { pending_avatar_path: path, pending_avatar_sha256: processed.sha256, pending_submitted_at: nowIso, pending_submitted_by: discordId, review_note: null });
+            if (review) {
+                Object.assign(next, { pending_avatar_path: path, pending_avatar_sha256: processed.sha256, pending_submitted_at: nowIso, pending_submitted_by: discordId, review_note: null });
+            } else {
+                // No review: the picture is live now and pushed to Discord below.
+                if (row?.avatar_path) stale.push(row.avatar_path);
+                Object.assign(next, { avatar_path: path, avatar_sha256: processed.sha256, ...noPending });
+            }
         }
+    } else if (!review && row?.pending_avatar_path && !removeAvatar) {
+        // A picture uploaded while reviews were on goes live on the next save.
+        if (row.avatar_path) stale.push(row.avatar_path);
+        Object.assign(next, { avatar_path: row.pending_avatar_path, avatar_sha256: row.pending_avatar_sha256, ...noPending });
     }
 
     let applied = null;
@@ -126,7 +142,7 @@ export const PUT = handler(async (request, { params }) => {
     const saved = await saveIdentityRow({ ...next, ...(applied || {}) });
     await removeAvatars(stale.filter((path) => path && path !== saved.avatar_path && path !== saved.pending_avatar_path));
     await writeAudit({ guildId: guild.id, action: row ? 'UPDATE' : 'INSERT', actorUserId: user.id, actorRole: 'authenticated', before: auditView(row), after: auditView(saved) });
-    if (uploadedPath && uploadedPath !== row?.pending_avatar_path) await notifyOwnerOfPending(guild);
+    if (review && uploadedPath && uploadedPath !== row?.pending_avatar_path) await notifyOwnerOfPending(guild);
     return json(view(saved, { premium: plan.premium, blocks }));
 });
 

@@ -153,11 +153,11 @@ const IDENTITY_FEATURE = {
 };
 const IDENTITY_FAQ = {
     q: 'Can I rename the bot?',
-    a: 'Yes, on Premium. Open your server in the dashboard, go to the 🪪 Identity tab, and give ZiGBoT its own name, picture and bio in that server. Pictures are reviewed before they go live, and Discord’s APP tag always shows.'
+    a: 'Yes, on Premium. Open your server in the dashboard, go to the 🪪 Identity tab, and give ZiGBoT its own name, picture and bio in that server. Changes go live as soon as you save, and Discord’s APP tag always shows.'
 };
 const IDENTITY_OWNER_STEP = {
     title: 'Make it yours',
-    text: 'On Premium, give ZiGBoT its own name, picture and bio from the 🪪 Identity tab. Pictures are reviewed before they go live.',
+    text: 'On Premium, give ZiGBoT its own name, picture and bio from the 🪪 Identity tab. Changes go live as soon as you save.',
     link: 'Open the dashboard'
 };
 
