@@ -154,6 +154,9 @@ export function contactUrl() {
     return SNOWFLAKE.test(String(id || '')) ? `https://discord.com/users/${id}` : null;
 }
 
+/** Contact section of the creator's portfolio site (the site-wide Contact button). */
+export const PORTFOLIO_CONTACT_URL = 'https://aibhaveshportfolio.vercel.app/#contact';
+
 export function guildIconUrl(guildId, icon) {
     return icon ? `https://cdn.discordapp.com/icons/${guildId}/${icon}.png?size=96` : null;
 }

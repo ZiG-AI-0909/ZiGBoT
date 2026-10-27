@@ -8,7 +8,7 @@ import HeroOrb from '@/components/landing/HeroOrb';
 import ChatDemo from '@/components/landing/ChatDemo';
 import IdentitySwap from '@/components/landing/IdentitySwap';
 import { getCurrentUser } from '@/lib/auth';
-import { inviteUrl, contactUrl } from '@/lib/discord';
+import { inviteUrl, PORTFOLIO_CONTACT_URL } from '@/lib/discord';
 import { env } from '@/lib/env';
 import landing from '@/lib/landing';
 import seo from '@/lib/seo';
@@ -57,7 +57,6 @@ export default async function Home({ searchParams }) {
     } catch {
         prices = { monthly: '', yearly: '' };
     }
-    const contact = contactUrl();
     const dashboardHref = current ? '/dashboard' : '/auth/login';
     // Custom bot identity is advertised only while it is on for every server
     // (no CUSTOM_IDENTITY_GUILDS pilot list), so "Premium servers can" is true.
@@ -247,7 +246,7 @@ export default async function Home({ searchParams }) {
                 <div className="row l-ctas">
                     {invite ? <a className="btn btn-primary btn-lg l-glow" href={invite} target="_blank" rel="noreferrer">➕ Add to Discord</a> : null}
                     <Link className="btn btn-lg" href="/commands">See commands</Link>
-                    {contact ? <a className="btn btn-ghost btn-lg" href={contact} target="_blank" rel="noreferrer">💬 Contact</a> : null}
+                    <a className="btn btn-ghost btn-lg" href={PORTFOLIO_CONTACT_URL} target="_blank" rel="noreferrer">💬 Contact</a>
                 </div>
             </Reveal>
         </div>
