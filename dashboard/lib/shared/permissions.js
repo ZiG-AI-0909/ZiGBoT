@@ -51,4 +51,36 @@ function canManageFromOAuthGuild(oauthGuild) {
     return canManageGuild(oauthGuild.permissions);
 }
 
-module.exports = { computeBasePermissions, hasPermission, canManageGuild, canManageFromOAuthGuild, toBigInt };
+/**
+ * A member's permissions in one channel: base permissions, then the
+ * channel's @everyone, role and member overwrites (Discord's documented
+ * order). Administrator and the owner keep everything.
+ * @param {{permission_overwrites?: Array<{id:string, type:number, allow:string, deny:string}>}} channel
+ */
+function computeChannelPermissions(guild, member, channel) {
+    const ALL = (1n << 53n) - 1n;
+    let perms = computeBasePermissions(guild, member);
+    if (perms === ALL) return ALL;
+    const overwrites = channel?.permission_overwrites || [];
+    const apply = (overwrite) => {
+        if (!overwrite) return;
+        perms &= ~toBigInt(overwrite.deny);
+        perms |= toBigInt(overwrite.allow);
+    };
+    apply(overwrites.find((o) => String(o.id) === String(guild.id)));
+    const roles = new Set((member?.roles || []).map(String));
+    let allow = 0n;
+    let deny = 0n;
+    for (const o of overwrites) {
+        if (Number(o.type) === 0 && String(o.id) !== String(guild.id) && roles.has(String(o.id))) {
+            allow |= toBigInt(o.allow);
+            deny |= toBigInt(o.deny);
+        }
+    }
+    perms &= ~deny;
+    perms |= allow;
+    apply(overwrites.find((o) => Number(o.type) === 1 && String(o.id) === String(member?.user?.id)));
+    return perms;
+}
+
+module.exports = { computeBasePermissions, computeChannelPermissions, hasPermission, canManageGuild, canManageFromOAuthGuild, toBigInt };

@@ -14,6 +14,7 @@ const {
 const { buildUserContext } = require('./ai/userContext');
 const { createAntiNuke } = require('./antinuke/monitor');
 const { createAntiNukeStore } = require('./antinuke/store');
+const { createGreetingScheduler } = require('./greetings/scheduler');
 const { defaultMemory } = require('./ai/memory');
 const { RateLimiter } = require('./ai/rateLimiter');
 const { detectTrigger, defaultTracker } = require('./ai/triggerDetector');
@@ -218,6 +219,8 @@ const antiNuke = createAntiNuke({
     dashboardUrl: (guildId) => `${settings.dashboardUrl}/dashboard/${guildId}`,
     version: BOT_VERSION
 });
+// Scheduled greetings (dashboard Roles tab): sent by this worker from Supabase.
+const greetingScheduler = createGreetingScheduler({ client, guildStore });
 client.on(Events.GuildAuditLogEntryCreate, (entry, guild) => {
     antiNuke.onAuditLogEntry(entry, guild);
 });
@@ -253,6 +256,7 @@ client.once(Events.ClientReady, async (c) => {
     }
     // Anti-Nuke runs in every server, with or without the dashboard database.
     antiNuke.start();
+    greetingScheduler.start();
     // Slash commands are a secondary interface: a registration failure must
     // never take down the whole bot — keep running in mention-driven mode.
     try {
