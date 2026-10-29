@@ -6,6 +6,8 @@ const { composeSystemPrompt } = require('../../dashboard/lib/shared/prompt');
 // "Who made you?" answers live in ./creator.js: short, in the server's
 // language and the member's tone, never calling ZiG this server's owner.
 const { creatorAnswer, creatorPersonaInstruction, withPortfolioLink, CREATOR_PORTFOLIO_URL } = require('./creator');
+// Who is speaking, and the final placeholder/mention pass over every reply.
+const { speakerBlock, finalizeReplyText } = require('./userContext');
 
 /** A fixed "who made you" reply for a built-in tone (the owner gets the respectful one). */
 function getCreatorResponse({ tone = 'neutral', isOwner = false, language = '', rng = Math.random } = {}) {
@@ -488,7 +490,16 @@ function createAiClient(settings) {
         },
 
         // Always { text, gif }; gif is set only when options.gif allowed one.
-        async generate({ fast = false, userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, declineMode = false, userId = null, memoryState = null, memories = null, sharedState = 'skipped', sharedMemories = null, summaries = null, summariesActive = false, reputation = null, guildPrompt = null, rateLimitMax = null, gif = null, roastIntensity = null }) {
+        // user: buildUserContext() of the member being answered. The reply's
+        // name/mention placeholders are filled from it, and user mentions
+        // outside allowedUserIds (the member, people their message mentioned)
+        // are dropped, so the model can never address someone else or invent ids.
+        async generate(options = {}) {
+            const result = await this.compose(options);
+            return { ...result, text: finalizeReplyText(result.text, options.user || null, { allowedUserIds: options.allowedUserIds ?? null }) };
+        },
+
+        async compose({ fast = false, userMessage, authorName = '', contextMessages = [], tone = 'savage', gender = null, isOwner = false, isNonGentle = false, comebackMode = false, declineMode = false, userId = null, memoryState = null, memories = null, sharedState = 'skipped', sharedMemories = null, summaries = null, summariesActive = false, reputation = null, guildPrompt = null, rateLimitMax = null, gif = null, roastIntensity = null, user = null }) {
             const plain = (text) => ({ text, gif: null });
             // guildPrompt = { config, behavior, isHomeGuild } in multi-server mode; null keeps the legacy prompt exactly.
             const config = guildPrompt?.config || {};
@@ -530,7 +541,9 @@ function createAiClient(settings) {
             // The tone the reply is judged by: the owner always gets the respectful mode.
             const reviewTone = isOwner ? 'gentle' : tone;
 
+            // Every persona (built-in or custom) is told who is speaking now.
             const systemPrompt = buildReplySystemPrompt({ tone, gender, isOwner, isNonGentle, comebackMode, guildPrompt, roastIntensity: intensity })
+                + speakerBlock(user)
                 + (creatorTurn ? creatorPersonaInstruction(language) : gifPromptBlock(gif));
 
             // Memory status + rules go in the system prompt (code-written);
