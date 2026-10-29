@@ -2,7 +2,7 @@ import shared from '@/lib/shared';
 import { handler, json, readJson, HttpError } from '@/lib/http';
 import { requireGuildAdmin } from '@/lib/auth';
 import { createServiceClient } from '@/lib/supabase/server';
-import { greetingChannels, assertCanSend, scheduleView, missingTableMessage, TABLE } from '@/lib/greetings';
+import { greetingChannels, assertCanSend, assertCanPing, pingableRoles, scheduleView, missingTableMessage, TABLE } from '@/lib/greetings';
 
 const { validateGreeting, GREETING_LIMITS, GREETING_PLACEHOLDERS, GREETING_TYPES } = shared;
 
@@ -30,6 +30,7 @@ export const GET = handler(async (_request, { params }) => {
     return json({
         schedules: (result.data || []).map(scheduleView),
         channels,
+        roles: pingableRoles(guild),
         meta: { limits: GREETING_LIMITS, placeholders: GREETING_PLACEHOLDERS, types: GREETING_TYPES, serverName: guild.name }
     });
 });
@@ -40,9 +41,9 @@ export const POST = handler(async (request, { params }) => {
     const { guild, discordId } = await requireGuildAdmin(guildId);
     const body = await readJson(request);
     const channels = await greetingChannels(guild);
-    const result = validateGreeting(body?.schedule, { channelIds: new Set(channels.map((c) => c.id)) });
+    const result = validateGreeting(body?.schedule, { channelIds: new Set(channels.map((c) => c.id)), roleIds: new Set(pingableRoles(guild).map((r) => r.id)) });
     if (!result.ok) throw new HttpError(422, 'Some fields need fixing.', { fieldErrors: result.errors });
-    assertCanSend(channels, result.value.channel_id);
+    assertCanPing(guild, assertCanSend(channels, result.value.channel_id), result.value.ping_target);
 
     const db = createServiceClient();
     const { count, error: countError } = await db.from(TABLE).select('id', { count: 'exact', head: true }).eq('guild_id', String(guild.id));

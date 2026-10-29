@@ -9,6 +9,7 @@ const { computeChannelPermissions, describeSchedule } = shared;
 // the bot token, never anything the browser sent.
 
 const VIEW_AND_SEND = (1n << 10n) | (1n << 11n);
+const MENTION_EVERYONE = 1n << 17n; // "Mention @everyone, @here, and All Roles"
 const TEXT_TYPES = new Set([0, 5]); // text, announcement
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const TABLE = 'zb_greeting_schedules';
@@ -20,11 +21,44 @@ export async function greetingChannels(guild) {
     return channels
         .filter((c) => TEXT_TYPES.has(c.type))
         .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
-        .map((c) => ({
-            id: String(c.id),
-            name: c.name,
-            canSend: Boolean(me) && (computeChannelPermissions(guild, me, c) & VIEW_AND_SEND) === VIEW_AND_SEND
-        }));
+        .map((c) => {
+            const perms = me ? computeChannelPermissions(guild, me, c) : 0n;
+            return {
+                id: String(c.id),
+                name: c.name,
+                canSend: Boolean(me) && (perms & VIEW_AND_SEND) === VIEW_AND_SEND,
+                canMentionEveryone: Boolean(me) && (perms & MENTION_EVERYONE) === MENTION_EVERYONE
+            };
+        });
+}
+
+/** Roles a greeting may ping (not @everyone, not bot-managed roles). */
+export function pingableRoles(guild) {
+    return (guild?.roles || [])
+        .filter((r) => String(r.id) !== String(guild.id) && !r.managed)
+        .sort((a, b) => b.position - a.position)
+        .map((r) => ({ id: String(r.id), name: r.name, mentionable: Boolean(r.mentionable) }));
+}
+
+/**
+ * 422 unless Discord will actually deliver this ping: @everyone/@here and
+ * non-mentionable roles need ZiGBoT's "Mention @everyone, @here, and All
+ * Roles" permission in that channel (Discord drops the ping silently otherwise).
+ */
+export function assertCanPing(guild, channel, pingTarget) {
+    if (!pingTarget) return;
+    const fail = (message) => {
+        throw new HttpError(422, message, { fieldErrors: { ping_target: message } });
+    };
+    if (pingTarget === 'everyone' || pingTarget === 'here') {
+        if (!channel.canMentionEveryone) fail(`ZiGBoT can't ping @${pingTarget} in #${channel.name}. Give ZiGBoT the "Mention @everyone, @here, and All Roles" permission there, or pick a role.`);
+        return;
+    }
+    const role = pingableRoles(guild).find((r) => r.id === pingTarget);
+    if (!role) fail('That role no longer exists in this server.');
+    if (!role.mentionable && !channel.canMentionEveryone) {
+        fail(`ZiGBoT can't ping @${role.name}: in Server Settings → Roles → ${role.name}, turn on "Allow anyone to @mention this role", or give ZiGBoT the "Mention @everyone, @here, and All Roles" permission in #${channel.name}.`);
+    }
 }
 
 /** 422 unless ZiGBoT can post in this channel right now. */
@@ -50,6 +84,7 @@ export function scheduleView(row) {
         weekdays: row.weekdays || [],
         interval_minutes: row.interval_minutes,
         end_date: row.end_date,
+        ping_target: row.ping_target || null,
         enabled: row.enabled,
         status: row.enabled ? 'active' : 'paused',
         description: describeSchedule(row),

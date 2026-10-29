@@ -165,6 +165,25 @@ function renderGreeting(message, { serverName = '', timeZone = 'UTC', now = Date
         .replace(/\{date\}/gi, date);
 }
 
+const PING_SPECIAL = Object.freeze(['everyone', 'here']);
+
+/**
+ * The exact Discord message for a greeting: the mention (if any) in front,
+ * and allowedMentions that permit ONLY that target. Anything typed in the
+ * message itself (@everyone, other roles, users) never pings.
+ * ping: false = show the mention but ping nobody (test sends).
+ */
+function buildGreetingMessage(schedule, { serverName = '', now = Date.now(), ping = true } = {}) {
+    const text = renderGreeting(schedule.message, { serverName, timeZone: schedule.time_zone, now });
+    const target = schedule.ping_target || null;
+    if (!target) return { content: text, allowedMentions: { parse: [] } };
+    const mention = PING_SPECIAL.includes(target) ? `@${target}` : `<@&${target}>`;
+    const allowedMentions = !ping ? { parse: [] }
+        : PING_SPECIAL.includes(target) ? { parse: ['everyone'] } // Discord's flag covers @everyone and @here
+            : { parse: [], roles: [target] };
+    return { content: `${mention} ${text}`.slice(0, 2000), allowedMentions };
+}
+
 const cleanMessage = (value) => String(value ?? '').replace(/\r\n/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim();
 
 /**
@@ -173,9 +192,16 @@ const cleanMessage = (value) => String(value ?? '').replace(/\r\n/g, '\n').repla
  * Returns { ok, value, errors }; value.next_run_at is computed here (null
  * while paused), never taken from the browser.
  */
-function validateGreeting(input, { channelIds = null, now = Date.now() } = {}) {
+function validateGreeting(input, { channelIds = null, roleIds = null, now = Date.now() } = {}) {
     const src = input && typeof input === 'object' ? input : {};
     const errors = {};
+    // Who the greeting pings: nobody (default), @everyone, @here, or one role of THIS server.
+    let pingTarget = null;
+    if (src.ping_target !== undefined && src.ping_target !== null && src.ping_target !== '') {
+        const target = String(src.ping_target);
+        if (PING_SPECIAL.includes(target) || (SNOWFLAKE.test(target) && (!roleIds || roleIds.has(target)))) pingTarget = target;
+        else errors.ping_target = 'Pick a role from this server, @everyone, @here, or no ping.';
+    }
     const channelId = String(src.channel_id || '');
     if (!SNOWFLAKE.test(channelId) || (channelIds && !channelIds.has(channelId))) errors.channel_id = 'Pick a text channel from this server.';
     const message = cleanMessage(src.message);
@@ -217,6 +243,7 @@ function validateGreeting(input, { channelIds = null, now = Date.now() } = {}) {
         weekdays,
         interval_minutes: type === 'interval' ? intervalMinutes : null,
         end_date: endDate,
+        ping_target: pingTarget,
         enabled,
         next_run_at: null
     };
@@ -255,6 +282,8 @@ module.exports = {
     zonedToUtc,
     nextOccurrence,
     renderGreeting,
+    buildGreetingMessage,
+    GREETING_PING_SPECIAL: PING_SPECIAL,
     validateGreeting,
     describeSchedule
 };

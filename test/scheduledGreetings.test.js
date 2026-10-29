@@ -320,3 +320,47 @@ test('the bot starts the scheduler and the Roles tab shows the card', () => {
     for (const label of ['Scheduled Greeting', 'Enable Greeting Alarm', 'Save Schedule', 'Test Greeting', 'Configure', 'Pause', 'Resume', 'Delete', 'Active', 'Paused']) assert.ok(card.includes(label), label);
     assert.match(card, /\/send-test`/);
 });
+
+// ---------- optional ping ----------
+
+const { buildGreetingMessage } = require('../dashboard/lib/shared/greetings');
+const ROLE = '700000000000000001';
+
+test('a greeting pings exactly its chosen target, and nothing typed in the message', () => {
+    const base = { message: 'Hi {server} @everyone <@&700000000000000099>', time_zone: 'UTC' };
+    assert.deepEqual(buildGreetingMessage(base, { serverName: 'Hub' }).allowedMentions, { parse: [] }, 'default: nobody');
+    const role = buildGreetingMessage({ ...base, ping_target: ROLE }, { serverName: 'Hub' });
+    assert.equal(role.content, `<@&${ROLE}> Hi Hub @everyone <@&700000000000000099>`);
+    assert.deepEqual(role.allowedMentions, { parse: [], roles: [ROLE] }, 'only the chosen role; typed @everyone and other roles stay silent');
+    const everyone = buildGreetingMessage({ ...base, ping_target: 'everyone' }, { serverName: 'Hub' });
+    assert.match(everyone.content, /^@everyone Hi Hub/);
+    assert.deepEqual(everyone.allowedMentions, { parse: ['everyone'] });
+    assert.match(buildGreetingMessage({ ...base, ping_target: 'here' }, {}).content, /^@here /);
+    // Test sends show the mention but ping nobody.
+    assert.deepEqual(buildGreetingMessage({ ...base, ping_target: ROLE }, { ping: false }).allowedMentions, { parse: [] });
+});
+
+test('ping targets are validated: only this server\'s roles, @everyone, @here or none', () => {
+    const opts = { channelIds: new Set([CH]), roleIds: new Set([ROLE]), now: at('2026-10-29T00:00:00Z') };
+    const base = { channel_id: CH, message: 'Hi', schedule_type: 'daily', start_local: '2026-11-01T09:00', time_zone: 'UTC', enabled: true };
+    assert.equal(validateGreeting({ ...base, ping_target: ROLE }, opts).value.ping_target, ROLE);
+    assert.equal(validateGreeting({ ...base, ping_target: 'everyone' }, opts).value.ping_target, 'everyone');
+    assert.equal(validateGreeting({ ...base, ping_target: '' }, opts).value.ping_target, null);
+    assert.ok(validateGreeting({ ...base, ping_target: '700000000000000099' }, opts).errors.ping_target, 'another server\'s role');
+    assert.ok(validateGreeting({ ...base, ping_target: 'admins' }, opts).errors.ping_target);
+});
+
+test('the bot sends with the schedule\'s ping; saving checks Discord will deliver it', async () => {
+    const store = fakeTable([daily({ ping_target: ROLE })]);
+    const discord = fakeDiscord();
+    assert.deepEqual(await scheduler(store, discord, { t: at('2026-10-30T03:30:10Z') }).tick(), ['sent']);
+    assert.deepEqual(discord.sent[0].allowedMentions, { parse: [], roles: [ROLE] });
+    assert.match(discord.sent[0].content, new RegExp(`^<@&${ROLE}> Good morning Study Hub`));
+    const lib = read('dashboard/lib/greetings.js');
+    assert.match(lib, /if \(!role\.mentionable && !channel\.canMentionEveryone\)/);
+    assert.match(lib, /if \(!channel\.canMentionEveryone\) fail\(`ZiGBoT can't ping @\$\{pingTarget\}/);
+    for (const route of ['greetings/route.js', 'greetings/[scheduleId]/route.js']) {
+        assert.match(read(`dashboard/app/api/guilds/[guildId]/${route}`), /assertCanPing\(guild, assertCanSend\(channels, result\.value\.channel_id\), result\.value\.ping_target\)/, route);
+    }
+    assert.match(read('dashboard/app/api/guilds/[guildId]/greetings/[scheduleId]/send-test/route.js'), /buildGreetingMessage\(row, \{ serverName: guild\.name, now, ping: false \}\)/, 'tests never ping');
+});
