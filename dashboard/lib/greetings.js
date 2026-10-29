@@ -101,6 +101,6 @@ export function scheduleView(row) {
 
 export function missingTableMessage(error) {
     return /relation|schema cache|does not exist/i.test(error?.message || '')
-        ? 'The database is missing the scheduled greetings table. Run supabase/migrations/20261030000000_zigbot_scheduled_greetings.sql in the Supabase SQL Editor.'
+        ? 'The database is missing scheduled greetings setup. In the Supabase SQL Editor run supabase/migrations/20261030000000_zigbot_scheduled_greetings.sql and then 20261103000000_zigbot_greeting_ping.sql.'
         : null;
 }
