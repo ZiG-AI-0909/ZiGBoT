@@ -36,7 +36,8 @@ export const GET = handler(async (_request, { params }) => {
             at: row.created_at,
             action: row.action,
             target: row.table_name === 'zb_role_mappings' ? `role mapping ${row.after?.role_name || row.before?.role_name || row.record_key}`
-                : row.table_name === 'zb_guild_identity' ? 'bot identity' : 'server settings',
+                : row.table_name === 'zb_guild_identity' ? 'bot identity'
+                    : row.table_name === 'zb_security_settings' ? 'Anti-Nuke settings' : 'server settings',
             actor: row.actor_role === 'bot_owner' ? 'ZiGBoT review'
                 : row.actor_role === 'discord_admin' ? 'A server admin (/identity)'
                     : row.actor_user_id ? (names.get(row.actor_user_id) || 'dashboard user') : 'ZiGBoT (automatic)',

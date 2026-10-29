@@ -13,5 +13,6 @@ module.exports = {
     ...require('./identity'),
     ...require('./languages'),
     ...require('./gifs'),
-    ...require('./personaTemplates')
+    ...require('./personaTemplates'),
+    ...require('./antinuke')
 };

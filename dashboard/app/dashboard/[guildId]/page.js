@@ -54,7 +54,7 @@ export default async function GuildPage({ params }) {
             ) : (
                 <GuildEditor
                     initial={bundle}
-                    meta={{ features: FEATURES, limits: LIMITS, tones: TONES, roastIntensities: ROAST_INTENSITIES, tiers: TIERS, pronouns: PRONOUNS, perks: premiumPerks({ customIdentity: identityEnabledFor(guildId) }), identityEnabled: identityEnabledFor(guildId), gif: GIF_META, languages: SUPPORTED_LANGUAGES, defaultLanguage: DEFAULT_LANGUAGE, freeRoleMappings: FREE_LIMITS.roleMappings, voiceSpeakers: VOICE_SPEAKERS, contactUrl: contactUrl() }}
+                    meta={{ features: FEATURES, limits: LIMITS, tones: TONES, roastIntensities: ROAST_INTENSITIES, tiers: TIERS, pronouns: PRONOUNS, perks: premiumPerks({ customIdentity: identityEnabledFor(guildId) }), identityEnabled: identityEnabledFor(guildId), gif: GIF_META, languages: SUPPORTED_LANGUAGES, defaultLanguage: DEFAULT_LANGUAGE, freeRoleMappings: FREE_LIMITS.roleMappings, voiceSpeakers: VOICE_SPEAKERS, contactUrl: contactUrl(), inviteUrl: inviteUrl(guildId) }}
                 />
             )}
         </div>
