@@ -80,6 +80,22 @@ export function getSubscription(subscriptionId) {
     return call(`/subscriptions/${subscriptionId}`);
 }
 
+/**
+ * Recent payments on this Razorpay account, newest first (up to `max`).
+ * Read-only: used by the Super Admin revenue view, which counts only what
+ * Razorpay reports as captured.
+ */
+export async function listPayments({ max = 300 } = {}) {
+    const items = [];
+    for (let skip = 0; skip < max; skip += 100) {
+        const page = await call(`/payments?count=${Math.min(100, max - skip)}&skip=${skip}`);
+        const batch = Array.isArray(page?.items) ? page.items : [];
+        items.push(...batch);
+        if (batch.length < 100) break;
+    }
+    return items;
+}
+
 /** A plan's price as Razorpay has it: { amount_paise, currency }, or null. */
 export async function getPlanAmount(planId) {
     if (!/^plan_[A-Za-z0-9]{8,40}$/.test(String(planId || ''))) return null;
