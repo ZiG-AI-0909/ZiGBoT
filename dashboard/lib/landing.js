@@ -107,6 +107,7 @@ const features = [
         attribution: GIPHY_ATTRIBUTION,
         sources: ['src/gifs/reactions.js', 'src/gifs/giphy.js', 'dashboard/lib/shared/gifs.js']
     },
+    { id: 'antinuke', icon: '🚨', title: 'Anti-Nuke, free for every server', text: 'Watches the audit log for mass deletions, mass bans, risky permission grants, bots added with Administrator, webhook bursts and join raids — and alerts your admins in seconds with clear next steps. Automatic containment is optional.', sources: ['src/antinuke/engine.js', 'src/antinuke/monitor.js', 'dashboard/lib/shared/antinuke.js'] },
     { id: 'moderation', icon: '🛡️', title: 'Moderation that asks first', text: 'Warn, timeout, kick, ban, clean up — with confirm buttons and an audit trail.', sources: ['src/tools/router.js', 'src/security/confirmation.js', 'src/logging/auditLog.js'] },
     { id: 'reputation', icon: '📈', title: 'Reputation', text: 'Helpful, kind members earn warmth; toxic streaks get a colder ZiGBoT. Based on the last 30 days.', sources: ['src/ai/behaviorDetector.js', 'src/db/brain.js'] },
     { id: 'dashboard', icon: '🖥️', title: 'A real dashboard', text: 'Persona, role behaviour, channels, and a live preview — on the web.', sources: ['dashboard/components/GuildEditor.js', 'dashboard/app/api/guilds/[guildId]/preview/route.js'] }
@@ -177,6 +178,7 @@ function premiumComparison({ customIdentity = false } = {}) {
         { id: 'memory', label: 'Memory you control (/memory)', free: true, premium: true },
         { id: 'summaries', label: 'Opt-in summaries & summary channels', free: true, premium: true },
         { id: 'moderation', label: 'Moderation tools & audit trail', free: true, premium: true },
+        { id: 'antinuke', label: 'Anti-Nuke monitoring & alerts', free: true, premium: true },
         { id: 'setup', label: '/setup & web dashboard', free: true, premium: true },
         { id: 'ai_limits', perk: 'ai_limits', label: 'AI reply limits', free: 'Standard', premium: 'Higher' },
         { id: 'role_mappings', perk: 'role_mappings', label: 'Role mappings', free: `Up to ${FREE_LIMITS.roleMappings}`, premium: `Up to ${LIMITS.roleMappingsPerGuild}` },

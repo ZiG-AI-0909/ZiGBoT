@@ -12,6 +12,8 @@ const {
     buildReputationAnswer
 } = require('./ai/client');
 const { buildUserContext } = require('./ai/userContext');
+const { createAntiNuke } = require('./antinuke/monitor');
+const { createAntiNukeStore } = require('./antinuke/store');
 const { defaultMemory } = require('./ai/memory');
 const { RateLimiter } = require('./ai/rateLimiter');
 const { detectTrigger, defaultTracker } = require('./ai/triggerDetector');
@@ -110,8 +112,7 @@ const guildStore = new GuildConfigStore({
     settings,
     supabaseUrl: settings.supabaseUrl,
     serviceRoleKey: settings.supabaseServiceRoleKey
-});
-// Opt-in conversation summaries (off unless MEMORY_SUMMARIES_ENABLED=true).
+});// Opt-in conversation summaries (off unless MEMORY_SUMMARIES_ENABLED=true).
 const summaryService = createSummaryService({
     brain,
     settings,
@@ -204,8 +205,24 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildVoiceStates
+        GatewayIntentBits.GuildVoiceStates,
+        // Anti-Nuke: live audit-log entries (not a privileged intent).
+        GatewayIntentBits.GuildModeration
     ]
+});
+
+// Anti-Nuke (free, always on): audit-log monitoring, alerts, optional containment.
+const antiNuke = createAntiNuke({
+    client,
+    store: createAntiNukeStore({ guildStore }),
+    dashboardUrl: (guildId) => `${settings.dashboardUrl}/dashboard/${guildId}`,
+    version: BOT_VERSION
+});
+client.on(Events.GuildAuditLogEntryCreate, (entry, guild) => {
+    antiNuke.onAuditLogEntry(entry, guild);
+});
+client.on(Events.GuildMemberAdd, (member) => {
+    antiNuke.onMemberAdd(member);
 });
 
 // Custom bot identity (Premium; CUSTOM_IDENTITY_ENABLED=true). While off, a
@@ -234,6 +251,8 @@ client.once(Events.ClientReady, async (c) => {
         startMusicStatus(guildStore);
         identitySync.start();
     }
+    // Anti-Nuke runs in every server, with or without the dashboard database.
+    antiNuke.start();
     // Slash commands are a secondary interface: a registration failure must
     // never take down the whole bot — keep running in mention-driven mode.
     try {
@@ -266,6 +285,8 @@ client.on(Events.GuildCreate, async (guild) => {
     // Ask the admins for what the bot cannot work out by itself (/setup).
     await sendWelcome(guild).catch((error) => console.error(`[ZiGBoT SETUP] Welcome message failed for ${guild.id}: ${error.message}`));
     await identitySync.reconcile(guild);
+    // Anti-Nuke protection starts on join: default settings, private alert channel, status.
+    await antiNuke.setupNewGuild(guild).catch((error) => console.error(`[ZiGBoT ANTINUKE] Setup failed for ${guild.id}: ${error.message}`));
 });
 
 // Music: pause and leave later when everyone leaves the bot's voice channel;
@@ -284,6 +305,7 @@ client.on(Events.GuildDelete, async (guild) => {
     console.log(`[ZiGBoT CONFIG] Removed from server ${guild.id}.`);
     await guildStore.markRemoved(guild.id).catch((error) => console.error(`[ZiGBoT CONFIG] Uninstall mark failed for ${guild.id}: ${error.message}`));
     await identitySync.onGuildRemoved(guild.id);
+    antiNuke.onGuildRemoved(guild.id);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {

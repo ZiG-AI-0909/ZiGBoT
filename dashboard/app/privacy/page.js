@@ -51,6 +51,12 @@ export default function Privacy() {
                     <li><strong>Voice.</strong> When ZiGBoT is listening in a voice channel, what you say to it is sent for speech-to-text, and its replies are turned into speech. We do not keep the audio recordings.</li>
                     <li><strong>Music.</strong> Songs requested and the current playback status for the server.</li>
                     <li>
+                        <strong>Anti-Nuke security (every server, free).</strong> ZiGBoT reads the server&apos;s audit log as it happens (who deleted,
+                        banned, changed permissions or added bots or webhooks) and counts member joins. It stores only incidents it flags: the type,
+                        the Discord IDs of the account involved and the affected channels, roles or members, a short reason, and any automatic action
+                        taken. No message content is stored. Incidents are deleted after 90 days.
+                    </li>
+                    <li>
                         <strong>Custom bot identity (Premium, when available).</strong> If a server&apos;s admins give ZiGBoT its own name, picture
                         and bio there, we store that name and bio, the uploaded picture, and which admin made each change. Pictures are cropped,
                         re-saved as a new image with their metadata (such as location or camera details) removed, and kept in private storage.
