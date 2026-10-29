@@ -5,7 +5,7 @@ import { sendChannelMessage } from '@/lib/discord';
 import { createServiceClient } from '@/lib/supabase/server';
 import { greetingChannels, assertCanSend, UUID, TABLE } from '@/lib/greetings';
 
-const { renderGreeting, GREETING_LIMITS } = shared;
+const { buildGreetingMessage, GREETING_LIMITS } = shared;
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +32,9 @@ export const POST = handler(async (_request, { params }) => {
     const { data: claimed } = await claim.select('id');
     if (!claimed || claimed.length === 0) throw new HttpError(429, 'A test was just sent. Try again in a minute.');
 
-    const content = `${renderGreeting(row.message, { serverName: guild.name, timeZone: row.time_zone, now })}\n-# 🧪 Test greeting sent from the ZiGBoT dashboard`;
+    // A test shows the mention but pings nobody (sendChannelMessage allows no mentions).
+    const preview = buildGreetingMessage(row, { serverName: guild.name, now, ping: false });
+    const content = `${preview.content}\n-# 🧪 Test greeting sent from the ZiGBoT dashboard${row.ping_target ? ' (no one was pinged by this test)' : ''}`;
     try {
         await sendChannelMessage(row.channel_id, content);
     } catch (sendError) {

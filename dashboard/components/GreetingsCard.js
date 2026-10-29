@@ -61,6 +61,7 @@ function blankDraft(channels) {
         weekdays: [1, 2, 3, 4, 5],
         interval_hours: 24,
         end_date: '',
+        ping_target: '',
         enabled: true
     };
 }
@@ -75,6 +76,7 @@ function draftOf(schedule) {
         weekdays: schedule.weekdays?.length ? schedule.weekdays : [1, 2, 3, 4, 5],
         interval_hours: schedule.interval_minutes ? schedule.interval_minutes / 60 : 24,
         end_date: schedule.end_date || '',
+        ping_target: schedule.ping_target || '',
         enabled: schedule.enabled
     };
 }
@@ -89,8 +91,16 @@ function toPayload(draft) {
         weekdays: draft.schedule_type === 'weekly' ? draft.weekdays : [],
         interval_minutes: draft.schedule_type === 'interval' ? Math.round(Number(draft.interval_hours) * 60) : null,
         end_date: draft.schedule_type === 'once' ? null : draft.end_date || null,
+        ping_target: draft.ping_target || null,
         enabled: draft.enabled
     };
+}
+
+/** "@Moderators", "@everyone", or null — how the ping shows in previews and lists. */
+function pingLabel(target, roles) {
+    if (!target) return null;
+    if (target === 'everyone' || target === 'here') return `@${target}`;
+    return `@${roles.find((r) => r.id === target)?.name || 'deleted role'}`;
 }
 
 function zoned(iso, timeZone) {
@@ -102,10 +112,12 @@ function zoned(iso, timeZone) {
     }
 }
 
-function Editor({ draft, setDraft, channels, meta, errors, busy, onSave, onCancel, isNew }) {
+function Editor({ draft, setDraft, channels, roles, meta, errors, busy, onSave, onCancel, isNew }) {
     const zones = useMemo(() => timeZones(), []);
     const set = (key) => (value) => setDraft((d) => ({ ...d, [key]: value }));
-    const preview = renderGreeting(draft.message, { serverName: meta.serverName, timeZone: draft.time_zone, now: Date.now() });
+    const ping = pingLabel(draft.ping_target, roles);
+    const text = renderGreeting(draft.message, { serverName: meta.serverName, timeZone: draft.time_zone, now: Date.now() });
+    const preview = ping && text ? `${ping} ${text}` : text;
     const err = (key) => (errors[key] ? <span className="error" role="alert">{errors[key]}</span> : null);
     const toggleDay = (day) => setDraft((d) => ({ ...d, weekdays: d.weekdays.includes(day) ? d.weekdays.filter((x) => x !== day) : [...d.weekdays, day].sort() }));
     return (
@@ -131,10 +143,23 @@ function Editor({ draft, setDraft, channels, meta, errors, busy, onSave, onCance
 
             <label className="field" htmlFor="gr-message">
                 <span className="label">Greeting message</span>
-                <span className="help">Discord formatting works. Placeholders: {meta.placeholders.map((p) => <code key={p.token} title={p.description} style={{ marginRight: 6 }}>{p.token}</code>)}. Greetings never ping anyone.</span>
+                <span className="help">Discord formatting works. Placeholders: {meta.placeholders.map((p) => <code key={p.token} title={p.description} style={{ marginRight: 6 }}>{p.token}</code>)}. Mentions typed in the message never ping; use Ping below.</span>
                 <textarea id="gr-message" rows={4} maxLength={meta.limits.messageMax} value={draft.message} onChange={(e) => set('message')(e.target.value)} aria-invalid={errors.message ? 'true' : undefined} />
                 <span className="help">{draft.message.length}/{meta.limits.messageMax}</span>
                 {err('message')}
+            </label>
+
+            <label className="field" htmlFor="gr-ping" style={{ maxWidth: 420 }}>
+                <span className="label">Ping</span>
+                <span className="help">Who gets notified when this greeting is sent. Only the choice here pings.</span>
+                <select id="gr-ping" value={draft.ping_target} onChange={(e) => set('ping_target')(e.target.value)} aria-invalid={errors.ping_target ? 'true' : undefined}>
+                    <option value="">No ping</option>
+                    <option value="everyone">@everyone (all members)</option>
+                    <option value="here">@here (members who are online)</option>
+                    {roles.map((r) => <option key={r.id} value={r.id}>@{r.name}{r.mentionable ? '' : ' (needs ZiGBoT permission)'}</option>)}
+                </select>
+                {draft.ping_target && !errors.ping_target ? <span className="help">ZiGBoT needs the &quot;Mention @everyone, @here, and All Roles&quot; permission for @everyone, @here and roles marked &quot;needs ZiGBoT permission&quot;. Saving checks this.</span> : null}
+                {err('ping_target')}
             </label>
 
             <div className="field">
@@ -201,7 +226,7 @@ function Editor({ draft, setDraft, channels, meta, errors, busy, onSave, onCance
 }
 
 export default function GreetingsCard({ guildId, toast }) {
-    const [state, setState] = useState({ loading: true, error: null, schedules: [], channels: [], meta: null });
+    const [state, setState] = useState({ loading: true, error: null, schedules: [], channels: [], roles: [], meta: null });
     const [editing, setEditing] = useState(null); // null | 'new' | schedule id
     const [draft, setDraft] = useState(null);
     const [errors, setErrors] = useState({});
@@ -211,7 +236,7 @@ export default function GreetingsCard({ guildId, toast }) {
     const load = useCallback(async () => {
         try {
             const data = await request(`/api/guilds/${guildId}/greetings`);
-            setState({ loading: false, error: null, schedules: data.schedules, channels: data.channels, meta: data.meta });
+            setState({ loading: false, error: null, schedules: data.schedules, channels: data.channels, roles: data.roles || [], meta: data.meta });
         } catch (error) {
             setState((s) => ({ ...s, loading: false, error: error.message }));
         }
@@ -285,7 +310,7 @@ export default function GreetingsCard({ guildId, toast }) {
             </div>
             {state.error ? <div className="notice" role="alert">{state.error}</div> : null}
 
-            {editing === 'new' && draft ? <Editor draft={draft} setDraft={setDraft} channels={state.channels} meta={state.meta} errors={errors} busy={busy === 'save'} onSave={save} onCancel={() => setEditing(null)} isNew /> : null}
+            {editing === 'new' && draft ? <Editor draft={draft} setDraft={setDraft} channels={state.channels} roles={state.roles} meta={state.meta} errors={errors} busy={busy === 'save'} onSave={save} onCancel={() => setEditing(null)} isNew /> : null}
 
             {!state.error && state.schedules.length === 0 && editing !== 'new' ? (
                 <div className="empty"><p className="muted" style={{ margin: 0 }}>No scheduled greetings yet. Configure one to greet your server every morning, every Friday, or once for an event.</p></div>
@@ -294,7 +319,7 @@ export default function GreetingsCard({ guildId, toast }) {
             {state.schedules.map((s) => (
                 <div key={s.id} className="card stack" style={{ margin: 0 }}>
                     {editing === s.id && draft ? (
-                        <Editor draft={draft} setDraft={setDraft} channels={state.channels} meta={state.meta} errors={errors} busy={busy === 'save'} onSave={save} onCancel={() => setEditing(null)} />
+                        <Editor draft={draft} setDraft={setDraft} channels={state.channels} roles={state.roles} meta={state.meta} errors={errors} busy={busy === 'save'} onSave={save} onCancel={() => setEditing(null)} />
                     ) : (
                         <>
                             <div className="spread">
@@ -306,6 +331,7 @@ export default function GreetingsCard({ guildId, toast }) {
                                 <span><span className="help">Next greeting: </span>{s.enabled && s.next_run_at ? zoned(s.next_run_at, s.time_zone) : '—'}</span>
                                 <span><span className="help">Last sent: </span>{s.last_sent_at ? zoned(s.last_sent_at, s.time_zone) : 'never'}</span>
                                 <span><span className="help">Last result: </span>{s.last_status ? STATUS_LABELS[s.last_status] || s.last_status : '—'}{s.last_error ? ` (${s.last_error})` : ''}</span>
+                                <span><span className="help">Pings: </span>{pingLabel(s.ping_target, state.roles) || 'nobody'}</span>
                                 {s.recent_runs?.length ? <span><span className="help">Recent: </span>{s.recent_runs.map((r) => `${zoned(r.at, s.time_zone)} · ${STATUS_LABELS[r.status] || r.status}`).join(' | ')}</span> : null}
                             </div>
                             {confirmDelete === s.id ? (

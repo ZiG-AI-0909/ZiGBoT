@@ -2,7 +2,7 @@ import shared from '@/lib/shared';
 import { handler, json, readJson, HttpError } from '@/lib/http';
 import { requireGuildAdmin } from '@/lib/auth';
 import { createServiceClient } from '@/lib/supabase/server';
-import { greetingChannels, assertCanSend, scheduleView, missingTableMessage, UUID, TABLE } from '@/lib/greetings';
+import { greetingChannels, assertCanSend, assertCanPing, pingableRoles, scheduleView, missingTableMessage, UUID, TABLE } from '@/lib/greetings';
 
 const { validateGreeting } = shared;
 
@@ -47,9 +47,9 @@ export const PATCH = handler(async (request, { params }) => {
             next = { enabled: false, next_run_at: null };
         } else {
             const channels = await greetingChannels(guild);
-            const result = validateGreeting(input, { channelIds: new Set(channels.map((c) => c.id)) });
+            const result = validateGreeting(input, { channelIds: new Set(channels.map((c) => c.id)), roleIds: new Set(pingableRoles(guild).map((r) => r.id)) });
             if (!result.ok) throw new HttpError(422, 'Some fields need fixing.', { fieldErrors: result.errors });
-            if (result.value.enabled) assertCanSend(channels, result.value.channel_id);
+            if (result.value.enabled) assertCanPing(guild, assertCanSend(channels, result.value.channel_id), result.value.ping_target);
             next = result.value;
         }
         const { data, error } = await db.from(TABLE)

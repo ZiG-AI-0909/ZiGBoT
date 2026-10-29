@@ -14,7 +14,7 @@
  * schedule continues from its next future time. Backlogs are never sent.
  */
 const { PermissionFlagsBits } = require('discord.js');
-const { nextOccurrence, renderGreeting, GREETING_LIMITS } = require('../../dashboard/lib/shared/greetings');
+const { nextOccurrence, buildGreetingMessage, GREETING_LIMITS } = require('../../dashboard/lib/shared/greetings');
 
 const TICK_MS = 30_000;
 const BATCH = 25;
@@ -68,11 +68,11 @@ function createGreetingScheduler({ client, guildStore, logger = console, now = (
         if (!channel || !channel.isTextBased?.()) return { status: 'channel_missing' };
         const me = guild.members?.me;
         if (!me || !channel.permissionsFor?.(me)?.has?.([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages])) return { status: 'no_permission' };
-        const content = renderGreeting(row.message, { serverName: guild.name, timeZone: row.time_zone, now: t });
+        // Pings only the schedule's chosen target (if any); nothing typed in the message pings.
+        const { content, allowedMentions } = buildGreetingMessage(row, { serverName: guild.name, now: t });
         for (let attempt = 1; attempt <= SEND_ATTEMPTS; attempt += 1) {
             try {
-                // Greetings never ping anyone (no @everyone, roles or users).
-                await channel.send({ content, allowedMentions: { parse: [] } });
+                await channel.send({ content, allowedMentions });
                 return { status: 'sent' };
             } catch (error) {
                 if (error?.code === 10003) return { status: 'channel_missing' };
