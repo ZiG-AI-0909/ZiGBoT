@@ -1043,6 +1043,7 @@ function PremiumTab({ guildId, plan, setPlan, perks, contactUrl, toast }) {
                 if (next.premium && next.status === 'active' && !next.checkoutPending) {
                     setWatching(false);
                     toast('💎 Premium is active for this server. Thank you!');
+                    window.dispatchEvent(new Event('zigbot:premium-verified'));
                 }
             } catch {
                 // Transient: keep polling.
@@ -1104,6 +1105,8 @@ function PremiumTab({ guildId, plan, setPlan, perks, contactUrl, toast }) {
                             }
                         });
                         setPlan(next);
+                        // Verified on the server: the first-purchase feedback prompt checks in.
+                        if (next.status === 'active') window.dispatchEvent(new Event('zigbot:premium-verified'));
                         if (next.premium && next.status === 'active') {
                             toast('💎 Payment verified — Premium is active for this server. Thank you!');
                         } else {
