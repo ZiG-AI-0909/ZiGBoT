@@ -11,6 +11,7 @@ const {
     isReputationQuestion,
     buildReputationAnswer
 } = require('./ai/client');
+const { buildUserContext } = require('./ai/userContext');
 const { defaultMemory } = require('./ai/memory');
 const { RateLimiter } = require('./ai/rateLimiter');
 const { detectTrigger, defaultTracker } = require('./ai/triggerDetector');
@@ -81,6 +82,12 @@ function logAiError(error) {
     ].filter(Boolean).join(' | ');
     console.error(`[ZiGBoT AI ERROR] ${details}`);
 }
+
+// The member a reply is for, from THIS message's own Discord objects.
+const userContextFor = (message) => buildUserContext({ user: message.author, member: message.member, guild: message.guild });
+// Users a reply may mention: the author and anyone their message mentioned (never ZiGBoT itself).
+const mentionableIds = (message) => [message.author.id, ...(message.mentions?.users?.keys?.() || [])]
+    .filter((id) => id !== client.user?.id);
 
 // Shown when every chat provider failed; the real error is only logged.
 const aiFailureReply = 'My AI brain is not responding right now (the AI service is busy or down). Please try again in a minute.';
@@ -454,6 +461,8 @@ async function handleBullying({ message, bullying, guildCtx, behavior, gSettings
             : await ai.reply({
                 userMessage: buildBullyInstruction({ authorName, targetName, savage }),
                 authorName,
+                user: userContextFor(message),
+                allowedUserIds: mentionableIds(message),
                 contextMessages: defaultMemory.getHistory(message.channel.id),
                 tone: savage ? 'savage' : 'gentle',
                 gender,
@@ -673,6 +682,9 @@ client.on(Events.MessageCreate, async (message) => {
             const replyText = await ai.reply({
                 userMessage: `Roast the mentioned target named ${targetName}. Keep the roast directed only at that target, not the server owner or ZiGBoT.`,
                 authorName: targetName,
+                // The roast is aimed at the target: placeholders mean the target.
+                user: buildUserContext({ user: ownerRoastTarget, member: targetMember, guild: message.guild }),
+                allowedUserIds: mentionableIds(message),
                 contextMessages: history,
                 tone: 'savage',
                 roastIntensity: guildCtx?.config?.roast_intensity,
@@ -879,6 +891,8 @@ client.on(Events.MessageCreate, async (message) => {
         const { text: replyText, gif: aiGif } = await ai.generate({
             userMessage,
             authorName,
+            user: userContextFor(message),
+            allowedUserIds: mentionableIds(message),
             contextMessages: history,
             tone,
             gender,
@@ -1018,6 +1032,8 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
             fast: true,
             userMessage: transcript,
             authorName,
+            user: buildUserContext({ user: member?.user, member, guild }),
+            allowedUserIds: [userId],
             contextMessages: history,
             tone: voiceTone,
             gender: voiceGender,
