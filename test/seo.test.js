@@ -47,7 +47,7 @@ test('robots.txt: search crawlers (and GPTBot) get public pages only; private ar
     assert.deepEqual(rules.map((r) => r.userAgent), ['Googlebot', 'Bingbot', 'OAI-SearchBot', 'GPTBot', '*']);
     for (const rule of rules) {
         assert.equal(rule.allow, '/');
-        assert.deepEqual(rule.disallow, ['/dashboard', '/owner', '/api', '/auth'], `${rule.userAgent} never reaches private areas`);
+        assert.deepEqual(rule.disallow, ['/dashboard', '/owner', '/admin', '/api', '/auth'], `${rule.userAgent} never reaches private areas`);
     }
     assert.equal(sitemap, `${ORIGIN}/sitemap.xml`);
 });

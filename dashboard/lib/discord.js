@@ -43,6 +43,11 @@ export function getGuild(guildId) {
     return call(`/guilds/${assertId(guildId)}`, { token: botToken() });
 }
 
+/** Guild with approximate member/online counts. null when the bot is not in it. */
+export function getGuildWithCounts(guildId) {
+    return call(`/guilds/${assertId(guildId)}?with_counts=true`, { token: botToken() });
+}
+
 /** Member (roles array). null when the user is not in the guild. */
 export function getMember(guildId, userId) {
     return call(`/guilds/${assertId(guildId)}/members/${assertId(userId)}`, { token: botToken() });

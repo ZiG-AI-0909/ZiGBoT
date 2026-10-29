@@ -40,7 +40,7 @@ const PUBLIC_PAGES = Object.freeze([
 ]);
 
 /** Never indexed: signed-in areas, the owner's tools, the API and login steps. */
-const PRIVATE_PATHS = Object.freeze(['/dashboard', '/owner', '/api', '/auth']);
+const PRIVATE_PATHS = Object.freeze(['/dashboard', '/owner', '/admin', '/api', '/auth']);
 
 // Search crawlers we name explicitly. GPTBot (OpenAI model training) is
 // allowed on public pages only, by the owner's decision; OAI-SearchBot is

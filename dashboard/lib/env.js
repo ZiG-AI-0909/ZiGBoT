@@ -29,6 +29,12 @@ export const env = {
     get siteUrl() { return (process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/+$/, ''); },
     get homeGuildIds() { return (process.env.HOME_GUILD_IDS || '').split(',').map((s) => s.trim()).filter(Boolean); },
     get botCreatorId() { return process.env.BOT_CREATOR_ID || ''; },
+    // Super Admin (/admin): Discord user IDs allowed in, comma-separated.
+    // Falls back to BOT_CREATOR_ID. Empty or invalid = nobody (fails closed).
+    get superAdminDiscordIds() {
+        const raw = process.env.SUPER_ADMIN_DISCORD_IDS || process.env.BOT_CREATOR_ID || '';
+        return [...new Set(raw.split(',').map((s) => s.trim()).filter((s) => /^\d{17,20}$/.test(s)))];
+    },
     // Custom bot identity (Premium). Off unless exactly 'true'; the bot reads the same variable.
     get customIdentityEnabled() { return process.env.CUSTOM_IDENTITY_ENABLED === 'true'; },
     // Optional server allowlist (comma-separated ids); empty = every server.
