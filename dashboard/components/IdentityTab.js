@@ -126,7 +126,7 @@ export default function IdentityTab({ guildId, guildName, premium, onUpgrade, to
             setFile(null);
             setFileUrl(null);
             setRemoveAvatar(false);
-            toast(file ? 'Saved. The name and bio are live; the new picture goes live after a quick review.' : 'Saved. ZiGBoT’s profile in this server is updated.');
+            toast(file && next.avatarReview ? 'Saved. The name and bio are live; the new picture goes live after a quick review.' : 'Saved. ZiGBoT’s profile in this server is updated.');
         } catch (error) {
             setErrors(error.data?.fieldErrors || {});
             toast(error.message, 'err');
@@ -166,7 +166,8 @@ export default function IdentityTab({ guildId, guildName, premium, onUpgrade, to
             {identity?.revertedAt && REVERT_REASONS[identity.revertReason] ? (
                 <div className="notice">ZiGBoT went back to its default profile on {new Date(identity.revertedAt).toLocaleDateString()} because {REVERT_REASONS[identity.revertReason]}. Your saved identity comes back when that changes.</div>
             ) : null}
-            {identity?.hasPending ? <div className="notice">A new picture is waiting for review. Until then, members see {identity.hasAvatar ? 'the previously approved picture' : 'the default ZiGBoT picture'}.</div> : null}
+            {identity?.hasPending && data.avatarReview ? <div className="notice">A new picture is waiting for review. Until then, members see {identity.hasAvatar ? 'the previously approved picture' : 'the default ZiGBoT picture'}.</div> : null}
+            {identity?.hasPending && !data.avatarReview ? <div className="notice">Your last picture isn’t live yet. Click <strong>Save</strong> to publish it.</div> : null}
             {identity?.reviewNote ? <div className="notice" role="alert">Your last picture wasn’t approved: {identity.reviewNote}</div> : null}
 
             <div className="identity-grid">
@@ -195,7 +196,7 @@ export default function IdentityTab({ guildId, guildName, premium, onUpgrade, to
                     </div>
                     <div className="field">
                         <label htmlFor="identity-avatar">Picture</label>
-                        <span className="help" id="identity-avatar-help">PNG, JPG or WebP, up to {limits.imageMaxBytes / (1024 * 1024)} MB, at least {limits.imageMinPx}×{limits.imageMinPx}. It’s cropped to a square, its metadata (like location) is removed, and it goes live after a quick review.</span>
+                        <span className="help" id="identity-avatar-help">PNG, JPG or WebP, up to {limits.imageMaxBytes / (1024 * 1024)} MB, at least {limits.imageMinPx}×{limits.imageMinPx}. It’s cropped to a square, its metadata (like location) is removed, and it goes live {data.avatarReview ? 'after a quick review' : 'as soon as you save'}.</span>
                         <input id="identity-avatar" type="file" accept={ACCEPT.join(',')} disabled={locked} onChange={pickFile} aria-invalid={errors.avatar ? 'true' : undefined} aria-describedby="identity-avatar-help" />
                         {errors.avatar ? <span className="error" role="alert">{errors.avatar}</span> : null}
                         {identity?.hasAvatar || identity?.hasPending ? (

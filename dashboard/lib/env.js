@@ -33,6 +33,9 @@ export const env = {
     get customIdentityEnabled() { return process.env.CUSTOM_IDENTITY_ENABLED === 'true'; },
     // Optional server allowlist (comma-separated ids); empty = every server.
     get customIdentityGuilds() { return identityRules.parseIdentityGuilds(process.env.CUSTOM_IDENTITY_GUILDS); },
+    // Uploaded identity pictures go live straight away unless this is exactly
+    // 'true': then each one waits for the bot owner's review (/owner/identity).
+    get identityAvatarReview() { return process.env.IDENTITY_AVATAR_REVIEW === 'true'; },
 
     // ZiGBoT Premium via Razorpay Subscriptions (optional; all of these enable billing).
     // Test-mode keys (rzp_test_…) and live keys (rzp_live_…) work the same way.

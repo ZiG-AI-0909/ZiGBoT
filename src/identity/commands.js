@@ -27,7 +27,7 @@ function createIdentityCommands({ store, getContext, enabled, guilds = [], dashb
         const [row, ctx, blocked] = await Promise.all([store.getRow(guild.id), getContext(guild), store.isGuildBlocked(guild.id)]);
         const link = dashboardUrl ? `\nChange it in the dashboard: ${dashboardUrl}/dashboard/${guild.id}` : '\nChange it in the ZiGBoT dashboard (🪪 Identity tab).';
         if (!row) return `🪪 ZiGBoT uses its default name, picture and bio in this server.${ctx?.premium ? link : '\nCustom bot identity is a Premium feature.'}`;
-        const picture = row.pending_avatar_path ? 'a new one is waiting for review' : row.avatar_path ? 'custom (approved)' : 'default';
+        const picture = row.pending_avatar_path ? 'a new one is waiting for review' : row.avatar_path ? 'custom' : 'default';
         const lines = [
             '🪪 **ZiGBoT’s identity in this server**',
             `Name: ${row.nick ? escapeMarkdown(row.nick) : 'ZiGBoT (default)'}`,
