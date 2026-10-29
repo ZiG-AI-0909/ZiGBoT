@@ -51,6 +51,12 @@ export default function Privacy() {
                     <li><strong>Voice.</strong> When ZiGBoT is listening in a voice channel, what you say to it is sent for speech-to-text, and its replies are turned into speech. We do not keep the audio recordings.</li>
                     <li><strong>Music.</strong> Songs requested and the current playback status for the server.</li>
                     <li>
+                        <strong>Premium purchases and feedback.</strong> When Razorpay confirms a Premium payment, we record the subscription ID,
+                        the server, which signed-in account bought it, the plan and the price Razorpay reports. No card or bank details are ever
+                        stored. After your first purchase we may ask for optional feedback; your answers are stored with that purchase and are
+                        read only by ZiGBoT&apos;s owner.
+                    </li>
+                    <li>
                         <strong>Anti-Nuke security (every server, free).</strong> ZiGBoT reads the server&apos;s audit log as it happens (who deleted,
                         banned, changed permissions or added bots or webhooks) and counts member joins. It stores only incidents it flags: the type,
                         the Discord IDs of the account involved and the affected channels, roles or members, a short reason, and any automatic action

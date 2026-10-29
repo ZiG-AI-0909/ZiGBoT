@@ -3,6 +3,7 @@ import shared from './shared';
 import { createServiceClient } from './supabase/server';
 import { env } from './env';
 import { isHomeGuild } from './guildData';
+import { recordPurchaseSafely } from './feedback';
 
 const { isPremiumActive, subscriptionRowFromRazorpay, shouldReplaceSubscription } = shared;
 
@@ -67,7 +68,11 @@ export async function syncSubscription(razorpaySubscription, { expectedGuildId =
         ? existing.pending_subscription_id
         : null;
     if (purchasedBy && existing?.subscription_id !== row.subscription_id) row.purchased_by = purchasedBy;
-    return upsert(row);
+    const stored = await upsert(row);
+    // Razorpay says it is paid: record the verified purchase (first-purchase
+    // feedback). Best effort; it can never block or undo the activation.
+    if (stored?.status === 'active' && stored.subscription_id === razorpaySubscription.id) await recordPurchaseSafely(razorpaySubscription);
+    return stored;
 }
 
 /**

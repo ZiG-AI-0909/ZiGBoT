@@ -80,6 +80,14 @@ export function getSubscription(subscriptionId) {
     return call(`/subscriptions/${subscriptionId}`);
 }
 
+/** A plan's price as Razorpay has it: { amount_paise, currency }, or null. */
+export async function getPlanAmount(planId) {
+    if (!/^plan_[A-Za-z0-9]{8,40}$/.test(String(planId || ''))) return null;
+    const plan = await call(`/plans/${planId}`);
+    const amount = Number(plan?.item?.amount);
+    return Number.isInteger(amount) ? { amount_paise: amount, currency: String(plan?.item?.currency || 'INR').toUpperCase() } : null;
+}
+
 /** Stop renewals at the end of the current paid cycle (Premium stays until then). */
 export async function cancelAtPeriodEnd(subscriptionId) {
     if (!SUBSCRIPTION_ID.test(String(subscriptionId || ''))) throw new RazorpayError('Invalid subscription id.', 400);
