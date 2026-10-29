@@ -139,6 +139,21 @@ async function write(path, { method, body, reason }) {
  * { nick?, bio?, avatar? } where avatar is a data URI or null; null resets a
  * field to the default ZiGBoT profile. `reason` goes to Discord's audit log.
  */
+/** ZiGBoT's own Discord user (cached for this server instance). */
+let botUser = null;
+export async function getBotUser() {
+    if (!botUser) botUser = await call('/users/@me', { token: botToken() });
+    return botUser;
+}
+
+/** Post a plain message as ZiGBoT. It never pings anyone (allowed_mentions: none). */
+export function sendChannelMessage(channelId, content) {
+    return write(`/channels/${assertId(channelId)}/messages`, {
+        method: 'POST',
+        body: { content: String(content).slice(0, 2000), allowed_mentions: { parse: [] } }
+    });
+}
+
 export function modifyCurrentMember(guildId, fields, reason) {
     return write(`/guilds/${assertId(guildId)}/members/@me`, { method: 'PATCH', body: fields, reason });
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import IdentityTab from './IdentityTab';
 import AntiNukeTab from './AntiNukeTab';
+import GreetingsCard from './GreetingsCard';
 import LanguageSelect from './LanguageSelect';
 import PersonaTemplates from './PersonaTemplates';
 
@@ -268,6 +269,7 @@ export default function GuildEditor({ initial, meta }) {
                 {tab === 'behaviour' ? <BehaviourTab draft={draft} saved={saved} set={set} errors={fieldErrors} meta={meta} premium={premium} channels={channels} staleLanguage={staleLanguage} updateDraft={setDraft} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'roles' ? <ServerSetupCard draft={draft} set={set} errors={fieldErrors} roles={roles} /> : null}
                 {tab === 'roles' ? <div style={{ marginTop: 16 }}><RolesTab roles={roles} roleById={roleById} mappings={mappings} setMappings={setMappings} errors={mappingErrors} meta={meta} premium={premium} onUpgrade={() => setTab('premium')} /></div> : null}
+                {tab === 'roles' ? <div style={{ marginTop: 16 }}><GreetingsCard guildId={initial.guild.id} toast={toast} /></div> : null}
                 {tab === 'voice' ? <VoiceTab draft={draft} set={set} errors={fieldErrors} meta={meta} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'channels' ? <ChannelsTab draft={draft} set={set} errors={fieldErrors} channels={channels} /> : null}
                 {tab === 'features' ? <FeaturesTab draft={draft} set={set} isHome={initial.guild.isHome} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
