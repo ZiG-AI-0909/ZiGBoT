@@ -53,7 +53,7 @@ export default function Privacy() {
                     <li>
                         <strong>Premium purchases and feedback.</strong> When Razorpay confirms a Premium payment, we record the subscription ID,
                         the server, which signed-in account bought it, the plan and the price Razorpay reports. No card or bank details are ever
-                        stored. After your first purchase we may ask for optional feedback; your answers are stored with that purchase and are
+                        stored. ZiGBoT sends the buyer one thank-you message on Discord with the creator&apos;s contact link. After your first purchase we may ask for optional feedback; your answers are stored with that purchase and are
                         read only by ZiGBoT&apos;s owner.
                     </li>
                     <li>
