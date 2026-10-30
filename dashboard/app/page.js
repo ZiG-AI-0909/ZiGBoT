@@ -19,6 +19,9 @@ export const metadata = seo.pageMetadata('/');
 // Dynamic: the page knows whether you are signed in and reads runtime config.
 export const dynamic = 'force-dynamic';
 
+// ZiGBoT's public listing in Discord's App Directory.
+const APP_DIRECTORY_URL = 'https://discord.com/discovery/applications/1539530458390593576';
+
 const ERRORS = {
     login_failed: 'Discord login did not complete. Please try again.',
     missing_code: 'The login link was incomplete. Please try again.',
@@ -97,6 +100,7 @@ export default async function Home({ searchParams }) {
                     <p className="l-pitch">{landing.hero.pitch}</p>
                     <div className="row l-ctas">
                         {invite ? <a className="btn btn-primary btn-lg l-glow" href={invite} target="_blank" rel="noreferrer">➕ Add to Discord</a> : null}
+                        <a className="btn btn-lg" href={APP_DIRECTORY_URL} target="_blank" rel="noreferrer">View in App Directory ↗</a>
                         <Link className="btn btn-lg" href="/commands">See commands →</Link>
                         {current ? <Link className="btn btn-ghost btn-lg" href="/dashboard">Open dashboard</Link> : null}
                     </div>
@@ -245,6 +249,7 @@ export default async function Home({ searchParams }) {
                 <h2 id="final-title" className="l-h2 l-big">Ready to give your server <span className="l-grad">a main character?</span></h2>
                 <div className="row l-ctas">
                     {invite ? <a className="btn btn-primary btn-lg l-glow" href={invite} target="_blank" rel="noreferrer">➕ Add to Discord</a> : null}
+                    <a className="btn btn-lg" href={APP_DIRECTORY_URL} target="_blank" rel="noreferrer">View in App Directory ↗</a>
                     <Link className="btn btn-lg" href="/commands">See commands</Link>
                 </div>
             </Reveal>
