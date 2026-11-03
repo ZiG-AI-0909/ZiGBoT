@@ -7,7 +7,7 @@ const { composeSystemPrompt } = require('../../dashboard/lib/shared/prompt');
 // language and the member's tone, never calling ZiG this server's owner.
 const { creatorAnswer, creatorPersonaInstruction, withPortfolioLink, CREATOR_PORTFOLIO_URL } = require('./creator');
 // Who is speaking, and the final placeholder/mention pass over every reply.
-const { speakerBlock, finalizeReplyText } = require('./userContext');
+const { speakerBlock, finalizeReplyText, readableMentions } = require('./userContext');
 
 /** A fixed "who made you" reply for a built-in tone (the owner gets the respectful one). */
 function getCreatorResponse({ tone = 'neutral', isOwner = false, language = '', rng = Math.random } = {}) {
@@ -554,7 +554,8 @@ function createAiClient(settings) {
                 systemPrompt,
                 contextMessages,
                 authorName,
-                userMessage,
+                // "<@id>" mentions reach the model as "@Name" (it never sees ids).
+                userMessage: readableMentions(userMessage, user),
                 memoryState,
                 memories,
                 sharedState,

@@ -11,7 +11,7 @@ const {
     isReputationQuestion,
     buildReputationAnswer
 } = require('./ai/client');
-const { buildUserContext } = require('./ai/userContext');
+const { buildUserContext, readableMentions } = require('./ai/userContext');
 const { createAntiNuke } = require('./antinuke/monitor');
 const { createAntiNukeStore } = require('./antinuke/store');
 const { createGreetingScheduler } = require('./greetings/scheduler');
@@ -87,7 +87,11 @@ function logAiError(error) {
 }
 
 // The member a reply is for, from THIS message's own Discord objects.
-const userContextFor = (message) => buildUserContext({ user: message.author, member: message.member, guild: message.guild });
+const userContextFor = (message) => buildUserContext({ user: message.author, member: message.member, guild: message.guild, mentioned: mentionedMembers(message) });
+// Members the message mentioned ("greet @Star"), in order, never ZiGBoT or the author.
+const mentionedMembers = (message) => [...(message.mentions?.users?.values?.() || [])]
+    .filter((user) => user.id !== client.user?.id && user.id !== message.author.id)
+    .map((user) => ({ user, member: message.mentions.members?.get(user.id) || message.guild?.members?.cache?.get(user.id) || null }));
 // Users a reply may mention: the author and anyone their message mentioned (never ZiGBoT itself).
 const mentionableIds = (message) => [message.author.id, ...(message.mentions?.users?.keys?.() || [])]
     .filter((id) => id !== client.user?.id);
@@ -973,7 +977,7 @@ client.on(Events.MessageCreate, async (message) => {
         }
 
         // Record message in conversation memory (full unsplit text)
-        defaultMemory.addMessage(message.channel.id, 'user', userMessage, authorName);
+        defaultMemory.addMessage(message.channel.id, 'user', readableMentions(userMessage, userContextFor(message)), authorName);
         defaultMemory.addMessage(message.channel.id, 'assistant', replyText);
 
         // ---- Behavior recording (best-effort, never blocks the reply) ----
