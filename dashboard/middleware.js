@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import { authCookieOptions } from './lib/shared/authCookies';
 
 // Refreshes the Supabase session cookie on navigation and keeps logged-out
 // visitors out of /dashboard. Real authorization happens in each route.
@@ -10,6 +11,7 @@ export async function middleware(request) {
     if (!url || !anon) return response;
 
     const supabase = createServerClient(url, anon, {
+        cookieOptions: authCookieOptions,
         cookies: {
             getAll() {
                 return request.cookies.getAll();

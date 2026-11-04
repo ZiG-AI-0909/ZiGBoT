@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import { env } from '../env';
+import { authCookieOptions } from '../shared/authCookies';
 
 /**
  * User-scoped client: authenticates as the logged-in user via their session
@@ -11,6 +12,7 @@ import { env } from '../env';
 export async function createUserClient() {
     const cookieStore = await cookies();
     return createServerClient(env.supabaseUrl, env.supabaseAnonKey, {
+        cookieOptions: authCookieOptions,
         cookies: {
             getAll() {
                 return cookieStore.getAll();
