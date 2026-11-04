@@ -36,7 +36,7 @@ const SNOWFLAKE = /^\d{17,20}$/;
 const SETUP_FIELDS = [
     'owner_pronouns', 'male_role_ids', 'female_role_ids', 'adult_role_ids', 'minor_role_ids',
     'music_dj_role_ids', 'music_channel_id', 'music_idle_minutes', 'music_default_volume',
-    'voice_speaker', 'voice_pace', 'voice_language', 'voice_speak_replies', 'owner_roast', 'gif_settings', 'roast_intensity'
+    'voice_speaker', 'voice_pace', 'voice_language', 'voice_speak_replies', 'owner_roast', 'gif_settings', 'roast_intensity', 'adults_only'
 ];
 const GIF_FREQUENCY_NAMES = ['rare', 'normal', 'often'];
 const SETUP_PRONOUNS = ['she/her', 'he/him', 'they/them'];

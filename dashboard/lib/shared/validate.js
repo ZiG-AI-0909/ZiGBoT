@@ -171,6 +171,7 @@ function validateGuildConfig(input, ctx = {}) {
         voice_language: checkEnum(errors, 'voice_language', input.voice_language, VOICE_LANGUAGES, base.voice_language),
         voice_speak_replies: checkBool(errors, 'voice_speak_replies', input.voice_speak_replies, base.voice_speak_replies),
         owner_roast: checkBool(errors, 'owner_roast', input.owner_roast, base.owner_roast),
+        adults_only: checkBool(errors, 'adults_only', input.adults_only, base.adults_only),
         roast_intensity: checkEnum(errors, 'roast_intensity', input.roast_intensity, ROAST_INTENSITIES, base.roast_intensity),
         // Server setup (also set by the bot's /setup command).
         owner_pronouns: input.owner_pronouns === undefined || input.owner_pronouns === null || input.owner_pronouns === '' ? null : checkEnum(errors, 'owner_pronouns', input.owner_pronouns, PRONOUNS, null),
@@ -188,6 +189,7 @@ function validateGuildConfig(input, ctx = {}) {
     }
     if (value.male_role_ids.some((id) => value.female_role_ids.includes(id))) errors.female_role_ids = 'A role cannot be both male and female.';
     if (value.adult_role_ids.some((id) => value.minor_role_ids.includes(id))) errors.minor_role_ids = 'A role cannot be both 18+ and under 18.';
+    if (value.adults_only && !value.adult_role_ids.length) errors.adults_only = 'Pick at least one 18+ role first, or ZiGBoT will chat with nobody.';
     if (input.music_channel_id !== undefined && input.music_channel_id !== null && input.music_channel_id !== '') {
         const [id] = checkIdList(errors, 'music_channel_id', [input.music_channel_id], channels);
         value.music_channel_id = id || null;

@@ -12,7 +12,7 @@
  *  - fallbackReply: fixed in-character replies for when a regenerated reply
  *    still fails. They pass every check here (test/roastReview.test.js).
  */
-const { PROFANITY_TERMS, EXCLUDED_TERMS } = require('./profanity');
+const { PROFANITY_TERMS, EXCLUDED_TERMS, ADULT_BANTER_TERMS } = require('./profanity');
 const { languageMode } = require('./personas');
 const { moderateReplyText } = require('./safety');
 
@@ -35,7 +35,8 @@ const REFUSAL_PATTERNS = [
 ];
 
 function isRefusal(text) {
-    const clean = String(text ?? '').trim().replace(/^["'*_\s]+/, '');
+    // Models often write a curly apostrophe ("can’t"); the patterns use a straight one.
+    const clean = String(text ?? '').trim().replace(/[\u2018\u2019\u02BC]/g, "'").replace(/^["'*_\s]+/, '');
     if (!clean || clean.length > REFUSAL_MAX_CHARS) return false;
     return REFUSAL_PATTERNS.some((pattern) => pattern.test(clean));
 }
@@ -92,16 +93,23 @@ const ROAST_LIMIT_PATTERNS = [
 ];
 const MILD_PROFANITY_PATTERN = wordList(MILD_PROFANITY);
 
+// 18+ mode: swearing and sexual words are fine, the other hard limits are not.
+const ADULT_BANNED_PATTERN = wordList(EXCLUDED_TERMS.filter((term) => !ADULT_BANTER_TERMS.includes(term)));
+// 18+ mode never mixes with anything about under-18s. Checked for every tone.
+const ADULT_MINOR_PATTERN = /\b(?:under ?age(?:d)?|under ?18|minors?|child|children|kids?|school ?girls?|school ?boys?|little (?:girl|boy)s?|loli|shota|teens?|teenagers?|bachch?[ae]|bachch?i|nabalig)\b/i;
+
 /**
  * Does a Savage-mode reply keep the roast limits? Hard limits apply at every
  * intensity; mild profanity only at 'savage'. Returns { allowed, reason }.
  */
-function checkRoastLimits(text, { intensity = 'spicy' } = {}) {
+function checkRoastLimits(text, { intensity = 'spicy', adult = false } = {}) {
     const clean = String(text ?? '');
     for (const { regex, reason } of ROAST_LIMIT_PATTERNS) {
-        if (regex.test(clean)) return { allowed: false, reason };
+        if (adult && reason === 'sexual content') continue;
+        const pattern = adult && reason === 'banned word' ? ADULT_BANNED_PATTERN : regex;
+        if (pattern.test(clean)) return { allowed: false, reason };
     }
-    if (intensity !== 'savage' && MILD_PROFANITY_PATTERN.test(clean)) {
+    if (!adult && intensity !== 'savage' && MILD_PROFANITY_PATTERN.test(clean)) {
         return { allowed: false, reason: `profanity above ${intensity} intensity` };
     }
     return { allowed: true, reason: null };
@@ -111,11 +119,12 @@ function checkRoastLimits(text, { intensity = 'spicy' } = {}) {
  * One reply's verdict: { ok: true } or { ok: false, kind, reason } where kind
  * is 'unsafe' (platform moderation or a Savage hard limit) or 'refusal'.
  */
-function reviewReply(text, { tone = 'gentle', intensity = 'spicy' } = {}) {
+function reviewReply(text, { tone = 'gentle', intensity = 'spicy', adult = false } = {}) {
     const moderated = moderateReplyText(text);
     if (!moderated.allowed) return { ok: false, kind: 'unsafe', reason: moderated.reason };
+    if (adult && ADULT_MINOR_PATTERN.test(String(text ?? ''))) return { ok: false, kind: 'unsafe', reason: 'minors in adult mode' };
     if (tone === 'savage') {
-        const limits = checkRoastLimits(text, { intensity });
+        const limits = checkRoastLimits(text, { intensity, adult });
         if (!limits.allowed) return { ok: false, kind: 'unsafe', reason: limits.reason };
     }
     if (isRefusal(text)) return { ok: false, kind: 'refusal', reason: 'refusal' };
@@ -174,7 +183,7 @@ function fallbackReply({ tone = 'gentle', language = '', rng = Math.random } = {
  * The extra system instruction for the ONE regeneration after a failed reply.
  * It never quotes the failed draft, so a bad draft cannot prime the retry.
  */
-function regenerationInstruction({ kind, reason, tone = 'gentle', language = '' }) {
+function regenerationInstruction({ kind, reason, tone = 'gentle', language = '', adult = false }) {
     const lang = fallbackLanguage(tone, language) === 'hinglish'
         ? 'Hinglish (Hindi in Roman letters mixed with English)'
         : 'English';
@@ -188,7 +197,9 @@ function regenerationInstruction({ kind, reason, tone = 'gentle', language = '' 
         : `Your previous draft broke a hard limit (${reason}). Write a completely new reply: ${style}. It must contain`;
     const tail = kind === 'refusal'
         ? ` ${style}.`
-        : ' no sexual content, no family insults, no slurs, no abuse words, and nothing about caste, religion, gender, looks, or disability.';
+        : adult
+            ? ' no family insults, no slurs, nothing about anyone under 18, and nothing about caste, religion, gender, looks, or disability.'
+            : ' no sexual content, no family insults, no slurs, no abuse words, and nothing about caste, religion, gender, looks, or disability.';
     return `\n\nREPLY CORRECTION (from ZiGBoT's code): ${lead}${tail}`;
 }
 

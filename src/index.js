@@ -64,7 +64,8 @@ const { createSummaryChannelCommands } = require('./memory/summaryChannels');
 const { createGiphyClient } = require('./gifs/giphy');
 const { createReactionGifs } = require('./gifs/reactions');
 const { detectBullying, createBullyTracker, buildBullyInstruction, severeReplyText, modSuggestion } = require('./gifs/bully');
-const { resolveGifRules, defaultGifSettings } = require('../dashboard/lib/shared');
+const { resolveGifRules, defaultGifSettings, blockedByAdultsOnly, isAgeRestrictedChannel } = require('../dashboard/lib/shared');
+const { ADULT_BANTER_TERMS } = require('../dashboard/lib/shared/profanity');
 const { createIdentityStore } = require('./identity/store');
 const { createIdentitySync } = require('./identity/sync');
 const { createIdentityCommands } = require('./identity/commands');
@@ -195,9 +196,9 @@ function resolveToneAndGender(ctx, behavior, member, { isOwner = false, ownerRoa
     return { tone, gender, isNonGentle };
 }
 
-function guildPromptFor(ctx, behavior) {
+function guildPromptFor(ctx, behavior, { adultContent = false } = {}) {
     if (!ctx || ctx.mode !== 'multi') return null; // legacy prompt, unchanged
-    return { config: ctx.config, behavior, isHomeGuild: ctx.isHomeGuild };
+    return { config: ctx.config, behavior, isHomeGuild: ctx.isHomeGuild, adultContent };
 }
 
 // Core persistence: MongoDB Atlas (native driver). Warn features depend on
@@ -641,6 +642,8 @@ client.on(Events.MessageCreate, async (message) => {
     }
     // A role mapping can switch the AI off for some members (deny "chat").
     if (!ownerMemoryTarget && !hasFeature(behavior, 'chat')) return;
+    // "18+ only" server switch: everyone else is ignored, with no reply at all.
+    if (!ownerMemoryTarget && blockedByAdultsOnly(guildCtx?.config, behavior)) return;
 
     // The keyword detector is the ONLY reason we are replying — no mention,
     // no direct reply, not an always-on chat channel. This is the sole gate
@@ -659,7 +662,10 @@ client.on(Events.MessageCreate, async (message) => {
     const isOwner = isVerifiedOwner && !ownerRoast;
     const { tone, gender, isNonGentle } = resolveToneAndGender(guildCtx, behavior, message.member, { isOwner, ownerRoast });
     const isGentle = !isOwner && tone !== 'savage';
-    const guildPrompt = guildPromptFor(guildCtx, behavior);
+    // Adult limits need the server switch, an 18+ member AND a Discord age gate:
+    // under-18s can read a normal channel even if ZiGBoT never answers them.
+    const adultContent = Boolean(guildCtx?.config?.adults_only && behavior?.isAdult) && isAgeRestrictedChannel(message.channel);
+    const guildPrompt = guildPromptFor(guildCtx, behavior, { adultContent });
 
     // If a user just mentions @ZiGBoT without any text
     if (!userMessage) {
@@ -829,7 +835,8 @@ client.on(Events.MessageCreate, async (message) => {
         && !isOwner;
     const declineMode = profanityAtBot.matched
         && profanityAtBot.category === 'excluded'
-        && tone === 'savage';
+        && tone === 'savage'
+        && !(adultContent && ADULT_BANTER_TERMS.includes(profanityAtBot.term.toLowerCase()));
     if (profanityAtBot.matched) {
         logReplyPacing(`profanity-at-bot (${profanityAtBot.category}: "${profanityAtBot.term}") in #${message.channel.id} -> ${comebackMode ? 'comeback' : declineMode ? 'decline' : 'standard'} reply`);
     }
@@ -1014,6 +1021,7 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
     const { ctx: voiceCtx, gSettings: voiceSettings, behavior: voiceBehavior } = await guildRuntime(guild, routeContext.member);
     if (voiceCtx && voiceCtx.config.enabled === false) return;
     if (voiceBehavior && !hasFeature(voiceBehavior, 'chat')) return;
+    if (blockedByAdultsOnly(voiceCtx?.config, voiceBehavior)) return;
     const voiceMemoryAllowed = !voiceCtx || (voiceCtx.config.memory_enabled !== false && hasFeature(voiceBehavior, 'memory'));
     const voiceReputationAllowed = !voiceCtx || voiceCtx.config.reputation_enabled !== false;
     const intent = buildVoiceTranscriptRoute(routeContext, transcript, voiceSettings, client.user.id);

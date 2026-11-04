@@ -841,9 +841,11 @@ function ServerSetupCard({ draft, set, errors, roles }) {
             <div className="grid-2">
                 <RoleChecklist id="male-roles" label="Male roles (he/him)" roles={roles} selected={draft.male_role_ids} onChange={set('male_role_ids')} error={errors.male_role_ids} />
                 <RoleChecklist id="female-roles" label="Female roles (she/her)" roles={roles} selected={draft.female_role_ids} onChange={set('female_role_ids')} error={errors.female_role_ids} />
-                <RoleChecklist id="adult-roles" label="18+ roles" help="Members with these get roast mode." roles={roles} selected={draft.adult_role_ids} onChange={set('adult_role_ids')} error={errors.adult_role_ids} />
+                <RoleChecklist id="adult-roles" label="18+ roles" help="Members with these get roast mode, and are the only ones ZiGBoT chats with when 18+ only is on." roles={roles} selected={draft.adult_role_ids} onChange={set('adult_role_ids')} error={errors.adult_role_ids} />
                 <RoleChecklist id="minor-roles" label="Under-18 roles" help="Always gentle and clean, never roasted — beats every other setting." roles={roles} selected={draft.minor_role_ids} onChange={set('minor_role_ids')} error={errors.minor_role_ids} />
             </div>
+            <Switch id="adults-only" checked={draft.adults_only} onChange={set('adults_only')} label="18+ only" help="On: ZiGBoT chats only with members who have an 18+ role and silently ignores everyone else. Adult humour and swearing also unlock, but only in age-restricted channels." />
+            {errors.adults_only ? <span className="error">{errors.adults_only}</span> : null}
         </div>
     );
 }

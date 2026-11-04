@@ -35,4 +35,9 @@ const EXCLUDED_TERMS = [
     'hang you', 'jala dunga', 'tod dunga'
 ];
 
-module.exports = { PROFANITY_TERMS, EXCLUDED_TERMS };
+// Plain sexual words from EXCLUDED_TERMS. In 18+ mode (config.adults_only, in an
+// age-restricted channel) these are ordinary adult talk; the rest of the list
+// (sexual violence, family abuse, violence) stays excluded there too.
+const ADULT_BANTER_TERMS = ['chodna', 'chudai', 'lund', 'chut mera'];
+
+module.exports = { PROFANITY_TERMS, EXCLUDED_TERMS, ADULT_BANTER_TERMS };

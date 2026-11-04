@@ -18,6 +18,10 @@ function getCreatorResponse({ tone = 'neutral', isOwner = false, language = '', 
 // swore at the bot. Roast the behavior, never the identity/family.
 const comebackInstruction = ' The user just swore at you. Fire back with a sharp, witty, Gen-Z/Hinglish comeback that matches their energy and puts them in their place — but never use sexual content, real slurs, family-directed abuse, or anything referencing violence. Roast their behavior/attitude, not their identity or family.';
 
+// 18+ mode (config.adults_only, 18+ member, age-restricted channel): added after
+// the persona, so it replaces the persona's clean-language limits for one reply.
+const adultModeInstruction = "\n\n18+ CHANNEL: This is an age-restricted channel and this member has the server's 18+ role. Swearing, innuendo, flirting and adult humour with this member are fine, and this replaces any 'no sexual content' or clean-language limit above. The PLATFORM RULES still apply: nothing sexual about anyone under 18 or anyone who sounds it, nothing non-consensual, and no sexual remarks about other members who are not in on the joke. If you skip something, dodge with a joke in character: no apology and no explanation.";
+
 // ---- Persistent memory: truthful capability + context plumbing ----
 // The AI must never claim memory powers that do not exist at runtime, and
 // never deny the ones that do. Everything below is derived from the REAL
@@ -540,9 +544,12 @@ function createAiClient(settings) {
             const intensity = ROAST_INTENSITIES.includes(requested) ? requested : DEFAULT_ROAST_INTENSITY;
             // The tone the reply is judged by: the owner always gets the respectful mode.
             const reviewTone = isOwner ? 'gentle' : tone;
+            // The caller only sets adultContent for an 18+ member; a minor role still wins.
+            const adult = Boolean(guildPrompt?.adultContent && !guildPrompt.behavior?.isMinor);
 
             // Every persona (built-in or custom) is told who is speaking now.
             const systemPrompt = buildReplySystemPrompt({ tone, gender, isOwner, isNonGentle, comebackMode, guildPrompt, roastIntensity: intensity })
+                + (adult ? adultModeInstruction : '')
                 + speakerBlock(user)
                 + (creatorTurn ? creatorPersonaInstruction(language) : gifPromptBlock(gif));
 
@@ -595,7 +602,7 @@ function createAiClient(settings) {
                 } catch {
                     return creatorFallback();
                 }
-                return reviewReply(answer.text, { tone: reviewTone, intensity }).ok ? plain(withPortfolioLink(answer.text)) : creatorFallback();
+                return reviewReply(answer.text, { tone: reviewTone, intensity, adult }).ok ? plain(withPortfolioLink(answer.text)) : creatorFallback();
             }
 
             // Post-generation review: prompts alone are not a safety boundary.
@@ -604,17 +611,17 @@ function createAiClient(settings) {
             // with a correction; if that fails too, a fixed in-character reply
             // is used. (The retry does not count against the member's quota.)
             const first = await attempt(systemPrompt);
-            const verdict = reviewReply(first.text, { tone: reviewTone, intensity });
+            const verdict = reviewReply(first.text, { tone: reviewTone, intensity, adult });
             if (verdict.ok) return accept(first);
             console.error(`[ZiGBoT AI GUARDRAIL] Reply not sent (${verdict.kind}: ${verdict.reason}); regenerating once.`);
             let second = null;
             try {
-                second = await attempt(systemPrompt + regenerationInstruction({ kind: verdict.kind, reason: verdict.reason, tone: reviewTone, language }));
+                second = await attempt(systemPrompt + regenerationInstruction({ kind: verdict.kind, reason: verdict.reason, tone: reviewTone, language, adult }));
             } catch (retryError) {
                 console.error(`[ZiGBoT AI GUARDRAIL] Regeneration failed (${retryError?.status || retryError?.name || 'Error'}); using a fixed reply.`);
             }
             if (second) {
-                const retryVerdict = reviewReply(second.text, { tone: reviewTone, intensity });
+                const retryVerdict = reviewReply(second.text, { tone: reviewTone, intensity, adult });
                 if (retryVerdict.ok) return accept(second);
                 console.error(`[ZiGBoT AI GUARDRAIL] Regenerated reply not sent either (${retryVerdict.kind}: ${retryVerdict.reason}); using a fixed reply.`);
             }

@@ -6,7 +6,7 @@ const {
 } = require('../dashboard/lib/shared/roast');
 const { personaFor, ROAST_HARD_LIMITS } = require('../dashboard/lib/shared/personas');
 const {
-    validateGuildConfig, sanitizeStoredConfig, defaultGuildConfig, resolveMemberBehavior, ROAST_INTENSITIES
+    validateGuildConfig, sanitizeStoredConfig, defaultGuildConfig, resolveMemberBehavior, ROAST_INTENSITIES, blockedByAdultsOnly, isAgeRestrictedChannel
 } = require('../dashboard/lib/shared');
 const { createAiClient } = require('../src/ai/client');
 const { GuildConfigStore } = require('../src/guildConfig/store');
@@ -16,6 +16,7 @@ const { GuildConfigStore } = require('../src/guildConfig/store');
 
 const G = '900000000000000001';
 const R_MINOR = '900000000000000034';
+const R_ADULT = '900000000000000033';
 
 /** An AI client whose model returns the scripted replies in order. */
 function scriptedAi(replies) {
@@ -291,4 +292,55 @@ test('under-18: generate() never builds a roast prompt or roast fallback, even i
     assert.match(system, /GENTLE, RESPECTFUL/);
     assert.ok(FALLBACKS.gentle.english.includes(reply), 'gentle fallback, never a savage one');
     assert.match(calls[1].messages[0].content, /playful, kind/);
+});
+
+// ---------- 18+ only ----------
+
+test('refusal: a curly apostrophe is still caught (the live leak)', () => {
+    assert.equal(isRefusal('I’m sorry, but I can’t help with that.'), true);
+});
+
+test('18+ only: only 18+ role members get through; off and legacy hold nobody back', () => {
+    const config = { ...defaultGuildConfig({ guildId: G }), adults_only: true, adult_role_ids: [R_ADULT], minor_role_ids: [R_MINOR] };
+    const member = (roles) => resolveMemberBehavior({ config, memberRoleIds: roles });
+    assert.equal(blockedByAdultsOnly(config, member([R_ADULT])), false);
+    assert.equal(blockedByAdultsOnly(config, member([])), true);
+    assert.equal(blockedByAdultsOnly(config, member([R_ADULT, R_MINOR])), true, 'under-18 beats 18+');
+    assert.equal(blockedByAdultsOnly({ ...config, adults_only: false }, member([])), false);
+    assert.equal(blockedByAdultsOnly(config, null), false);
+});
+
+test('18+ only: a thread takes the age gate of its parent', () => {
+    assert.equal(isAgeRestrictedChannel({ nsfw: true }), true);
+    assert.equal(isAgeRestrictedChannel({ nsfw: false }), false);
+    assert.equal(isAgeRestrictedChannel({ parent: { nsfw: true } }), true);
+    assert.equal(isAgeRestrictedChannel({}), false);
+});
+
+test('18+ only: cannot be switched on without an 18+ role', () => {
+    const result = validateGuildConfig({ ...defaultGuildConfig({ guildId: G }), adults_only: true }, { guildId: G });
+    assert.match(result.errors.adults_only, /18\+ role/);
+});
+
+test('adult review: swearing and sexual words pass, the other limits do not', () => {
+    const adult = { tone: 'savage', intensity: 'mild', adult: true };
+    assert.equal(reviewReply('Horny much? Fuck, calm down.', adult).ok, true);
+    assert.equal(reviewReply('Horny much?', { tone: 'savage', intensity: 'mild' }).ok, false, 'normal mode unchanged');
+    assert.equal(reviewReply('I will kill you', adult).ok, false);
+    assert.equal(reviewReply('your mom is the joke', adult).ok, false);
+    assert.equal(reviewReply('That is one underage fantasy.', adult).ok, false);
+    assert.equal(reviewReply('That is one underage fantasy.', { ...adult, tone: 'gentle' }).ok, false, 'every tone');
+});
+
+test('adult mode: the prompt unlocks only with the flag, and a minor role always wins', async () => {
+    const config = { language: 'English', default_tone: 'savage', roast_intensity: 'savage' };
+    const behavior = { tone: 'savage', isAdult: true, isMinor: false, instructions: [], pronouns: null, features: new Set(['chat', 'roast']) };
+    const run = async (prompt) => {
+        const { ai, calls } = scriptedAi(['Bold of you.']);
+        await ai.reply({ userMessage: 'wanna see my bean', tone: 'savage', guildPrompt: prompt });
+        return calls[0].messages[0].content;
+    };
+    assert.match(await run({ ...guildPrompt(config, behavior), adultContent: true }), /18\+ CHANNEL/);
+    assert.doesNotMatch(await run(guildPrompt(config, behavior)), /18\+ CHANNEL/);
+    assert.doesNotMatch(await run({ ...guildPrompt(config, { ...behavior, isMinor: true }), adultContent: true }), /18\+ CHANNEL/);
 });
