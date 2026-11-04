@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { buildUserContext, speakerBlock, mentionsRole, finalizeReplyText } = require('../src/ai/userContext');
+const { memberToDescribe } = require('../src/tools/router');
 const { createAiClient } = require('../src/ai/client');
 const { defaultGuildConfig } = require('../dashboard/lib/shared');
 
@@ -167,9 +168,11 @@ test('a mentioned member is named to the model and {mention:N} mentions them', a
 
 test('the live message flow passes the real author to every AI call', () => {
     const index = fs.readFileSync(path.join(__dirname, '..', 'src', 'index.js'), 'utf8').replace(/\r\n/g, '\n');
-    assert.match(index, /const userContextFor = \(message\) => buildUserContext\(\{ user: message\.author, member: message\.member, guild: message\.guild, mentioned: mentionedMembers\(message\) \}\)/);
+    assert.match(index, /const userContextFor = \(message, described = null\) => buildUserContext\(\{\n\s+user: message\.author,\n\s+member: message\.member,\n\s+guild: message\.guild,\n\s+mentioned: \[\.\.\.mentionedMembers\(message\)/);
     // Main chat reply and the bullying clap-back: the message author.
-    assert.equal((index.match(/user: userContextFor\(message\),\n\s+allowedUserIds: mentionableIds\(message\),/g) || []).length, 2);
+    assert.equal((index.match(/user: userContextFor\(message(?:, describedMember)?\),\n\s+allowedUserIds: mentionableIds\(message\),/g) || []).length, 2);
+    // "Who is X?" reaches the persona, never the fixed info card.
+    assert.match(index, /intent\?\.action === 'get_member_info' && message\.guild\) \{\n\s+describedMember = await memberToDescribe\(message\.guild, intent\.target\);\n\s+intent = \{ action: 'chat' \};/);
     // Owner-commanded roast: placeholders mean the roast target.
     assert.match(index, /user: buildUserContext\(\{ user: ownerRoastTarget, member: targetMember, guild: message\.guild \}\)/);
     // Voice: the member who spoke.
@@ -220,4 +223,30 @@ test('roles: a mentioned under-18 member is marked, and detected for adult mode'
     assert.doesNotMatch(speakerBlock(context), /UNDER 18/);
     assert.equal(mentionsRole(context, [R_KID.id]), true);
     assert.equal(mentionsRole(contextWith([R_MOD]), [R_KID.id]), false);
+});
+
+test('who is: the join date reaches the prompt with the roles', () => {
+    const mann = { ...roleMember([R_MOD]), joinedTimestamp: Date.UTC(2026, 10, 2) };
+    const context = buildUserContext({ user: asker, guild: { id: G_ID }, mentioned: [{ user: star, member: mann }] });
+    assert.match(speakerBlock(context), /roles: \["Moderator"\]; joined this server on 2026-11-02/);
+});
+
+test('who is: a named member is found in the cache, then by Discord search', async () => {
+    const mann = { id: '100000000000000003', displayName: 'M A N N', user: { username: 'mann', tag: 'mann#0' } };
+    const queries = [];
+    const results = new Map([['Star', { first: () => ({ id: '100000000000000002' }) }]]);
+    const guild = {
+        members: {
+            cache: Object.assign(new Map([[mann.id, mann]]), { find(fn) { return [...this.values()].find(fn); } }),
+            fetch: async ({ query }) => { queries.push(query); return results.get(query) || { first: () => undefined }; }
+        }
+    };
+    assert.equal(await memberToDescribe(guild, '@M A N N'), mann);
+    assert.equal(await memberToDescribe(guild, `<@${mann.id}>`), mann);
+    assert.deepEqual(queries, []);
+    assert.equal((await memberToDescribe(guild, 'Star')).id, '100000000000000002');
+    assert.equal(await memberToDescribe(guild, 'Nobody'), null);
+    assert.equal(await memberToDescribe(guild, ''), null);
+    guild.members.fetch = async () => { throw new Error('Discord is down'); };
+    assert.equal(await memberToDescribe(guild, 'Star'), null);
 });

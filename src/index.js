@@ -22,7 +22,7 @@ const { isGentleMember, getMemberGender, isNonGentleMember } = require('./ai/rol
 const { isServerOwner } = require('./security/authorization');
 const { getOwnerRoastTarget, getOwnerMemoryTarget } = require('./security/ownerCommands');
 const { requestConfirmation } = require('./security/confirmation');
-const { executeTool, destructiveActions, isAuthorizedActor } = require('./tools/router');
+const { executeTool, destructiveActions, isAuthorizedActor, memberToDescribe } = require('./tools/router');
 const { auditLog } = require('./logging/auditLog');
 const { buildVoiceTranscriptRoute } = require('./routing/voiceRoute');
 const { speak, isListening } = require('./voice/voiceConversation');
@@ -88,7 +88,13 @@ function logAiError(error) {
 }
 
 // The member a reply is for, from THIS message's own Discord objects.
-const userContextFor = (message) => buildUserContext({ user: message.author, member: message.member, guild: message.guild, mentioned: mentionedMembers(message) });
+// described: the member a "who is X?" question named without an @mention.
+const userContextFor = (message, described = null) => buildUserContext({
+    user: message.author,
+    member: message.member,
+    guild: message.guild,
+    mentioned: [...mentionedMembers(message), ...(described ? [{ user: described.user, member: described }] : [])]
+});
 // Members the message mentioned ("greet @Star"), in order, never ZiGBoT or the author.
 const mentionedMembers = (message) => [...(message.mentions?.users?.values?.() || [])]
     .filter((user) => user.id !== client.user?.id && user.id !== message.author.id)
@@ -799,6 +805,14 @@ client.on(Events.MessageCreate, async (message) => {
         intent = { action: 'chat' };
     }
 
+    // "Who is X?" gets a persona answer from X's real roles, not the fixed
+    // info card (that stays on the slash command).
+    let describedMember = null;
+    if (intent?.action === 'get_member_info' && message.guild) {
+        describedMember = await memberToDescribe(message.guild, intent.target);
+        intent = { action: 'chat' };
+    }
+
     try {
         const toolResult = await runIntent(message, gSettings, intent, {
             onVoiceTranscript: handleVoiceTranscript,
@@ -928,7 +942,7 @@ client.on(Events.MessageCreate, async (message) => {
         const { text: replyText, gif: aiGif } = await ai.generate({
             userMessage,
             authorName,
-            user: userContextFor(message),
+            user: userContextFor(message, describedMember),
             allowedUserIds: mentionableIds(message),
             contextMessages: history,
             tone,

@@ -131,6 +131,19 @@ function findMember(guild, target) {
         || guild.members.cache.find((member) => [member.user.username, member.displayName, member.user.tag].some((name) => name.toLowerCase() === target.toLowerCase()));
 }
 
+/**
+ * The member a "who is X?" question means: the cache first, then Discord's
+ * member search for a name the cache has not seen. null when nobody matches.
+ */
+async function memberToDescribe(guild, target) {
+    const name = String(target ?? '').trim().replace(/^@/, '');
+    if (!guild || !name) return null;
+    const cached = findMember(guild, name);
+    if (cached) return cached;
+    const found = await guild.members.fetch({ query: name.slice(0, 100), limit: 1 }).catch(() => null);
+    return found?.first?.() || null;
+}
+
 function findRole(guild, name) {
     if (!name) return null;
     const id = name.match(/^<@&(\d+)>$/)?.[1] || name;
@@ -740,4 +753,4 @@ async function executeTool(message, settings, intent, context = {}) {
     }
 }
 
-module.exports = { executeTool, adminActions, destructiveActions, actionCatalog, actionAliases, normalizeAction, isAuthorizedActor };
+module.exports = { memberToDescribe, executeTool, adminActions, destructiveActions, actionCatalog, actionAliases, normalizeAction, isAuthorizedActor };

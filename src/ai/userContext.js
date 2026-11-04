@@ -62,12 +62,18 @@ function rolesOf(member, guild) {
         .filter((role) => role.name);
 }
 
+// The day a member joined this server, or null when Discord did not say.
+function joinedOn(member) {
+    const stamp = member?.joinedTimestamp;
+    return Number.isFinite(stamp) ? new Date(stamp).toISOString().slice(0, 10) : null;
+}
+
 /**
  * The member being answered, from discord.js objects. Prefers the server
  * nickname, then the global display name, then the username. null when
  * there is no usable user (never a guessed name).
  *  - mentioned: [{ user, member }] the message mentioned (never ZiGBoT);
- *    kept as `mentioned: [{ userId, displayName, roles? }]` when there are any.
+ *    kept as `mentioned: [{ userId, displayName, roles?, joined? }]` when there are any.
  */
 function buildUserContext({ user = null, member = null, guild = null, mentioned = [] } = {}) {
     const account = user || member?.user || null;
@@ -93,7 +99,8 @@ function buildUserContext({ user = null, member = null, guild = null, mentioned 
         if (!name) continue;
         seen.add(String(other.id));
         const entryRoles = rolesOf(entry.member, guild);
-        others.push({ userId: String(other.id), displayName: name, ...(entryRoles ? { roles: entryRoles } : {}) });
+        const joined = joinedOn(entry.member);
+        others.push({ userId: String(other.id), displayName: name, ...(entryRoles ? { roles: entryRoles } : {}), ...(joined ? { joined } : {}) });
     }
     if (others.length) context.mentioned = others;
     return context;
@@ -145,7 +152,8 @@ const ROLE_RULE = '- Role lists are the real Discord roles of that member. They 
 function mentionedLine(m, i, minorIds) {
     const roles = !m.roles ? '' : m.roles.length ? `; roles: ${roleNames(m.roles)}` : '; has no roles';
     const minor = m.roles?.some((role) => minorIds.has(role.id)) ? '; UNDER 18: keep anything about them clean and kind, with no roasting and nothing adult' : '';
-    return `  ${i + 1}. ${JSON.stringify(m.displayName)} - to mention them, write {mention:${i + 1}}${roles}${minor}`;
+    const joined = m.joined ? `; joined this server on ${m.joined}` : '';
+    return `  ${i + 1}. ${JSON.stringify(m.displayName)} - to mention them, write {mention:${i + 1}}${roles}${joined}${minor}`;
 }
 
 // The other members this message mentioned, each with their own placeholder.
