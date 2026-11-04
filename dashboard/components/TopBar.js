@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { PORTFOLIO_CONTACT_URL } from '@/lib/discord';
+import UserAvatar from '@/components/UserAvatar';
 
 export default function TopBar({ profile }) {
     return (
@@ -13,7 +14,7 @@ export default function TopBar({ profile }) {
                 <a className="btn btn-ghost" href={PORTFOLIO_CONTACT_URL} target="_blank" rel="noreferrer" title="Contact the creator">💬 Contact</a>
                 {profile ? (
                     <div className="user-chip">
-                        {profile.avatar_url ? <img className="avatar" src={profile.avatar_url} alt="" /> : null}
+                        <UserAvatar src={profile.avatar_url} name={profile.username} />
                         <span className="small">{profile.username || 'Signed in'}</span>
                         <form action="/auth/logout" method="post">
                             <button className="btn btn-ghost" type="submit">Log out</button>

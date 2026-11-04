@@ -45,7 +45,13 @@ export default async function Home({ searchParams }) {
         current = null;
     }
     const meta = current?.user?.user_metadata || {};
-    const profile = current ? { username: meta.full_name || meta.name || 'Signed in', avatar_url: meta.avatar_url || null } : null;
+    // The stored picture, not the login-time one: it is refreshed when it goes stale.
+    let storedAvatar = null;
+    if (current) {
+        const { data } = await current.supabase.from('zb_profiles').select('avatar_url').eq('user_id', current.user.id).maybeSingle();
+        storedAvatar = data?.avatar_url || null;
+    }
+    const profile = current ? { username: meta.full_name || meta.name || 'Signed in', avatar_url: storedAvatar || meta.avatar_url || null } : null;
 
     // Real config only: no invite link or price is shown if it isn't set.
     let invite = null;

@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { discordIdFromUser, decideGuildAccess, isSameOrigin, PERMISSIONS } = require('../dashboard/lib/shared');
+const { discordIdFromUser, decideGuildAccess, isSameOrigin, discordAvatarUrl, PERMISSIONS } = require('../dashboard/lib/shared');
 
 const ME = '100000000000000001';
 const OTHER = '100000000000000002';
@@ -59,4 +59,9 @@ test('same-origin check blocks cross-site and missing origins', () => {
     assert.equal(isSameOrigin({ origin: null, host: 'dash.example.com' }), false);
     assert.equal(isSameOrigin({ origin: 'not a url', host: 'x' }), false);
     assert.equal(isSameOrigin({ origin: 'https://zig.vercel.app', host: 'internal-host', allowedOrigins: ['https://zig.vercel.app/'] }), true);
+});
+
+test('avatar url: the current hash, else the default Discord picture', () => {
+    assert.equal(discordAvatarUrl(ME, 'abc123'), `https://cdn.discordapp.com/avatars/${ME}/abc123.png?size=64`);
+    assert.ok(['0', '1', '2', '3', '4', '5'].some((n) => discordAvatarUrl(ME, null) === `https://cdn.discordapp.com/embed/avatars/${n}.png`));
 });

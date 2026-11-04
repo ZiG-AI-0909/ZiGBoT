@@ -60,4 +60,10 @@ function isSameOrigin({ origin, host, allowedOrigins = [] }) {
     return Boolean(host) && parsed.host === host;
 }
 
-module.exports = { discordIdFromUser, decideGuildAccess, isSameOrigin };
+/** Discord CDN picture for a user: their avatar hash, else Discord's default avatar. */
+function discordAvatarUrl(userId, avatarHash) {
+    if (avatarHash) return `https://cdn.discordapp.com/avatars/${userId}/${avatarHash}.png?size=64`;
+    return `https://cdn.discordapp.com/embed/avatars/${(BigInt(userId) >> 22n) % 6n}.png`;
+}
+
+module.exports = { discordIdFromUser, decideGuildAccess, isSameOrigin, discordAvatarUrl };

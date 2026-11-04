@@ -52,6 +52,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .hero-tagline em { font-style: normal; color: var(--accent-2); text-shadow: 0 0 12px rgba(224, 64, 251, 0.5); }
 .user-chip { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; }
 .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--panel-2); object-fit: cover; }
+.avatar-initial { display: inline-grid; place-items: center; color: var(--text); font-size: 13px; font-weight: 600; }
 
 h1 { font-size: 26px; line-height: 1.2; margin: 0 0 6px; letter-spacing: -0.02em; }
 h2 { font-size: 18px; margin: 0 0 4px; letter-spacing: -0.01em; }

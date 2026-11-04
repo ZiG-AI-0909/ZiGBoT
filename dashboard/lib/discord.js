@@ -53,6 +53,11 @@ export function getMember(guildId, userId) {
     return call(`/guilds/${assertId(guildId)}/members/${assertId(userId)}`, { token: botToken() });
 }
 
+/** Public profile of any user (avatar hash). null when the id is unknown. */
+export function getDiscordUser(userId) {
+    return call(`/users/${assertId(userId)}`, { token: botToken() });
+}
+
 export async function getChannels(guildId) {
     return (await call(`/guilds/${assertId(guildId)}/channels`, { token: botToken() })) || [];
 }
