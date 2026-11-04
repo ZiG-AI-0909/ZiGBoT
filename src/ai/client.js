@@ -7,7 +7,7 @@ const { composeSystemPrompt } = require('../../dashboard/lib/shared/prompt');
 // language and the member's tone, never calling ZiG this server's owner.
 const { creatorAnswer, creatorPersonaInstruction, withPortfolioLink, CREATOR_PORTFOLIO_URL } = require('./creator');
 // Who is speaking, and the final placeholder/mention pass over every reply.
-const { speakerBlock, finalizeReplyText, readableMentions } = require('./userContext');
+const { speakerBlock, mentionsRole, finalizeReplyText, readableMentions } = require('./userContext');
 
 /** A fixed "who made you" reply for a built-in tone (the owner gets the respectful one). */
 function getCreatorResponse({ tone = 'neutral', isOwner = false, language = '', rng = Math.random } = {}) {
@@ -544,13 +544,14 @@ function createAiClient(settings) {
             const intensity = ROAST_INTENSITIES.includes(requested) ? requested : DEFAULT_ROAST_INTENSITY;
             // The tone the reply is judged by: the owner always gets the respectful mode.
             const reviewTone = isOwner ? 'gentle' : tone;
-            // The caller only sets adultContent for an 18+ member; a minor role still wins.
-            const adult = Boolean(guildPrompt?.adultContent && !guildPrompt.behavior?.isMinor);
+            // The caller only sets adultContent for an 18+ member; a minor role still
+            // wins, and so does a reply about a mentioned under-18 member.
+            const adult = Boolean(guildPrompt?.adultContent && !guildPrompt.behavior?.isMinor) && !mentionsRole(user, config.minor_role_ids);
 
             // Every persona (built-in or custom) is told who is speaking now.
             const systemPrompt = buildReplySystemPrompt({ tone, gender, isOwner, isNonGentle, comebackMode, guildPrompt, roastIntensity: intensity })
                 + (adult ? adultModeInstruction : '')
-                + speakerBlock(user)
+                + speakerBlock(user, { minorRoleIds: config.minor_role_ids })
                 + (creatorTurn ? creatorPersonaInstruction(language) : gifPromptBlock(gif));
 
             // Memory status + rules go in the system prompt (code-written);
