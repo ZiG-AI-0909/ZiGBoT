@@ -5,7 +5,7 @@ export default function TopBar({ profile }) {
     return (
         <header className="topbar">
             <Link href={profile ? '/dashboard' : '/'} className="brand">
-                <img className="brand-mark" src="/zigbot.png" alt="" width="30" height="30" />
+                <img className="brand-mark" src="/zigbot-144.webp" alt="" width="30" height="30" />
                 <span><span className="zig">ZIG</span>BOT</span>
             </Link>
             <div className="topbar-actions">

@@ -6,9 +6,6 @@ import seo from '@/lib/seo';
 // Title, description, canonical and sharing tags: lib/seo.js.
 export const metadata = seo.pageMetadata('/privacy');
 
-// Dynamic so the contact link uses the runtime env, like the other pages.
-export const dynamic = 'force-dynamic';
-
 const UPDATED = '24 October 2026';
 
 export default function Privacy() {

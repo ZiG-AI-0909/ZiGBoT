@@ -29,7 +29,7 @@ function Line({ line, typed }) {
     return (
         <div className={`demo-line ${isBot ? 'demo-bot' : 'demo-user'}`}>
             {isBot
-                ? <img className="demo-avatar" src="/zigbot.png" alt="" width="36" height="36" />
+                ? <img className="demo-avatar" src="/zigbot-144.webp" alt="" width="36" height="36" />
                 : <span className="demo-avatar demo-avatar-user" aria-hidden="true">{line.name[0].toUpperCase()}</span>}
             <div className="demo-body">
                 <div className="demo-name">

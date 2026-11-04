@@ -6,7 +6,7 @@ export default function IdentitySwap() {
     return (
         <div className="l-idswap" aria-hidden="true">
             <span className="l-idswap-avatars">
-                <img className="l-idswap-av l-idswap-a" src="/zigbot.png" alt="" width="32" height="32" />
+                <img className="l-idswap-av l-idswap-a" src="/zigbot-144.webp" alt="" width="32" height="32" />
                 <span className="l-idswap-av l-idswap-b l-idswap-custom">☕</span>
             </span>
             <span className="l-idswap-body">

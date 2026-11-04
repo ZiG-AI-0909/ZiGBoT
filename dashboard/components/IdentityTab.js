@@ -152,7 +152,7 @@ export default function IdentityTab({ guildId, guildName, premium, onUpgrade, to
     }
 
     // Preview: the new upload, else the approved picture, else the default.
-    const avatarSrc = fileUrl || (!removeAvatar && identity?.hasAvatar ? `/api/guilds/${guildId}/identity/avatar?slot=live` : '/zigbot.png');
+    const avatarSrc = fileUrl || (!removeAvatar && identity?.hasAvatar ? `/api/guilds/${guildId}/identity/avatar?slot=live` : '/zigbot-144.webp');
 
     return (
         <div className="stack">

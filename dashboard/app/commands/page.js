@@ -6,10 +6,8 @@ import seo from '@/lib/seo';
 // Title, description, canonical and sharing tags: lib/seo.js.
 export const metadata = seo.pageMetadata('/commands');
 
-// Dynamic so the top bar's contact link uses the runtime env, like the other
-// pages. The command data itself is static: it is generated from the bot's
-// real slash definitions by `npm run export-commands`.
-export const dynamic = 'force-dynamic';
+// Static page: the command data is generated from the bot's real slash
+// definitions by `npm run export-commands`.
 
 export default function Commands() {
     return (
