@@ -310,6 +310,14 @@ test('18+ only: only 18+ role members get through; off and legacy hold nobody ba
     assert.equal(blockedByAdultsOnly(config, null), false);
 });
 
+test('18+ only: the server owner is never locked out, unless under 18', () => {
+    const config = { ...defaultGuildConfig({ guildId: G }), adults_only: true, adult_role_ids: [R_ADULT], minor_role_ids: [R_MINOR] };
+    const owner = (roles) => resolveMemberBehavior({ config, memberRoleIds: roles, isGuildOwner: true });
+    assert.equal(blockedByAdultsOnly(config, owner([])), false);
+    assert.equal(blockedByAdultsOnly(config, owner([R_MINOR])), true);
+    assert.equal(owner([]).isAdult, false, 'the exemption does not unlock adult mode');
+});
+
 test('18+ only: a thread takes the age gate of its parent', () => {
     assert.equal(isAgeRestrictedChannel({ nsfw: true }), true);
     assert.equal(isAgeRestrictedChannel({ nsfw: false }), false);

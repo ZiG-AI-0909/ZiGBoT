@@ -844,7 +844,7 @@ function ServerSetupCard({ draft, set, errors, roles }) {
                 <RoleChecklist id="adult-roles" label="18+ roles" help="Members with these get roast mode, and are the only ones ZiGBoT chats with when 18+ only is on." roles={roles} selected={draft.adult_role_ids} onChange={set('adult_role_ids')} error={errors.adult_role_ids} />
                 <RoleChecklist id="minor-roles" label="Under-18 roles" help="Always gentle and clean, never roasted — beats every other setting." roles={roles} selected={draft.minor_role_ids} onChange={set('minor_role_ids')} error={errors.minor_role_ids} />
             </div>
-            <Switch id="adults-only" checked={draft.adults_only} onChange={set('adults_only')} label="18+ only" help="On: ZiGBoT chats only with members who have an 18+ role and silently ignores everyone else. Adult humour and swearing also unlock, but only in age-restricted channels." />
+            <Switch id="adults-only" checked={draft.adults_only} onChange={set('adults_only')} label="18+ only" help="On: ZiGBoT chats only with the server owner and members who have an 18+ role, and silently ignores everyone else. Adult humour and swearing also unlock, but only in age-restricted channels." />
             {errors.adults_only ? <span className="error">{errors.adults_only}</span> : null}
         </div>
     );

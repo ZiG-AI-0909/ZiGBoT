@@ -80,6 +80,7 @@ function resolveMemberBehavior({ config, mappings = [], memberRoleIds = [], role
         pronouns,
         isMinor,
         isAdult,
+        isGuildOwner: Boolean(isGuildOwner),
         instructions,
         features,
         primary: matched[0] || null,
@@ -92,10 +93,12 @@ function hasFeature(behavior, feature) {
     return behavior.features instanceof Set ? behavior.features.has(feature) : false;
 }
 
-// "18+ only" server switch: no AI chat for anyone without an 18+ role. Off, or
-// in legacy mode (no behavior), nobody is held back.
+// "18+ only" server switch: no AI chat for anyone without an 18+ role, except
+// the server owner (so it cannot lock them out) unless they have an under-18
+// role. Off, or in legacy mode (no behavior), nobody is held back.
 function blockedByAdultsOnly(config, behavior) {
-    return Boolean(config?.adults_only) && Boolean(behavior) && !behavior.isAdult;
+    if (!config?.adults_only || !behavior || behavior.isAdult) return false;
+    return !behavior.isGuildOwner || behavior.isMinor;
 }
 
 // Discord age-gates these channels itself. A thread takes its parent's setting.
