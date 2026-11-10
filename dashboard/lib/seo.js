@@ -19,7 +19,13 @@ const SAME_AS = Object.freeze([
     'https://discord.com/discovery/applications/1539530458390593576',
     'https://discordbotlist.com/bots/zigbot'
 ]);
-const CREATOR = Object.freeze({ name: 'Bhavesh Kumar Tiwari (ZiG)', url: 'https://aibhaveshportfolio.vercel.app/' });
+// The creator, and his own profiles (Person "sameAs").
+const CREATOR = Object.freeze({
+    name: 'Bhavesh Kumar Tiwari (ZiG)',
+    alternateName: 'YourBoyZiG',
+    url: 'https://aibhaveshportfolio.vercel.app/',
+    sameAs: Object.freeze(['https://linktr.ee/Zignamite'])
+});
 // Search engine ownership checks (public tokens, not secrets). Google also
 // has the HTML-file method: public/google4f033dbcc41e6d42.html.
 const SITE_VERIFICATION = Object.freeze({ google: 'cWplGzZ-DLyFscyRzBmgugKqMVFaMEkEy8cwa4Zx33o' });
@@ -105,7 +111,7 @@ function softwareApplicationJsonLd({ description, features = [] }) {
         url: absolute('/'),
         image: absolute(OG_IMAGE.path),
         sameAs: [...SAME_AS],
-        author: { '@type': 'Person', name: CREATOR.name, url: CREATOR.url },
+        author: { '@type': 'Person', name: CREATOR.name, alternateName: CREATOR.alternateName, url: CREATOR.url, sameAs: [...CREATOR.sameAs] },
         applicationCategory: 'CommunicationApplication',
         operatingSystem: 'Discord',
         description,

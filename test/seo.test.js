@@ -124,5 +124,6 @@ test('brand structured data: ZiGBoT as the site name, with its real profiles', (
     const app = seo.softwareApplicationJsonLd({ description: 'x', features: [] });
     assert.deepEqual(app.sameAs, ['https://discord.com/discovery/applications/1539530458390593576', 'https://discordbotlist.com/bots/zigbot']);
     assert.equal(app.author.url, 'https://aibhaveshportfolio.vercel.app/');
+    assert.deepEqual(app.author.sameAs, ['https://linktr.ee/Zignamite']);
     assert.match(read('dashboard/app/page.js'), /seo\.websiteJsonLd\(\)/);
 });
