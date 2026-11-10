@@ -24,7 +24,11 @@ const CREATOR = Object.freeze({
     name: 'Bhavesh Kumar Tiwari (ZiG)',
     alternateName: 'YourBoyZiG',
     url: 'https://aibhaveshportfolio.vercel.app/',
-    sameAs: Object.freeze(['https://linktr.ee/Zignamite'])
+    sameAs: Object.freeze([
+        'https://linktr.ee/Zignamite',
+        'https://www.youtube.com/@yourboyzig',
+        'https://www.instagram.com/_yourboyzig/'
+    ])
 });
 // Search engine ownership checks (public tokens, not secrets). Google also
 // has the HTML-file method: public/google4f033dbcc41e6d42.html.
