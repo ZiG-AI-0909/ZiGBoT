@@ -16,12 +16,20 @@ export const dynamic = 'force-dynamic';
 // discordbotlist's servers, which send no Origin, so a test is never logged
 // as a vote and never DMs anyone.
 const TEST_ORIGIN = 'https://discordbotlist.com';
+// The test also sends X-DBL-Signature ("<secret> <ms>"), and their HTTP
+// client may add more; allow whatever header names it asks for (the secret
+// is still required).
+const allowedHeaders = (request) => {
+    const asked = String(request.headers.get('access-control-request-headers') || '')
+        .split(',').map((h) => h.trim().toLowerCase()).filter((h) => /^[a-z0-9-]{1,64}$/.test(h)).slice(0, 20);
+    return [...new Set(['authorization', 'content-type', 'x-dbl-signature', ...asked])].join(', ');
+};
 const cors = (request) => (request.headers.get('origin') === TEST_ORIGIN ? {
     'Access-Control-Allow-Origin': TEST_ORIGIN,
     'Access-Control-Allow-Methods': 'POST',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+    'Access-Control-Allow-Headers': allowedHeaders(request),
     'Access-Control-Max-Age': '600',
-    Vary: 'Origin'
+    Vary: 'Origin, Access-Control-Request-Headers'
 } : {});
 const reply = (request, status) => new Response(null, { status, headers: { 'Cache-Control': 'no-store', ...cors(request) } });
 
