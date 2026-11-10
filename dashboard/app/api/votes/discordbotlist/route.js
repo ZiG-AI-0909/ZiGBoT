@@ -9,29 +9,48 @@ export const dynamic = 'force-dynamic';
 // discordbotlist.com -> us, once per upvote. Not wrapped in the same-origin
 // handler (the bot list is the caller); the Authorization header must equal
 // DBL_WEBHOOK_SECRET. The voter gets a thank-you DM after the response.
-const reply = (status) => new Response(null, { status, headers: { 'Cache-Control': 'no-store' } });
+//
+// The "Test webhook" button on the bot's edit page posts from the owner's
+// BROWSER (Origin: https://discordbotlist.com), so that origin may call this
+// route. Such a request only checks the secret: real votes come from
+// discordbotlist's servers, which send no Origin, so a test is never logged
+// as a vote and never DMs anyone.
+const TEST_ORIGIN = 'https://discordbotlist.com';
+const cors = (request) => (request.headers.get('origin') === TEST_ORIGIN ? {
+    'Access-Control-Allow-Origin': TEST_ORIGIN,
+    'Access-Control-Allow-Methods': 'POST',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+    'Access-Control-Max-Age': '600',
+    Vary: 'Origin'
+} : {});
+const reply = (request, status) => new Response(null, { status, headers: { 'Cache-Control': 'no-store', ...cors(request) } });
+
+export function OPTIONS(request) {
+    return reply(request, 204);
+}
 
 export async function POST(request) {
     const secret = env.dblWebhookSecret;
-    if (!secret) return reply(503);
-    if (!botList.verifyVoteSecret(request.headers.get('authorization') || '', secret)) return reply(401);
+    if (!secret) return reply(request, 503);
+    if (!botList.verifyVoteSecret(request.headers.get('authorization') || '', secret)) return reply(request, 401);
+    if (request.headers.get('origin') === TEST_ORIGIN) return reply(request, 204);
 
     const raw = await request.text();
-    if (raw.length > 16 * 1024) return reply(413);
+    if (raw.length > 16 * 1024) return reply(request, 413);
     let body;
     try {
         body = JSON.parse(raw);
     } catch {
-        return reply(400);
+        return reply(request, 400);
     }
     const vote = botList.parseVote(body);
-    if (!vote) return reply(400);
+    if (!vote) return reply(request, 400);
 
     const { error } = await createServiceClient().from('zb_votes').insert(vote);
     if (error) {
         console.error('[vote webhook] insert failed:', error.message);
-        return reply(500);
+        return reply(request, 500);
     }
     after(() => sendDirectMessage(vote.user_discord_id, botList.VOTE_THANKS).catch((e) => console.error('[vote webhook] thank-you DM failed:', e?.status || e?.message)));
-    return reply(204);
+    return reply(request, 204);
 }
