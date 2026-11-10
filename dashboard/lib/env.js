@@ -26,6 +26,8 @@ export const env = {
     get discordClientId() { return required('DISCORD_CLIENT_ID'); },
     // Install webhook (Developer Portal -> General Information -> Public Key). Empty = webhook off.
     get discordPublicKey() { return (process.env.DISCORD_PUBLIC_KEY || '').trim(); },
+    // discordbotlist.com vote webhook: the "Webhook Secret" set on the bot's edit page. Empty = off.
+    get dblWebhookSecret() { return (process.env.DBL_WEBHOOK_SECRET || '').trim(); },
     // After "Add to Discord", send people to /welcome. Only exactly 'true':
     // {siteUrl}/welcome must first be listed under OAuth2 -> Redirects, or
     // Discord refuses the invite link.

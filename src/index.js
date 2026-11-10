@@ -37,6 +37,7 @@ const { detectBehaviorSignals, defaultBehaviorTracker } = require('./ai/behavior
 const { registerSlashCommands, interactionToIntent, runYouTubeInteraction } = require('./slash');
 const { handleSetupCommand, sendWelcome } = require('./guildConfig/setup');
 const { describeEvent } = require('../dashboard/lib/shared/discordWebhook');
+const { startStatsPosting } = require('./botlists/discordBotList');
 const { isMusicComponent, handleMusicComponent } = require('./music/panel');
 const { isVoiceComponent, handleVoiceComponent } = require('./voice/panel');
 const music = require('./music/player');
@@ -269,6 +270,7 @@ client.once(Events.ClientReady, async (c) => {
     // Anti-Nuke runs in every server, with or without the dashboard database.
     antiNuke.start();
     greetingScheduler.start();
+    startStatsPosting(c, { token: settings.dblToken });
     // Slash commands are a secondary interface: a registration failure must
     // never take down the whole bot — keep running in mention-driven mode.
     try {

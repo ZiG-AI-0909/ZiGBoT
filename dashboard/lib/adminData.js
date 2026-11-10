@@ -155,11 +155,12 @@ export async function loadInstalls({ kind = '', page = 1 } = {}) {
         return { events: [], total: 0, page: p, error: missing ? 'The install log table is missing (migration 20261110000000_zigbot_app_events not run).' : 'Could not load installs.' };
     }
     const since = new Date(Date.now() - 30 * 86400000).toISOString();
-    const [added, removed] = await Promise.all([
+    const [added, removed, votes] = await Promise.all([
         count(db().from('zb_app_events').select('id', { count: 'exact', head: true }).in('event_type', INSTALL_FILTERS.added).gte('occurred_at', since), 'installs'),
-        count(db().from('zb_app_events').select('id', { count: 'exact', head: true }).in('event_type', INSTALL_FILTERS.removed).gte('occurred_at', since), 'removals')
+        count(db().from('zb_app_events').select('id', { count: 'exact', head: true }).in('event_type', INSTALL_FILTERS.removed).gte('occurred_at', since), 'removals'),
+        count(db().from('zb_votes').select('id', { count: 'exact', head: true }).gte('voted_at', since), 'votes')
     ]);
-    return { events: data || [], total: total || 0, page: p, error: null, last30: { added, removed } };
+    return { events: data || [], total: total || 0, page: p, error: null, last30: { added, removed, votes } };
 }
 
 export async function loadServers({ q = '', page = 1 } = {}) {

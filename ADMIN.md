@@ -70,6 +70,19 @@ sends no webhook when a bot is kicked from a server, so the bot logs and DMs
 those itself (`GUILD_REMOVED`). Unsigned or replayed (older than 5 minutes)
 deliveries get a 401.
 
+## discordbotlist.com votes
+
+1. Run `supabase/migrations/20261111000000_zigbot_votes.sql`.
+2. Make up a long random secret (16+ characters). Put it in Vercel as
+   `DBL_WEBHOOK_SECRET` and redeploy.
+3. On the bot's discordbotlist edit page: Upvote Webhook
+   `https://www.zigbot.in/api/votes/discordbotlist`, Webhook Secret = the same value.
+4. Render: `DBL_TOKEN` = the API token from the same page (server count, hourly).
+
+Each vote is logged (30-day count on Installs) and the voter gets a thank-you DM.
+People who add ZiGBoT are asked to upvote three times, once each: a DM from the
+install webhook, the last line of the in-server welcome, and a button on `/welcome`.
+
 ## What it does not do (on purpose)
 
 * No refunds: refund in the Razorpay dashboard. Revenue here is what Razorpay

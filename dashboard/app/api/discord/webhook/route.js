@@ -1,5 +1,6 @@
 import { after } from 'next/server';
 import webhook from '@/lib/shared/discordWebhook';
+import botList from '@/lib/shared/botList';
 import { sendDirectMessage } from '@/lib/discord';
 import { createServiceClient } from '@/lib/supabase/server';
 import { env } from '@/lib/env';
@@ -9,8 +10,8 @@ export const dynamic = 'force-dynamic';
 // Discord -> us (Developer Portal -> Webhooks -> Endpoint URL). Not wrapped
 // in the same-origin handler (Discord is the caller); every delivery must
 // carry a valid Ed25519 signature for OUR application's public key, or it
-// is refused. Discord expects a 204 within 3 seconds, so the creator's DM
-// is sent after the response.
+// is refused. Discord expects a 204 within 3 seconds, so the DMs (to the
+// creator, and a thank-you to whoever added ZiGBoT) are sent after the response.
 const empty = (status) => new Response(null, { status, headers: { 'Cache-Control': 'no-store' } });
 
 export async function POST(request) {
@@ -45,6 +46,10 @@ export async function POST(request) {
     const message = webhook.describeEvent(row);
     if (/^\d{17,20}$/.test(creator) && message) {
         after(() => sendDirectMessage(creator, message).catch((e) => console.error('[discord webhook] creator DM failed:', e?.status || e?.message)));
+    }
+    // Whoever added ZiGBoT to a server: thanks, next step, and the upvote link.
+    if (row.event_type === 'APPLICATION_AUTHORIZED' && row.integration_type === 0 && row.user_discord_id && row.user_discord_id !== creator) {
+        after(() => sendDirectMessage(row.user_discord_id, botList.installThanks(row.guild_name)).catch((e) => console.error('[discord webhook] installer DM failed:', e?.status || e?.message)));
     }
     return empty(204);
 }

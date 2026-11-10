@@ -2,6 +2,7 @@ import Link from 'next/link';
 import TopBar from '@/components/TopBar';
 import { getCurrentUser } from '@/lib/auth';
 import { inviteUrl } from '@/lib/discord';
+import botList from '@/lib/shared/botList';
 
 // Where Discord sends people after "Add to Discord" (DISCORD_INVITE_WELCOME):
 // ?guild_id=… when ZiGBoT was added, ?error=… when they cancelled. Nothing
@@ -64,6 +65,10 @@ export default async function Welcome({ searchParams }) {
                         ? <Link className="btn btn-primary btn-lg" href={`/dashboard/${guildId}`}>Open this server&apos;s dashboard →</Link>
                         : <a className="btn btn-primary btn-lg" href="/auth/login">Sign in with Discord →</a>}
                     <Link className="btn btn-lg" href="/commands">See commands</Link>
+                </div>
+                <p>Enjoying ZiGBoT? An upvote helps more servers find it 💜</p>
+                <div className="row" style={{ gap: 12 }}>
+                    <a className="btn btn-lg" href={botList.VOTE_URL} target="_blank" rel="noreferrer">Upvote on discordbotlist ↗</a>
                 </div>
                 <p className="muted small">Only the server owner and people with Manage Server can change its settings.</p>
             </article>

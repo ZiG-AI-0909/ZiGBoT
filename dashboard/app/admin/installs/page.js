@@ -25,6 +25,7 @@ export default async function AdminInstalls({ searchParams }) {
                 <div className="adm-cards">
                     <StatCard label="Added (30 days)" value={data.last30.added} unavailable="Could not count." />
                     <StatCard label="Removed (30 days)" value={data.last30.removed} unavailable="Could not count." />
+                    <StatCard label="discordbotlist votes (30 days)" value={data.last30.votes} unavailable="Votes table missing (migration 20261111000000_zigbot_votes not run)." />
                 </div>
             ) : null}
             <form className="adm-filters" method="get">

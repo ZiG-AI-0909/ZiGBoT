@@ -160,6 +160,8 @@ function loadSettings() {
         // Reaction GIFs (src/gifs/): GIPHY search key. Empty = no GIFs at all.
         // Never logged; only ever sent to api.giphy.com.
         giphyApiKey: (process.env.GIPHY_API_KEY || '').trim(),
+        // discordbotlist.com API token: posts the server count hourly. Empty = off.
+        dblToken: (process.env.DBL_TOKEN || '').trim(),
         customIdentityGuilds: parseIdentityGuilds(process.env.CUSTOM_IDENTITY_GUILDS),
         // Groq retired llama-3.1-8b-instant for free/developer keys on
         // 2026-08-16; gpt-oss-20b is its listed replacement and supports JSON mode.

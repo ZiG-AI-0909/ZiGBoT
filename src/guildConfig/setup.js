@@ -6,6 +6,7 @@
  */
 const { PermissionFlagsBits } = require('discord.js');
 const { cleanOutput } = require('../ai/client');
+const { VOTE_LINE } = require('../../dashboard/lib/shared/botList');
 
 const INTENSITY_LABEL = { mild: 'Mild', spicy: 'Spicy', savage: 'Savage' };
 const OWNER_LABEL = { 'he/him': 'Male (he/him)', 'she/her': 'Female (she/her)', 'they/them': 'Not specified (they/them)' };
@@ -17,7 +18,8 @@ const WELCOME_MESSAGE = [
     "• **The owner's gender**, since I can't tell it by myself",
     '• **Which role means male / female**',
     '• **Which role means 18+ / under 18**: I roast 18+ members and stay soft and clean with under-18s',
-    'You can run /setup again any time to change it.'
+    'You can run /setup again any time to change it.',
+    VOTE_LINE
 ].join('\n');
 
 /** Problems with the picked roles, or null. Pure, so it can be tested. */
