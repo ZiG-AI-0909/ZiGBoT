@@ -138,6 +138,30 @@ export async function loadUserDetail(userId) {
     };
 }
 
+const INSTALL_FILTERS = Object.freeze({
+    added: ['APPLICATION_AUTHORIZED'],
+    removed: ['APPLICATION_DEAUTHORIZED', 'GUILD_REMOVED']
+});
+
+/** Install log (zb_app_events), newest first, plus 30-day totals. */
+export async function loadInstalls({ kind = '', page = 1 } = {}) {
+    const { page: p, from, to } = range(page);
+    let query = db().from('zb_app_events').select('id, event_type, integration_type, user_discord_id, user_name, guild_id, guild_name, occurred_at', { count: 'exact' });
+    if (INSTALL_FILTERS[kind]) query = query.in('event_type', INSTALL_FILTERS[kind]);
+    const { data, error, count: total } = await query.order('occurred_at', { ascending: false }).range(from, to);
+    if (error) {
+        console.error('[admin] installs failed:', error.message);
+        const missing = /relation|does not exist|schema cache/i.test(error.message);
+        return { events: [], total: 0, page: p, error: missing ? 'The install log table is missing (migration 20261110000000_zigbot_app_events not run).' : 'Could not load installs.' };
+    }
+    const since = new Date(Date.now() - 30 * 86400000).toISOString();
+    const [added, removed] = await Promise.all([
+        count(db().from('zb_app_events').select('id', { count: 'exact', head: true }).in('event_type', INSTALL_FILTERS.added).gte('occurred_at', since), 'installs'),
+        count(db().from('zb_app_events').select('id', { count: 'exact', head: true }).in('event_type', INSTALL_FILTERS.removed).gte('occurred_at', since), 'removals')
+    ]);
+    return { events: data || [], total: total || 0, page: p, error: null, last30: { added, removed } };
+}
+
 export async function loadServers({ q = '', page = 1 } = {}) {
     const { page: p, from, to } = range(page);
     let query = db().from('zb_guilds').select('guild_id, name, owner_discord_id, bot_installed, installed_at, removed_at', { count: 'exact' });

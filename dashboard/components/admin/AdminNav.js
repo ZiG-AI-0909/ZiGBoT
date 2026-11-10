@@ -8,6 +8,7 @@ const LINKS = [
     { href: '/admin', label: 'Overview', icon: '📊' },
     { href: '/admin/users', label: 'Users', icon: '👤' },
     { href: '/admin/servers', label: 'Servers', icon: '🛰️' },
+    { href: '/admin/installs', label: 'Installs', icon: '📥' },
     { href: '/admin/premium', label: 'Premium & Revenue', icon: '💎' },
     { href: '/admin/feedback', label: 'Forms & Responses', icon: '📝' },
     { href: '/admin/security', label: 'Security', icon: '🛡️' },

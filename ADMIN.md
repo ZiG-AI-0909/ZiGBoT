@@ -48,11 +48,27 @@ for the owner only. Same Next.js app on Vercel, same Supabase, same Discord logi
 | Overview | users, servers, active Premium, verified purchases, revenue, feedback, open CRITICAL incidents, bot heartbeat, 6 monthly charts |
 | Users | dashboard accounts (search by username or Discord ID), purchases, feedback, visible servers |
 | Servers | every server ZiGBoT joined: install state, owner, Premium, Anti-Nuke coverage, incidents; detail shows live member count from Discord |
+| Installs | who added or removed ZiGBoT and where (Discord webhook + the bot), 30-day totals |
 | Premium & Revenue | Razorpay payments (captured vs pending vs failed vs refunded), verified purchases, subscriptions; CSV export |
 | Forms & Responses | first-purchase feedback for ₹399 and ₹3,999: stats, comparison, filters, details, review/unreview, private note, archive, CSV |
 | Security | Anti-Nuke coverage gaps, incidents across servers with evidence, containment results, steps; acknowledge/resolve |
 | Analytics | the monthly charts |
 | Settings & Audit | which integrations are configured, and the admin audit log |
+
+## Install webhook (Installs page)
+
+1. Run `supabase/migrations/20261110000000_zigbot_app_events.sql`.
+2. Vercel env: `DISCORD_PUBLIC_KEY` = the **Public Key** from Discord Developer
+   Portal -> General Information. Redeploy.
+3. Developer Portal -> **Webhooks**: Endpoint URL
+   `https://www.zigbot.in/api/discord/webhook`, turn on **Application Authorized**
+   and **Application Deauthorized**, save. Discord sends a PING; the route answers
+   it only if the signature matches `DISCORD_PUBLIC_KEY`.
+
+Every add is logged with who added ZiGBoT and DMed to `BOT_CREATOR_ID`. Discord
+sends no webhook when a bot is kicked from a server, so the bot logs and DMs
+those itself (`GUILD_REMOVED`). Unsigned or replayed (older than 5 minutes)
+deliveries get a 401.
 
 ## What it does not do (on purpose)
 

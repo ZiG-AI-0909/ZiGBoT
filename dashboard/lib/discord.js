@@ -106,6 +106,12 @@ export function inviteUrl(guildId) {
         params.set('guild_id', String(guildId));
         params.set('disable_guild_select', 'true');
     }
+    // Discord sends people back with ?guild_id=… (or ?error=… if they cancel).
+    // The code it adds is never exchanged: we only need to know where it went.
+    if (env.inviteWelcome) {
+        params.set('response_type', 'code');
+        params.set('redirect_uri', `${env.siteUrl}/welcome`);
+    }
     return `https://discord.com/oauth2/authorize?${params.toString()}`;
 }
 

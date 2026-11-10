@@ -107,3 +107,37 @@ test('saveSetup PATCHes only this guild and only the setup fields', async () => 
     const seed = calls.find((c) => c.method === 'POST' && c.url.includes('zb_guild_configs'));
     assert.equal('minor_role_ids' in seed.body[0], false);
 });
+
+test('AI welcome line: one safe line, or nothing', () => {
+    const { sanitizeIntro } = require('../src/guildConfig/setup');
+    assert.equal(sanitizeIntro('"Chill Zone just got a lot louder 😈"'), 'Chill Zone just got a lot louder 😈');
+    assert.equal(sanitizeIntro('<think>plan</think>\nHey Chill Zone!\nSecond line'), 'Hey Chill Zone!');
+    for (const bad of ['', 'Hi @everyone', 'Join https://evil.example', 'discord.gg/abc', '<@123>', 'x'.repeat(201)]) assert.equal(sanitizeIntro(bad), '', bad);
+});
+
+test('welcome falls back to the fixed message when the AI fails or is slow', async () => {
+    const { sendWelcome, welcomeIntro, WELCOME_MESSAGE: FIXED } = require('../src/guildConfig/setup');
+    const sent = [];
+    const channel = { isTextBased: () => true, isThread: () => false, permissionsFor: () => ({ has: () => true }), send: async (m) => sent.push(m) };
+    const guild = { id: G, name: 'Chill Zone', members: { me: {} }, systemChannel: channel };
+    const reply = (content) => ({ model: 'm', client: { chat: { completions: { create: async () => ({ choices: [{ message: { content } }] }) } } } });
+
+    await sendWelcome(guild, { ai: reply('Chill Zone, your new favourite troublemaker has arrived 😈') });
+    assert.equal(sent[0].content, `Chill Zone, your new favourite troublemaker has arrived 😈\n\n${FIXED}`);
+    assert.deepEqual(sent[0].allowedMentions, { parse: [] });
+
+    const failing = { model: 'm', client: { chat: { completions: { create: async () => { throw new Error('down'); } } } } };
+    const quietLog = console.error;
+    console.error = () => {};
+    try {
+        await sendWelcome(guild, { ai: failing });
+    } finally {
+        console.error = quietLog;
+    }
+    assert.equal(sent[1].content, FIXED);
+    await sendWelcome(guild);
+    assert.equal(sent[2].content, FIXED, 'no AI configured');
+
+    const slow = { model: 'm', client: { chat: { completions: { create: () => new Promise(() => {}) } } } };
+    assert.equal(await welcomeIntro(slow, guild, { timeoutMs: 20 }), '');
+});

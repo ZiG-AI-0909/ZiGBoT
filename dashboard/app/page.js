@@ -10,6 +10,7 @@ import IdentitySwap from '@/components/landing/IdentitySwap';
 import { getCurrentUser } from '@/lib/auth';
 import { inviteUrl } from '@/lib/discord';
 import { env } from '@/lib/env';
+import { publicServerCount } from '@/lib/publicStats';
 import landing from '@/lib/landing';
 import seo from '@/lib/seo';
 
@@ -66,6 +67,7 @@ export default async function Home({ searchParams }) {
     } catch {
         prices = { monthly: '', yearly: '' };
     }
+    const servers = await publicServerCount();
     const dashboardHref = current ? '/dashboard' : '/auth/login';
     // Custom bot identity is advertised only while it is on for every server
     // (no CUSTOM_IDENTITY_GUILDS pilot list), so "Premium servers can" is true.
@@ -110,6 +112,7 @@ export default async function Home({ searchParams }) {
                         <Link className="btn btn-lg" href="/commands">See commands →</Link>
                         {current ? <Link className="btn btn-ghost btn-lg" href="/dashboard">Open dashboard</Link> : null}
                     </div>
+                    {servers > 0 ? <p className="l-servers"><strong>{servers.toLocaleString('en-IN')}</strong> {servers === 1 ? 'server uses' : 'servers use'} ZiGBoT</p> : null}
                     <p className="small muted">{landing.hero.note} 🔒</p>
                 </div>
                 <HeroOrb />

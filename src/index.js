@@ -36,6 +36,7 @@ const { detectProfanityAtBot } = require('./ai/profanityDetector');
 const { detectBehaviorSignals, defaultBehaviorTracker } = require('./ai/behaviorDetector');
 const { registerSlashCommands, interactionToIntent, runYouTubeInteraction } = require('./slash');
 const { handleSetupCommand, sendWelcome } = require('./guildConfig/setup');
+const { describeEvent } = require('../dashboard/lib/shared/discordWebhook');
 const { isMusicComponent, handleMusicComponent } = require('./music/panel');
 const { isVoiceComponent, handleVoiceComponent } = require('./voice/panel');
 const music = require('./music/player');
@@ -293,12 +294,24 @@ client.once(Events.ClientReady, async (c) => {
     }
 });
 
+// DM the bot creator (BOT_CREATOR_ID) when ZiGBoT leaves a server. Adds are
+// DMed by the dashboard's Discord webhook, which knows who added it.
+async function notifyCreatorRemoved(guild) {
+    if (!settings.botCreatorId || guild?.available === false) return;
+    try {
+        const creator = await client.users.fetch(settings.botCreatorId);
+        await creator.send({ content: describeEvent({ event_type: 'GUILD_REMOVED', guild_id: guild.id, guild_name: guild.name || null }), allowedMentions: { parse: [] } });
+    } catch (error) {
+        console.error(`[ZiGBoT CONFIG] Removal DM failed for ${guild.id}: ${error.message}`);
+    }
+}
+
 // New server: register it with safe default settings.
 client.on(Events.GuildCreate, async (guild) => {
     console.log(`[ZiGBoT CONFIG] Added to server ${guild.id} (${guild.name}).`);
     await guildStore.ensureGuild(guild).catch((error) => console.error(`[ZiGBoT CONFIG] Seed failed for ${guild.id}: ${error.message}`));
     // Ask the admins for what the bot cannot work out by itself (/setup).
-    await sendWelcome(guild).catch((error) => console.error(`[ZiGBoT SETUP] Welcome message failed for ${guild.id}: ${error.message}`));
+    await sendWelcome(guild, { ai }).catch((error) => console.error(`[ZiGBoT SETUP] Welcome message failed for ${guild.id}: ${error.message}`));
     await identitySync.reconcile(guild);
     // Anti-Nuke protection starts on join: default settings, private alert channel, status.
     await antiNuke.setupNewGuild(guild).catch((error) => console.error(`[ZiGBoT ANTINUKE] Setup failed for ${guild.id}: ${error.message}`));
@@ -319,6 +332,8 @@ client.on(Events.VoiceStateUpdate, (oldState, newState) => {
 client.on(Events.GuildDelete, async (guild) => {
     console.log(`[ZiGBoT CONFIG] Removed from server ${guild.id}.`);
     await guildStore.markRemoved(guild.id).catch((error) => console.error(`[ZiGBoT CONFIG] Uninstall mark failed for ${guild.id}: ${error.message}`));
+    await guildStore.recordRemoval(guild).catch((error) => console.error(`[ZiGBoT CONFIG] Install log failed for ${guild.id}: ${error.message}`));
+    await notifyCreatorRemoved(guild);
     await identitySync.onGuildRemoved(guild.id);
     antiNuke.onGuildRemoved(guild.id);
 });

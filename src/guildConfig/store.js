@@ -235,6 +235,22 @@ class GuildConfigStore {
         return true;
     }
 
+    /** Install log (/admin/installs): Discord sends no webhook when a bot leaves a server. */
+    async recordRemoval(guild) {
+        if (!this.enabled || !SNOWFLAKE.test(String(guild?.id || ''))) return false;
+        await this.request('zb_app_events', {
+            method: 'POST',
+            prefer: 'return=minimal',
+            body: [{
+                event_type: 'GUILD_REMOVED',
+                guild_id: String(guild.id),
+                guild_name: String(guild.name || '').slice(0, 100) || null,
+                occurred_at: new Date(this.now()).toISOString()
+            }]
+        });
+        return true;
+    }
+
     async markRemoved(guildId) {
         if (!this.enabled || !SNOWFLAKE.test(String(guildId || ''))) return false;
         await this.request(`zb_guilds?guild_id=eq.${encodeURIComponent(String(guildId))}`, {

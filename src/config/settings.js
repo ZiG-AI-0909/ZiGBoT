@@ -96,6 +96,9 @@ function loadSettings() {
         discordToken: process.env.DISCORD_TOKEN,
         nvidiaApiKey: process.env.NVIDIA_API_KEY || '',
         serverOwnerId: process.env.SERVER_OWNER_ID || '',
+        // Who gets a DM when ZiGBoT is removed from a server (the dashboard
+        // DMs BOT_CREATOR_ID about installs). Falls back to SERVER_OWNER_ID.
+        botCreatorId: [process.env.BOT_CREATOR_ID, process.env.SERVER_OWNER_ID].find((id) => /^\d{17,20}$/.test(id || '')) || '',
         // Multi-server dashboard (optional). The service-role key is a
         // server-side secret: only this worker and the dashboard's server
         // routes may hold it.

@@ -24,6 +24,12 @@ export const env = {
     get supabaseServiceRoleKey() { return required('SUPABASE_SERVICE_ROLE_KEY'); },
     get discordBotToken() { return required('DISCORD_BOT_TOKEN'); },
     get discordClientId() { return required('DISCORD_CLIENT_ID'); },
+    // Install webhook (Developer Portal -> General Information -> Public Key). Empty = webhook off.
+    get discordPublicKey() { return (process.env.DISCORD_PUBLIC_KEY || '').trim(); },
+    // After "Add to Discord", send people to /welcome. Only exactly 'true':
+    // {siteUrl}/welcome must first be listed under OAuth2 -> Redirects, or
+    // Discord refuses the invite link.
+    get inviteWelcome() { return process.env.DISCORD_INVITE_WELCOME === 'true' && Boolean(this.siteUrl); },
     get nvidiaApiKey() { return process.env.NVIDIA_API_KEY || ''; },
     get aiModel() { return process.env.AI_MODEL || 'openai/gpt-oss-20b'; },
     get siteUrl() { return (process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/+$/, ''); },
