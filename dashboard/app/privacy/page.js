@@ -1,17 +1,19 @@
 import Link from 'next/link';
 import TopBar from '@/components/TopBar';
+import AdSense from '@/components/AdSense';
 import { contactUrl } from '@/lib/discord';
 import seo from '@/lib/seo';
 
 // Title, description, canonical and sharing tags: lib/seo.js.
 export const metadata = seo.pageMetadata('/privacy');
 
-const UPDATED = '24 October 2026';
+const UPDATED = '10 November 2026';
 
 export default function Privacy() {
     const contact = contactUrl();
     return (
         <div className="shell">
+            <AdSense />
             <TopBar />
             <article className="legal">
                 <h1>Privacy Policy</h1>
@@ -19,7 +21,8 @@ export default function Privacy() {
 
                 <p>
                     This policy explains what the ZiGBoT Discord bot, its YouTube live-chat features, and this dashboard
-                    collect, why, and what happens to it. We do not sell your data and we do not show ads.
+                    collect, why, and what happens to it. We do not sell your data. The public pages of this website (home, commands,
+                    privacy and terms) show ads from Google; the bot, the dashboard and Discord itself never do.
                 </p>
 
                 <h2>1. What we collect</h2>
@@ -27,7 +30,19 @@ export default function Privacy() {
                 <ul>
                     <li>Your Discord user ID, username, and avatar, from Discord login.</li>
                     <li>The list of servers you are in and whether you can manage them, so we only show servers you are allowed to configure.</li>
-                    <li>A login session cookie. We use no analytics or advertising cookies.</li>
+                    <li>A login session cookie.</li>
+                </ul>
+
+                <h3>When you visit our public pages</h3>
+                <ul>
+                    <li>
+                        <strong>Advertising cookies (Google AdSense).</strong> Google and its partners use cookies to show ads on these pages,
+                        based on your visits to this and other websites. Visitors in the EEA, the UK and Switzerland are asked for consent first.
+                        You can turn off personalised ads in{' '}
+                        <a href="https://adssettings.google.com" target="_blank" rel="noreferrer">Google&apos;s Ad Settings</a>, and read{' '}
+                        <a href="https://policies.google.com/technologies/partner-sites" target="_blank" rel="noreferrer">how Google uses data from sites that use its services</a>.
+                    </li>
+                    <li>Ads never appear in the dashboard, and nothing from your Discord account, servers or memories is shared with Google for ads.</li>
                 </ul>
 
                 <h3>When a server uses ZiGBoT</h3>
@@ -100,6 +115,7 @@ export default function Privacy() {
                     <li><strong>Razorpay</strong>: payments.</li>
                     <li><strong>GIPHY</strong>: reaction GIF searches. It receives only ZiGBoT&apos;s own short search words (like &quot;mic drop&quot;) — never your messages or who you are.</li>
                     <li><strong>YouTube (Google)</strong>: live-chat features.</li>
+                    <li><strong>Google AdSense</strong>: ads on the public pages of this website, using the cookies described above.</li>
                 </ul>
                 <p>These services may process data outside your country. We do not share your data with anyone else unless the law requires it.</p>
 

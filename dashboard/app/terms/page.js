@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import TopBar from '@/components/TopBar';
+import AdSense from '@/components/AdSense';
 import { contactUrl } from '@/lib/discord';
 import seo from '@/lib/seo';
 
@@ -12,6 +13,7 @@ export default function Terms() {
     const contact = contactUrl();
     return (
         <div className="shell">
+            <AdSense />
             <TopBar />
             <article className="legal">
                 <h1>Terms of Service</h1>

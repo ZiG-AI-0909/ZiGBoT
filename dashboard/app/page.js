@@ -2,6 +2,7 @@ import { Fragment } from 'react';
 import Link from 'next/link';
 import './landing.css';
 import TopBar from '@/components/TopBar';
+import AdSense from '@/components/AdSense';
 import HomeBackground from '@/components/HomeBackground';
 import Reveal from '@/components/landing/Reveal';
 import HeroOrb from '@/components/landing/HeroOrb';
@@ -87,6 +88,7 @@ export default async function Home({ searchParams }) {
             {jsonLd.map((data) => <script key={data['@type']} type="application/ld+json" dangerouslySetInnerHTML={{ __html: seo.jsonLdScript(data) }} />)}
             <HomeBackground />
             <div className="grain" aria-hidden="true" />
+            <AdSense />
             <TopBar profile={profile} />
 
             {error ? <div className="notice" role="alert">{error}</div> : null}

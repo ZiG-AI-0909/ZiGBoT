@@ -1,6 +1,30 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import seo from './lib/seo.js';
+import ads from './lib/ads.js';
+
+const cspDirectives = [
+    "default-src 'self'",
+    // *.razorpay.com: Razorpay Standard Checkout (loaded only when someone
+    // pays) pulls its code, styles, fonts and icons from several Razorpay
+    // hosts (checkout.razorpay.com, checkout-static-next.razorpay.com,
+    // cdn.razorpay.com, api.razorpay.com, lumberjack.razorpay.com, ...)
+    // that change over time; blocking any of them makes rzp.open() fail
+    // silently. The wildcard stays limited to Razorpay's own domain.
+    "img-src 'self' data: blob: https://cdn.discordapp.com https://*.razorpay.com",
+    "style-src 'self' 'unsafe-inline' https://*.razorpay.com",
+    "font-src 'self' data: https://*.razorpay.com",
+    // Next.js dev mode needs eval for hot reloading; production never gets it.
+    process.env.NODE_ENV === 'development'
+        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.razorpay.com"
+        : "script-src 'self' 'unsafe-inline' https://*.razorpay.com",
+    // The Checkout modal is an iframe served by Razorpay.
+    "frame-src https://*.razorpay.com",
+    "connect-src 'self' https://*.razorpay.com",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self' https://discord.com https://*.supabase.co https://*.razorpay.com"
+];
 
 /** @type {import('next').NextConfig} */
 const securityHeaders = [
@@ -9,32 +33,12 @@ const securityHeaders = [
     { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
     { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
     { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
-    {
-        key: 'Content-Security-Policy',
-        value: [
-            "default-src 'self'",
-            // *.razorpay.com: Razorpay Standard Checkout (loaded only when someone
-            // pays) pulls its code, styles, fonts and icons from several Razorpay
-            // hosts (checkout.razorpay.com, checkout-static-next.razorpay.com,
-            // cdn.razorpay.com, api.razorpay.com, lumberjack.razorpay.com, ...)
-            // that change over time; blocking any of them makes rzp.open() fail
-            // silently. The wildcard stays limited to Razorpay's own domain.
-            "img-src 'self' data: blob: https://cdn.discordapp.com https://*.razorpay.com",
-            "style-src 'self' 'unsafe-inline' https://*.razorpay.com",
-            "font-src 'self' data: https://*.razorpay.com",
-            // Next.js dev mode needs eval for hot reloading; production never gets it.
-            process.env.NODE_ENV === 'development'
-                ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.razorpay.com"
-                : "script-src 'self' 'unsafe-inline' https://*.razorpay.com",
-            // The Checkout modal is an iframe served by Razorpay.
-            "frame-src https://*.razorpay.com",
-            "connect-src 'self' https://*.razorpay.com",
-            "frame-ancestors 'none'",
-            "base-uri 'self'",
-            "form-action 'self' https://discord.com https://*.supabase.co https://*.razorpay.com"
-        ].join('; ')
-    }
+    { key: 'Content-Security-Policy', value: cspDirectives.join('; ') }
 ];
+
+// Public pages (lib/seo.js PUBLIC_PAGES) also allow Google AdSense
+// (lib/ads.js). Everything else keeps the strict policy above.
+const publicPageCsp = [{ key: 'Content-Security-Policy', value: ads.withAdSources(cspDirectives).join('; ') }];
 
 const nextConfig = {
     reactStrictMode: true,
@@ -53,7 +57,9 @@ const nextConfig = {
             { source: p, headers: noindex },
             { source: `${p}/:path*`, headers: noindex }
         ]);
-        return [{ source: '/:path*', headers: securityHeaders }, ...privateRoutes];
+        // Later rules win for the same header, so the ad policy follows the default.
+        const publicRoutes = seo.PUBLIC_PAGES.map((page) => ({ source: page.path, headers: publicPageCsp }));
+        return [{ source: '/:path*', headers: securityHeaders }, ...publicRoutes, ...privateRoutes];
     }
 };
 

@@ -1,4 +1,5 @@
 import TopBar from '@/components/TopBar';
+import AdSense from '@/components/AdSense';
 import CommandsBrowser from '@/components/CommandsBrowser';
 import catalog from '@/data/commands.json';
 import seo from '@/lib/seo';
@@ -12,6 +13,7 @@ export const metadata = seo.pageMetadata('/commands');
 export default function Commands() {
     return (
         <div className="shell">
+            <AdSense />
             <TopBar />
             <main className="commands stack">
                 <header className="commands-head">
