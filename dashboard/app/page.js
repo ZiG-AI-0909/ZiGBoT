@@ -76,9 +76,10 @@ export default async function Home({ searchParams }) {
         customIdentity: env.customIdentityEnabled && env.customIdentityGuilds.length === 0
     });
 
-    // Structured data only for what this page shows: the product (pitch and
-    // the feature cards below) and the FAQ rendered below.
+    // Structured data only for what this page shows: the site's name, the
+    // product (pitch and the feature cards below) and the FAQ rendered below.
     const jsonLd = [
+        seo.websiteJsonLd(),
         seo.softwareApplicationJsonLd({ description: landing.hero.pitch, features }),
         seo.faqJsonLd(faq)
     ];

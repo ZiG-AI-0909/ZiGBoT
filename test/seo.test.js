@@ -114,3 +114,15 @@ test('Google Search Console verification meta tag is set site-wide from lib/seo.
     assert.equal(seo.SITE_VERIFICATION.google, 'cWplGzZ-DLyFscyRzBmgugKqMVFaMEkEy8cwa4Zx33o');
     assert.match(read('dashboard/app/layout.js'), /verification: \{ google: seo\.SITE_VERIFICATION\.google \}/);
 });
+
+test('brand structured data: ZiGBoT as the site name, with its real profiles', () => {
+    const site = seo.websiteJsonLd();
+    assert.equal(site['@type'], 'WebSite');
+    assert.equal(site.name, 'ZiGBoT');
+    assert.equal(site.url, `${ORIGIN}/`);
+    assert.ok(site.alternateName.includes('ZigBot'));
+    const app = seo.softwareApplicationJsonLd({ description: 'x', features: [] });
+    assert.deepEqual(app.sameAs, ['https://discord.com/discovery/applications/1539530458390593576', 'https://discordbotlist.com/bots/zigbot']);
+    assert.equal(app.author.url, 'https://aibhaveshportfolio.vercel.app/');
+    assert.match(read('dashboard/app/page.js'), /seo\.websiteJsonLd\(\)/);
+});

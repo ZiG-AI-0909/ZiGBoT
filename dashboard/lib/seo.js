@@ -10,6 +10,16 @@
  */
 const CANONICAL_ORIGIN = 'https://www.zigbot.in';
 const SITE_NAME = 'ZiGBoT';
+// Other spellings people search for, so Google ties them to this site
+// instead of "Did you mean: gizbot".
+const ALTERNATE_NAMES = Object.freeze(['ZiGBoT Discord bot', 'ZigBot', 'Zig Bot']);
+// ZiGBoT's own profiles elsewhere (structured data "sameAs"). Only real,
+// public listings of this bot.
+const SAME_AS = Object.freeze([
+    'https://discord.com/discovery/applications/1539530458390593576',
+    'https://discordbotlist.com/bots/zigbot'
+]);
+const CREATOR = Object.freeze({ name: 'Bhavesh Kumar Tiwari (ZiG)', url: 'https://aibhaveshportfolio.vercel.app/' });
 // Search engine ownership checks (public tokens, not secrets). Google also
 // has the HTML-file method: public/google4f033dbcc41e6d42.html.
 const SITE_VERIFICATION = Object.freeze({ google: 'cWplGzZ-DLyFscyRzBmgugKqMVFaMEkEy8cwa4Zx33o' });
@@ -91,12 +101,26 @@ function softwareApplicationJsonLd({ description, features = [] }) {
         '@context': 'https://schema.org',
         '@type': 'SoftwareApplication',
         name: SITE_NAME,
+        alternateName: [...ALTERNATE_NAMES],
         url: absolute('/'),
         image: absolute(OG_IMAGE.path),
+        sameAs: [...SAME_AS],
+        author: { '@type': 'Person', name: CREATOR.name, url: CREATOR.url },
         applicationCategory: 'CommunicationApplication',
         operatingSystem: 'Discord',
         description,
         featureList: features.map((f) => `${f.title}${f.badge ? ` (${f.badge})` : ''}`)
+    };
+}
+
+/** WebSite JSON-LD: the site's name, so search results show "ZiGBoT" as the brand. */
+function websiteJsonLd() {
+    return {
+        '@context': 'https://schema.org',
+        '@type': 'WebSite',
+        name: SITE_NAME,
+        alternateName: [...ALTERNATE_NAMES],
+        url: absolute('/')
     };
 }
 
@@ -117,6 +141,8 @@ function jsonLdScript(data) {
 module.exports = {
     CANONICAL_ORIGIN,
     SITE_NAME,
+    ALTERNATE_NAMES,
+    SAME_AS,
     SITE_VERIFICATION,
     OG_IMAGE,
     PUBLIC_PAGES,
@@ -128,6 +154,7 @@ module.exports = {
     robotsRules,
     sitemapEntries,
     softwareApplicationJsonLd,
+    websiteJsonLd,
     faqJsonLd,
     jsonLdScript
 };
