@@ -79,7 +79,7 @@ afterwards; failures and partial results are reported as such.
   the Supabase SQL Editor (additive, re-runnable). Without it, monitoring and
   alerts still work with default settings, but nothing is stored and the
   dashboard cannot save settings.
-* **Optional env (bot):** `DASHBOARD_URL` (default `https://zigbotai.vercel.app`)
+* **Optional env (bot):** `DASHBOARD_URL` (default `https://www.zigbot.in`)
   for the link in alerts.
 
 ## Limits (honest)

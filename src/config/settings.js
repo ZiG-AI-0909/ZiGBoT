@@ -153,7 +153,7 @@ function loadSettings() {
         // The dashboard reads the same variables.
         customIdentityEnabled: process.env.CUSTOM_IDENTITY_ENABLED === 'true',
         // Public dashboard address, for links in Anti-Nuke alerts.
-        dashboardUrl: String(process.env.DASHBOARD_URL || 'https://zigbotai.vercel.app').replace(/\/+$/, ''),
+        dashboardUrl: String(process.env.DASHBOARD_URL || 'https://www.zigbot.in').replace(/\/+$/, ''),
         // Reaction GIFs (src/gifs/): GIPHY search key. Empty = no GIFs at all.
         // Never logged; only ever sent to api.giphy.com.
         giphyApiKey: (process.env.GIPHY_API_KEY || '').trim(),

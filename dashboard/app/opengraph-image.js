@@ -19,7 +19,7 @@ export default async function OpenGraphImage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 620 }}>
                     <div style={{ fontSize: 88, fontWeight: 800, letterSpacing: 2, color: '#e879f9' }}>ZiGBoT</div>
                     <div style={{ fontSize: 40, lineHeight: 1.2 }}>The Discord bot with a personality and memory you control.</div>
-                    <div style={{ fontSize: 28, color: '#c4b5fd' }}>zigbotai.vercel.app</div>
+                    <div style={{ fontSize: 28, color: '#c4b5fd' }}>zigbot.in</div>
                 </div>
             </div>
         ),

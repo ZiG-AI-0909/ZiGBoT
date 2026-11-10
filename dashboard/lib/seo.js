@@ -4,11 +4,11 @@
  * app/sitemap.js and the pages' metadata; checked by test/seo.test.js.
  * CommonJS like lib/landing.js, so the root test suite can load it.
  *
- * Canonical origin: https://zigbotai.vercel.app (no custom domain yet).
+ * Canonical origin: https://www.zigbot.in (zigbot.in redirects here).
  * Only claims that are visible on the page go into structured data: no
  * ratings, reviews, prices or user counts.
  */
-const CANONICAL_ORIGIN = 'https://zigbotai.vercel.app';
+const CANONICAL_ORIGIN = 'https://www.zigbot.in';
 const SITE_NAME = 'ZiGBoT';
 // Search engine ownership checks (public tokens, not secrets). Google also
 // has the HTML-file method: public/google4f033dbcc41e6d42.html.

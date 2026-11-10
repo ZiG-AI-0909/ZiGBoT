@@ -1,6 +1,6 @@
 # ZiGBoT Super Admin (`/admin`)
 
-A private control panel on the same site (`https://zigbotai.vercel.app/admin`),
+A private control panel on the same site (`https://www.zigbot.in/admin`),
 for the owner only. Same Next.js app on Vercel, same Supabase, same Discord login.
 
 ## Who can open it
@@ -68,7 +68,7 @@ for the owner only. Same Next.js app on Vercel, same Supabase, same Discord logi
 
 * As the admin: sign in with the configured Discord account → `/admin` loads.
 * As anyone else: sign in with another Discord account → `/admin` is a 404, and
-  `curl -i https://zigbotai.vercel.app/api/admin/export?type=feedback` (with or
+  `curl -i https://www.zigbot.in/api/admin/export?type=feedback` (with or
   without that account's cookies) returns 404.
 * Signed out: `/admin` and `/api/admin/*` return 404.
 * Log out (sidebar) → `/admin` is a 404 again.

@@ -10,7 +10,7 @@ const landing = require('../dashboard/lib/landing');
 
 const root = path.join(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
-const ORIGIN = 'https://zigbotai.vercel.app';
+const ORIGIN = 'https://www.zigbot.in';
 const PAGE_FILES = { '/': 'dashboard/app/page.js', '/commands': 'dashboard/app/commands/page.js', '/privacy': 'dashboard/app/privacy/page.js', '/terms': 'dashboard/app/terms/page.js' };
 
 test('one canonical origin, and no placeholder domain anywhere in the site code', () => {
@@ -104,7 +104,7 @@ test('metadata always goes in <head> (no streaming into <body>, which some crawl
 });
 
 test('Google Search Console verification file is served from the site root, publicly', () => {
-    // HTML-file method: https://zigbotai.vercel.app/google4f033dbcc41e6d42.html
+    // HTML-file method: https://www.zigbot.in/google4f033dbcc41e6d42.html
     const file = 'dashboard/public/google4f033dbcc41e6d42.html';
     assert.equal(read(file), 'google-site-verification: google4f033dbcc41e6d42.html');
     assert.ok(!seo.PRIVATE_PATHS.some((p) => '/google4f033dbcc41e6d42.html'.startsWith(p)), 'not under a noindex/disallowed path');

@@ -171,7 +171,7 @@ test('6. alerts mention only configured recipients', () => {
     assert.match(all.content, new RegExp(`<@${ROGUE}> \\(\`${ROGUE}\`\\)`));
     assert.match(all.content, /Discord cannot restore deleted channels or roles, and neither can ZiGBoT/);
     for (const rule of Object.keys(ANTINUKE_RULES)) {
-        const alert = buildAlert({ incident: { ...criticalIncident, rule, severity: ANTINUKE_RULES[rule].severity, targetIds: Array(50).fill('123456789012345678') }, guild: guildInfo, settings: settings(), dashboardUrl: 'https://zigbotai.vercel.app/dashboard/1' });
+        const alert = buildAlert({ incident: { ...criticalIncident, rule, severity: ANTINUKE_RULES[rule].severity, targetIds: Array(50).fill('123456789012345678') }, guild: guildInfo, settings: settings(), dashboardUrl: 'https://www.zigbot.in/dashboard/1' });
         assert.ok(alert.content.length <= 2000, rule);
     }
 });
@@ -412,7 +412,7 @@ test('an incident is recorded, alerted, and falls back to an owner DM when no ch
     const channel = alerting.makeChannel('600000000000000001', 'security');
     alerting.guild.channels.cache.set(channel.id, channel);
     fake.db.zb_security_settings = [{ guild_id: G, alert_channel_id: channel.id }];
-    const monitor = createAntiNuke({ client: { user: { id: BOT }, guilds: { cache: new Map() } }, store, logger: { log() {}, error() {} }, dashboardUrl: (id) => `https://zigbotai.vercel.app/dashboard/${id}` });
+    const monitor = createAntiNuke({ client: { user: { id: BOT }, guilds: { cache: new Map() } }, store, logger: { log() {}, error() {} }, dashboardUrl: (id) => `https://www.zigbot.in/dashboard/${id}` });
     for (let i = 0; i < 4; i += 1) await monitor.processAuditEntry(entry(AuditLogEvent.ChannelDelete, ROGUE), alerting.guild);
     assert.equal(fake.db.zb_security_events.length, 1);
     assert.equal(fake.db.zb_security_events[0].rule, 'mass_delete');
