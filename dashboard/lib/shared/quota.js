@@ -16,4 +16,29 @@ async function claimQuota({ insert, count, limit }) {
     return Number.isFinite(used) && used <= limit;
 }
 
-module.exports = { claimQuota };
+/**
+ * The same idea for a cap on stored rows (e.g. greetings per server), where
+ * the new row itself is the claim: insert it, count, and if the count went
+ * over the limit remove that row again. Parallel creates can then never
+ * leave more than `limit` rows; under a burst they may all back off, which
+ * is the safe side. A broken count counts as over the limit.
+ *
+ * insert() -> the stored row; count() -> rows now, this one included;
+ * release(row) -> deletes the row insert() returned.
+ * Returns { ok: true, value: row } or { ok: false }.
+ */
+async function claimSlot({ insert, count, release, limit }) {
+    const value = await insert();
+    let used;
+    try {
+        used = await count();
+    } catch (error) {
+        await release(value);
+        throw error;
+    }
+    if (Number.isFinite(used) && used <= limit) return { ok: true, value };
+    await release(value);
+    return { ok: false };
+}
+
+module.exports = { claimQuota, claimSlot };

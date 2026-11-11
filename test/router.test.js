@@ -202,3 +202,101 @@ test('send_message locks mentions down inside the single send() payload', async 
     assert.match(payload.content, /hi/);
     assert.deepEqual(payload.allowedMentions?.parse, ['users']);
 });
+
+// ---------------------------------------------------------------------------
+// ZIGBOT-011 regression: role hierarchy of the PERSON ASKING.
+// Discord lets anyone but the server owner act only on members and roles
+// BELOW their own highest role. The bot must not lend its higher position.
+// Multi-server mode: Administrator members are authorized actors.
+const { PermissionFlagsBits: P } = require('discord.js');
+
+class Coll extends Map {
+    find(fn) { for (const v of this.values()) if (fn(v)) return v; return undefined; }
+    some(fn) { for (const v of this.values()) if (fn(v)) return true; return false; }
+}
+
+function hierarchyFixture() {
+    const role = (id, name, position) => ({ id, name, position, managed: false, delete: async () => { calls.push(['deleteRole', id]); } });
+    const calls = [];
+    const roles = new Coll([
+        ['900000000000000001', role('900000000000000001', 'Admin', 50)],
+        ['900000000000000002', role('900000000000000002', 'Mod', 30)],
+        ['900000000000000003', role('900000000000000003', 'Member', 10)]
+    ]);
+    const member = (id, name, highest) => ({
+        id, displayName: name, user: { id, username: name, tag: name },
+        kickable: true, bannable: true,
+        roles: { highest: { position: highest }, cache: new Coll(), add: async (r) => calls.push(['add', id, r.id]), remove: async (r) => calls.push(['remove', id, r.id]) },
+        permissions: { has: (perm) => perm === P.Administrator },
+        kick: async () => calls.push(['kick', id]),
+        ban: async () => calls.push(['ban', id]),
+        timeout: async () => calls.push(['timeout', id])
+    });
+    const actor = member('100000000000000001', 'actor', 30); // highest role: Mod
+    const members = new Coll([
+        [actor.id, actor],
+        ['100000000000000002', member('100000000000000002', 'boss', 50)],
+        ['100000000000000003', member('100000000000000003', 'peer', 30)],
+        ['100000000000000004', member('100000000000000004', 'newbie', 10)]
+    ]);
+    const guild = {
+        id: '200000000000000001', ownerId: '100000000000000009', name: 'G', memberCount: 4,
+        channels: { cache: { size: 1 } },
+        roles: { cache: roles },
+        members: { cache: members, me: { permissions: { has: () => true }, roles: { highest: { position: 100 } } } }
+    };
+    const message = { author: { id: actor.id }, member: actor, guild, channel: { name: 'general', send: async () => {} } };
+    const ctx = { mode: 'multi', guildId: guild.id, config: {}, roleMappings: [] };
+    return { message, calls, settings: { serverOwnerId: 'someone-else', guildContext: ctx } };
+}
+
+for (const [action, extra] of [['kick_member', {}], ['ban_member', {}], ['timeout_member', { durationMinutes: 5 }]]) {
+    test(`${action}: refuses a target at or above the requester's highest role`, async () => {
+        const { message, calls, settings: s } = hierarchyFixture();
+        for (const target of ['boss', 'peer']) {
+            const result = await executeTool(message, s, { action, target, ...extra });
+            assert.match(result, /higher than|same as|role hierarchy/i, `${target}: ${result}`);
+        }
+        assert.deepEqual(calls, []);
+    });
+
+    test(`${action}: still works on a member below the requester`, async () => {
+        const { message, calls, settings: s } = hierarchyFixture();
+        const result = await executeTool(message, s, { action, target: 'newbie', ...extra });
+        assert.match(result, /✅/, result);
+        assert.equal(calls.length, 1);
+    });
+}
+
+test('add_role: cannot hand out a role at or above the requester\'s highest role', async () => {
+    const { message, calls, settings: s } = hierarchyFixture();
+    for (const role of ['Admin', 'Mod']) {
+        const result = await executeTool(message, s, { action: 'add_role', target: 'actor', role });
+        assert.match(result, /higher than|same as|role hierarchy/i, `${role}: ${result}`);
+    }
+    assert.deepEqual(calls, []);
+    assert.match(await executeTool(message, s, { action: 'add_role', target: 'newbie', role: 'Member' }), /✅/);
+});
+
+test('remove_role and delete_role respect the requester\'s hierarchy', async () => {
+    const { message, calls, settings: s } = hierarchyFixture();
+    assert.match(await executeTool(message, s, { action: 'remove_role', target: 'boss', role: 'Admin' }), /higher than|same as|role hierarchy/i);
+    assert.match(await executeTool(message, s, { action: 'delete_role', role: 'Admin' }), /higher than|same as|role hierarchy/i);
+    assert.deepEqual(calls, []);
+    assert.match(await executeTool(message, s, { action: 'delete_role', role: 'Member' }), /✅/);
+});
+
+test('the real server owner is not limited by role hierarchy', async () => {
+    const { message, calls, settings: s } = hierarchyFixture();
+    message.guild.ownerId = message.author.id;
+    assert.match(await executeTool(message, s, { action: 'kick_member', target: 'boss' }), /✅/);
+    assert.match(await executeTool(message, s, { action: 'add_role', target: 'actor', role: 'Admin' }), /✅/);
+    assert.equal(calls.length, 2);
+});
+
+test('nobody but the owner can act on the server owner', async () => {
+    const { message, calls, settings: s } = hierarchyFixture();
+    message.guild.ownerId = '100000000000000004'; // newbie owns the server
+    assert.match(await executeTool(message, s, { action: 'kick_member', target: 'newbie' }), /server owner/i);
+    assert.deepEqual(calls, []);
+});

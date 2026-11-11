@@ -156,6 +156,25 @@ function findChannel(guild, name) {
     return guild.channels.cache.get(id) || guild.channels.cache.find((channel) => channel.name.toLowerCase() === name.replace(/^#/, '').toLowerCase());
 }
 
+// Discord's own rule, applied to the PERSON ASKING: anyone but the server
+// owner may only act on members and roles BELOW their own highest role. The
+// bot's (usually higher) position must never be lent to someone who could
+// not do the action themselves. Fails closed when the requester's roles are
+// unknown. Returns an error string, or null when allowed.
+function requesterHierarchyProblem(message, { member = null, role = null } = {}) {
+    const guild = message.guild;
+    if (guild?.ownerId && guild.ownerId === message.author?.id) return null;
+    const own = message.member?.roles?.highest?.position;
+    if (!Number.isFinite(own)) return '❌ I could not check your role position, so I will not do that.';
+    if (member) {
+        if (guild?.ownerId && member.id === guild.ownerId) return '❌ Nobody but the server owner can do that to the server owner.';
+        const theirs = member.roles?.highest?.position;
+        if (!Number.isFinite(theirs) || theirs >= own) return `❌ ${member.displayName}'s highest role is the same as or higher than yours (role hierarchy), so I will not do that for you.`;
+    }
+    if (role && role.position >= own) return `❌ The ${role.name} role is the same as or higher than your highest role (role hierarchy), so I will not do that for you.`;
+    return null;
+}
+
 async function denied(message, settings, intent, reason) {
     await auditLog({ message, settings, event: 'SECURITY', action: intent.action, target: intent.target, result: 'DENIED', details: { reason } });
     return `❌ ${reason}`;
@@ -517,6 +536,8 @@ async function executeTool(message, settings, intent, context = {}) {
                 const role = findRole(guild, text(intent.role || intent.target, 'Role'));
                 if (!role) return '❌ I could not find that role.';
                 if (role.managed || role.position >= guild.members.me.roles.highest.position) return '❌ I cannot manage that role.';
+                const outranked = requesterHierarchyProblem(message, { role });
+                if (outranked) return outranked;
                 await role.delete(intent.reason || 'Requested by server owner through ZiGBoT');
                 result = `✅ Deleted the ${role.name} role.`;
                 break;
@@ -528,6 +549,8 @@ async function executeTool(message, settings, intent, context = {}) {
                 if (!member) return '❌ I could not find that member.';
                 if (!role) return '❌ I could not find that role.';
                 if (role.managed || role.position >= guild.members.me.roles.highest.position) return '❌ I cannot manage that role.';
+                const outranked = requesterHierarchyProblem(message, { role });
+                if (outranked) return outranked;
                 if (intent.action === 'add_role') await member.roles.add(role, intent.reason);
                 else await member.roles.remove(role, intent.reason);
                 result = `✅ ${intent.action === 'add_role' ? 'Added' : 'Removed'} ${role.name} ${intent.action === 'add_role' ? 'to' : 'from'} ${member.displayName}.`;
@@ -703,6 +726,8 @@ async function executeTool(message, settings, intent, context = {}) {
                 const minutes = Number(intent.durationMinutes);
                 if (!member) return '❌ I could not find that member.';
                 if (!Number.isInteger(minutes) || minutes < 1 || minutes > 40320) return '❌ Timeout duration must be between 1 minute and 28 days.';
+                const outranked = requesterHierarchyProblem(message, { member });
+                if (outranked) return outranked;
                 await member.timeout(minutes * 60 * 1000, intent.reason || 'Requested by server owner through ZiGBoT');
                 // Accountability: timeouts count against the member's record too.
                 try {
@@ -717,6 +742,8 @@ async function executeTool(message, settings, intent, context = {}) {
                 const member = findMember(guild, text(intent.target, 'Member'));
                 if (!member) return '❌ I could not find that member.';
                 if (!member.kickable) return '❌ I cannot kick that member because of role hierarchy or permissions.';
+                const outranked = requesterHierarchyProblem(message, { member });
+                if (outranked) return outranked;
                 await member.kick(intent.reason || 'Requested by server owner through ZiGBoT');
                 result = `✅ Kicked ${member.displayName}.`;
                 break;
@@ -725,6 +752,8 @@ async function executeTool(message, settings, intent, context = {}) {
                 const member = findMember(guild, text(intent.target, 'Member'));
                 if (!member) return '❌ I could not find that member.';
                 if (!member.bannable) return '❌ I cannot ban that member because of role hierarchy or permissions.';
+                const outranked = requesterHierarchyProblem(message, { member });
+                if (outranked) return outranked;
                 await member.ban({ reason: intent.reason || 'Requested by server owner through ZiGBoT' });
                 result = `✅ Banned ${member.displayName}.`;
                 break;

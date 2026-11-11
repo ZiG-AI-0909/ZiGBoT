@@ -47,3 +47,50 @@ test('documented race: count-then-insert lets concurrent requests through', asyn
     const results = await Promise.all(Array.from({ length: 40 }, naive));
     assert.ok(results.filter(Boolean).length > 10);
 });
+
+// ZIGBOT-009 regression: a per-server cap on stored rows (scheduled
+// greetings). The row itself is the claim: insert, count, and remove our
+// own row again if the count went over, so parallel creates can't exceed it.
+const { claimSlot } = require('../dashboard/lib/shared/quota');
+
+function fakeTable() {
+    const rows = new Map();
+    let next = 1;
+    const tick = () => new Promise((resolve) => setImmediate(resolve));
+    return {
+        rows,
+        insert: async () => { await tick(); const id = next++; rows.set(id, { id }); return { id }; },
+        count: async () => { await tick(); return rows.size; },
+        release: async (row) => { await tick(); rows.delete(row.id); }
+    };
+}
+
+test('claimSlot keeps the row while under the cap', async () => {
+    const table = fakeTable();
+    const result = await claimSlot({ ...table, limit: 2 });
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.value, { id: 1 });
+    assert.equal(table.rows.size, 1);
+});
+
+test('claimSlot removes its own row when the cap is already full', async () => {
+    const table = fakeTable();
+    await claimSlot({ ...table, limit: 1 });
+    const result = await claimSlot({ ...table, limit: 1 });
+    assert.equal(result.ok, false);
+    assert.equal(table.rows.size, 1, 'the over-cap row must be removed again');
+});
+
+test('claimSlot never lets parallel creates exceed the cap', async () => {
+    const table = fakeTable();
+    const results = await Promise.all(Array.from({ length: 30 }, () => claimSlot({ ...table, limit: 5 })));
+    assert.ok(table.rows.size <= 5, `${table.rows.size} rows stored for a cap of 5`);
+    assert.equal(results.filter((r) => r.ok).length, table.rows.size);
+});
+
+test('claimSlot treats a broken count as over the cap and cleans up', async () => {
+    const table = fakeTable();
+    const result = await claimSlot({ ...table, count: async () => null, limit: 5 });
+    assert.equal(result.ok, false);
+    assert.equal(table.rows.size, 0);
+});
