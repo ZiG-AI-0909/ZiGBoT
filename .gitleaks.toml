@@ -1,0 +1,20 @@
+# gitleaks config (CI: .github/workflows/ci.yml). Keeps every default rule
+# and adds what the defaults miss.
+title = "ZiGBoT gitleaks config"
+
+[extend]
+useDefault = true
+
+# The default rules do not catch database URLs with an inline password
+# (that is how a MongoDB password once reached this repo). Placeholders like
+# <db_password> or ${MONGO_PASSWORD} are allowed.
+[[rules]]
+id = "connection-string-password"
+description = "Database/queue URL with an inline password"
+regex = '''(?i)\b(?:mongodb(?:\+srv)?|postgres(?:ql)?|mysql|rediss?|amqps?)://[^\s:/@'"]+:([^\s@/'"]{4,})@[^\s/'"]+'''
+secretGroup = 1
+keywords = ["mongodb", "postgres", "mysql", "redis", "amqp"]
+
+[[rules.allowlists]]
+regexTarget = "secret"
+regexes = ['''(?i)^(?:<[^>]*>|\$\{[^}]*\}|\*+|x{3,}|password|pass|pwd|changeme|secret|your[_-]?password)$''']

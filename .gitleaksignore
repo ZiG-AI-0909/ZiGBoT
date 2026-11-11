@@ -1,0 +1,5 @@
+# Known findings that are safe to ignore (one gitleaks fingerprint per line).
+# Never add a live secret here: rotate it first.
+
+# Fake key used by the GIPHY test ('giphy-test-key-SECRET-123').
+064555d095b775744dfccf00c0a053041ad83d6f:test/reactionGifs.test.js:generic-api-key:168
