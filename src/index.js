@@ -30,7 +30,8 @@ const {
     shouldSkipReply,
     pickReactionEmoji,
     deliverAiReply,
-    neutralizeMassMentions
+    neutralizeMassMentions,
+    DEFAULT_ALLOWED_MENTIONS
 } = require('./reply/delivery');
 const { detectProfanityAtBot } = require('./ai/profanityDetector');
 const { detectBehaviorSignals, defaultBehaviorTracker } = require('./ai/behaviorDetector');
@@ -222,7 +223,9 @@ const client = new Client({
         GatewayIntentBits.GuildVoiceStates,
         // Anti-Nuke: live audit-log entries (not a privileged intent).
         GatewayIntentBits.GuildModeration
-    ]
+    ],
+    // Safe default for sends that pass no allowedMentions (no @everyone/role pings).
+    allowedMentions: DEFAULT_ALLOWED_MENTIONS
 });
 
 // Anti-Nuke (free, always on): audit-log monitoring, alerts, optional containment.

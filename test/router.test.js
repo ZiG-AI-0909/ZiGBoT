@@ -186,3 +186,19 @@ test('voice path allows playback and info commands', () => {
     assert.equal(volume.action, 'volume_music');
     assert.equal(volume.volume, 40);
 });
+
+// ZIGBOT-001 regression. discord.js v14 channel.send() takes ONE argument;
+// a second options argument is silently ignored, so allowedMentions must
+// travel inside the payload object or @everyone/role pings go through.
+test('send_message locks mentions down inside the single send() payload', async () => {
+    const calls = [];
+    const message = fakeMessage({ channel: { name: 'general', send: async (...args) => { calls.push(args); } } });
+    const result = await executeTool(message, settings, { action: 'send_message', message: '@everyone <@&123456789012345678> hi <@234567890123456789>' });
+    assert.match(result, /Message sent/);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].length, 1, 'send() must get exactly one argument (discord.js v14 ignores a second)');
+    const payload = calls[0][0];
+    assert.equal(typeof payload, 'object');
+    assert.match(payload.content, /hi/);
+    assert.deepEqual(payload.allowedMentions?.parse, ['users']);
+});

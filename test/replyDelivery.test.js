@@ -242,3 +242,19 @@ test('AI replies never ping anyone and survive a deleted question', async () => 
     assert.deepEqual(AI_ALLOWED_MENTIONS.parse, []);
     assert.equal(sent[0].failIfNotExists, false);
 });
+
+// ZIGBOT-002 regression: the Discord client's default mention policy. Any
+// send/reply that does not pass allowedMentions uses this, so it must never
+// allow @everyone/@here or role pings (explicit per-call options still can).
+test('client-wide default allowedMentions blocks @everyone and role pings', () => {
+    const { DEFAULT_ALLOWED_MENTIONS } = require('../src/reply/delivery');
+    assert.ok(DEFAULT_ALLOWED_MENTIONS, 'DEFAULT_ALLOWED_MENTIONS must be exported');
+    assert.deepEqual(DEFAULT_ALLOWED_MENTIONS.parse, ['users']);
+    assert.equal(DEFAULT_ALLOWED_MENTIONS.repliedUser, true);
+    assert.ok(Object.isFrozen(DEFAULT_ALLOWED_MENTIONS));
+});
+
+test('the bot client is built with the safe default allowedMentions', () => {
+    const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'src', 'index.js'), 'utf8');
+    assert.match(source, /new Client\(\{[\s\S]*?allowedMentions:\s*DEFAULT_ALLOWED_MENTIONS/);
+});

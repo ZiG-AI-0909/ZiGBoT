@@ -500,7 +500,9 @@ async function executeTool(message, settings, intent, context = {}) {
                 const content = text(intent.message, 'Message', 1900);
                 // Lock pings down: an AI-authored message may only ever notify
                 // real users already named via <@id>, never @everyone/@here/roles.
-                await message.channel.send(content, { allowedMentions: { parse: ['users'] } });
+                // discord.js v14 send() takes ONE argument: the options must
+                // be inside it (a second argument is silently ignored).
+                await message.channel.send({ content, allowedMentions: { parse: ['users'] } });
                 result = '✅ Message sent.';
                 break;
             }

@@ -5,6 +5,7 @@ import { getChannels } from '@/lib/discord';
 import { isHomeGuild } from '@/lib/guildData';
 import { env } from '@/lib/env';
 import { loadPlan } from '@/lib/billing';
+import { claimQuota } from '@/lib/shared/quota';
 
 const {
     validateGuildConfig, resolveMemberBehavior, composeSystemPrompt,
@@ -37,12 +38,22 @@ export const POST = handler(async (request, { params }) => {
     if (!TONES.includes(tone)) throw new HttpError(422, `Pick one of these tones: ${TONES.join(', ')}.`);
 
     // Rate limit (RLS: users can only count/insert their own usage rows).
+    // Claim first, then count (lib/shared/quota.js), so parallel requests
+    // cannot all read the same count and slip past the limit.
     const since = new Date(Date.now() - PREVIEW_WINDOW_MS).toISOString();
-    const { count, error: countError } = await supabase.from('zb_preview_usage').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('created_at', since);
-    if (countError) throw new Error(`Preview quota check failed: ${countError.message}`);
-    if ((count || 0) >= PREVIEW_LIMIT) throw new HttpError(429, `You can run ${PREVIEW_LIMIT} test messages every 10 minutes. Try again shortly.`);
-    const { error: usageError } = await supabase.from('zb_preview_usage').insert({ user_id: user.id, guild_id: String(guild.id) });
-    if (usageError) throw new Error(`Preview usage record failed: ${usageError.message}`);
+    const allowed = await claimQuota({
+        limit: PREVIEW_LIMIT,
+        insert: async () => {
+            const { error } = await supabase.from('zb_preview_usage').insert({ user_id: user.id, guild_id: String(guild.id) });
+            if (error) throw new Error(`Preview usage record failed: ${error.message}`);
+        },
+        count: async () => {
+            const { count, error } = await supabase.from('zb_preview_usage').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('created_at', since);
+            if (error) throw new Error(`Preview quota check failed: ${error.message}`);
+            return count;
+        }
+    });
+    if (!allowed) throw new HttpError(429, `You can run ${PREVIEW_LIMIT} test messages every 10 minutes. Try again shortly.`);
 
     // Same resolver as the live bot, for a member with no mapped roles, using
     // the chosen tone as the server default.

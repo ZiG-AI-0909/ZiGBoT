@@ -183,3 +183,24 @@ test('hasUsableContent ignores whitespace and think blocks', () => {
     assert.equal(hasUsableContent({}), false);
     assert.equal(hasUsableContent(wrap('<think>x</think> hi')), true);
 });
+
+// ZIGBOT-004 regression: the AI rate limiter must not keep an entry for
+// every user it has ever seen (the bot is one long-running process).
+test('RateLimiter forgets users whose window has fully expired', () => {
+    const { RateLimiter } = require('../src/ai/rateLimiter');
+    const limiter = new RateLimiter({ max: 2, windowMs: 1000 });
+    for (let i = 0; i < 5000; i += 1) limiter.attempt(`user-${i}`, 0);
+    // Long after every window has closed, one more request sweeps the stale keys.
+    limiter.attempt('fresh-user', 10_000_000);
+    assert.ok(limiter.hits.size < 100, `stale keys kept: ${limiter.hits.size}`);
+    assert.equal(limiter.hits.has('fresh-user'), true);
+});
+
+test('RateLimiter sweeping never resets a user who is still inside the window', () => {
+    const { RateLimiter } = require('../src/ai/rateLimiter');
+    const limiter = new RateLimiter({ max: 2, windowMs: 1000 });
+    limiter.attempt('busy', 0);
+    limiter.attempt('busy', 1);
+    for (let i = 0; i < 5000; i += 1) limiter.attempt(`other-${i}`, 500);
+    assert.equal(limiter.attempt('busy', 600), false, 'busy user must still be limited');
+});

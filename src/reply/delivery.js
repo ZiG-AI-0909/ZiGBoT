@@ -73,6 +73,10 @@ const CHUNK_TARGET = 1900;
 // AI-written replies may show mentions but never ping anyone; replying still
 // notifies the member who asked.
 const AI_ALLOWED_MENTIONS = Object.freeze({ parse: [], repliedUser: true });
+// Client-wide default for every send/reply that passes no allowedMentions:
+// user pings and the reply ping only, never @everyone/@here or roles.
+// Calls that must ping a role (YouTube live alerts, Anti-Nuke) say so explicitly.
+const DEFAULT_ALLOWED_MENTIONS = Object.freeze({ parse: Object.freeze(['users']), repliedUser: true });
 
 // --------------------------------------------------------------------------------
 
@@ -295,6 +299,7 @@ module.exports = {
     MULTI_MESSAGE_MAX_PARTS,
     DISCORD_MESSAGE_LIMIT,
     AI_ALLOWED_MENTIONS,
+    DEFAULT_ALLOWED_MENTIONS,
     // functions
     neutralizeMassMentions,
     chunkForDiscord,

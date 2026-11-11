@@ -8,6 +8,19 @@ class RateLimiter {
         this.max = Math.max(1, Math.floor(max));
         this.windowMs = Math.max(1, Math.floor(windowMs));
         this.hits = new Map();
+        this.lastSweep = 0;
+    }
+
+    // Drop users whose newest hit is outside the window (they would be
+    // allowed anyway), at most once per window, so the map holds only
+    // recently active users instead of everyone ever seen.
+    sweep(now) {
+        if (now - this.lastSweep < this.windowMs) return;
+        this.lastSweep = now;
+        const windowStart = now - this.windowMs;
+        for (const [key, timestamps] of this.hits) {
+            if (!timestamps.length || timestamps[timestamps.length - 1] <= windowStart) this.hits.delete(key);
+        }
     }
 
     /**
@@ -18,6 +31,7 @@ class RateLimiter {
     attempt(key, now = Date.now(), { max = null } = {}) {
         if (!key) return true;
         const limit = Number.isFinite(max) && max >= 1 ? Math.floor(max) : this.max;
+        this.sweep(now);
         const windowStart = now - this.windowMs;
         const timestamps = (this.hits.get(key) || []).filter((time) => time > windowStart);
 
@@ -38,6 +52,7 @@ class RateLimiter {
 
     reset() {
         this.hits.clear();
+        this.lastSweep = 0;
     }
 }
 
