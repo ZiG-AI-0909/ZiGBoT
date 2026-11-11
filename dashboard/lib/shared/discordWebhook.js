@@ -65,4 +65,49 @@ function describeEvent(row) {
     return null;
 }
 
-module.exports = { verifyDiscordSignature, parseWebhookEvent, describeEvent, EVENT_TYPES };
+/**
+ * Same delivery -> same key. Discord resends an event it thinks failed (our
+ * 500, or a slow reply), with the same event type, user, server and
+ * timestamp, so those identify it. null without a real timestamp: such an
+ * event is stored without a key and can never be taken for a duplicate.
+ */
+function webhookDedupeKey(body) {
+    const event = body?.event;
+    const occurred = Date.parse(event?.timestamp);
+    if (!event?.type || !Number.isFinite(occurred)) return null;
+    const data = event.data || {};
+    const parts = [event.type, String(data.user?.id ?? ''), String(data.guild?.id ?? ''), String(data.integration_type ?? ''), new Date(occurred).toISOString()];
+    return crypto.createHash('sha256').update(JSON.stringify(parts)).digest('hex');
+}
+
+// "dedupe_key column / its unique index does not exist yet": the migration
+// 20261112000000_zigbot_app_events_dedupe has not been run.
+const MISSING_DEDUPE_SCHEMA = new Set(['42703', 'PGRST204', '42P10']);
+
+/**
+ * Store one install event at most once. `db` is a Supabase client.
+ * Returns { inserted: false } for a retried delivery (send no DMs again).
+ * Before the migration is run, it falls back to a plain insert (old behaviour)
+ * so no event is lost. Any other database error is thrown: the route answers
+ * 500 and Discord retries later.
+ */
+async function recordWebhookEvent(db, row, body) {
+    const table = db.from('zb_app_events');
+    const key = webhookDedupeKey(body);
+    const plainInsert = async () => {
+        const { error } = await db.from('zb_app_events').insert(row);
+        if (error) throw new Error(`zb_app_events insert failed: ${error.message}`);
+        return { inserted: true };
+    };
+    if (!key) return plainInsert();
+    const { data, error } = await table
+        .upsert({ ...row, dedupe_key: key }, { onConflict: 'dedupe_key', ignoreDuplicates: true })
+        .select('id');
+    if (error) {
+        if (MISSING_DEDUPE_SCHEMA.has(String(error.code))) return plainInsert();
+        throw new Error(`zb_app_events insert failed: ${error.message}`);
+    }
+    return { inserted: Array.isArray(data) && data.length > 0 };
+}
+
+module.exports = { verifyDiscordSignature, parseWebhookEvent, describeEvent, webhookDedupeKey, recordWebhookEvent, EVENT_TYPES };

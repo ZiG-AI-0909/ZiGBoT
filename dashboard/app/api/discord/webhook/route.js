@@ -35,12 +35,16 @@ export async function POST(request) {
     const row = webhook.parseWebhookEvent(body);
     if (!row) return empty(204);
 
-    const { error } = await createServiceClient().from('zb_app_events').insert(row);
-    if (error) {
+    // Stored at most once: a retried delivery is acknowledged but sends no DMs again.
+    let stored;
+    try {
+        stored = await webhook.recordWebhookEvent(createServiceClient(), row, body);
+    } catch (error) {
         // Non-2xx makes Discord retry later, which is what we want on a transient failure.
-        console.error('[discord webhook] insert failed:', error.message);
+        console.error('[discord webhook]', error.message);
         return empty(500);
     }
+    if (!stored.inserted) return empty(204);
 
     const creator = env.botCreatorId;
     const message = webhook.describeEvent(row);

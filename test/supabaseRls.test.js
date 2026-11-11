@@ -257,3 +257,19 @@ test('reaction GIFs: gif_settings defaults to {} and must be a small JSON object
     await rejects('update public.zb_guild_configs set gif_settings = $1 where guild_id = $2', [JSON.stringify({ custom_style: 'x'.repeat(9000) }), G1], /check constraint/);
     await db.query("update public.zb_guild_configs set gif_settings = '{}'::jsonb where guild_id = $1", [G1]);
 });
+
+// ZIGBOT-010 regression: the install log ignores a retried Discord delivery.
+test('install log: a duplicate dedupe_key is ignored, old rows without a key still fit', async () => {
+    await asService();
+    const insert = (key) => db.query(
+        "insert into public.zb_app_events (event_type, user_discord_id, dedupe_key) values ('APPLICATION_AUTHORIZED', '900000000000000001', $1) on conflict (dedupe_key) do nothing returning id",
+        [key]
+    );
+    const key = 'a'.repeat(64);
+    assert.equal((await insert(key)).rows.length, 1, 'first delivery stored');
+    assert.equal((await insert(key)).rows.length, 0, 'retried delivery ignored');
+    await insert(null);
+    await insert(null);
+    assert.equal((await db.query('select count(*)::int as n from public.zb_app_events where dedupe_key is null')).rows[0].n, 2, 'rows from before the migration have no key');
+    await rejects("insert into public.zb_app_events (event_type, dedupe_key) values ('GUILD_REMOVED', 'not-a-sha')", [], /check constraint/);
+});
