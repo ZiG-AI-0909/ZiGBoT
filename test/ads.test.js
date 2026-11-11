@@ -30,14 +30,19 @@ test('only public pages get the ad CSP; private areas keep the strict one', asyn
     const config = (await import(pathToFileURL(path.join(__dirname, '..', 'dashboard', 'next.config.mjs')).href)).default;
     const rules = await config.headers();
     const cspFor = (source) => rules.filter((r) => r.source === source).flatMap((r) => r.headers).filter((h) => h.key === 'Content-Security-Policy').pop()?.value;
-    const strict = cspFor('/:path*');
+    // The default (static) policy covers every path except the signed-in
+    // areas, which get a per-request nonce policy from middleware.js.
+    const staticRule = rules.find((r) => r.source.startsWith('/((?!') && r.headers.some((h) => h.key === 'Content-Security-Policy'));
+    assert.ok(staticRule, 'a static CSP rule exists');
+    const strict = cspFor(staticRule.source);
     assert.doesNotMatch(strict, /googlesyndication/, 'default policy has no ad hosts');
+    for (const p of ['dashboard', 'admin', 'owner', 'welcome']) assert.ok(staticRule.source.split(/[(|)!?.*/]+/).includes(p), `${p} is left to the nonce policy`);
     for (const page of seo.PUBLIC_PAGES) {
         const csp = cspFor(page.path);
         assert.match(csp, /script-src [^;]*https:\/\/\*\.googlesyndication\.com/, page.path);
         assert.match(csp, /frame-ancestors 'none'/, `${page.path} keeps the rest of the policy`);
     }
     const order = rules.map((r) => r.source);
-    assert.ok(order.indexOf('/:path*') < order.indexOf('/'), 'the ad policy comes after (and overrides) the default');
+    assert.ok(order.indexOf(staticRule.source) < order.indexOf('/'), 'the ad policy comes after (and overrides) the default');
     for (const p of seo.PRIVATE_PATHS) assert.equal(cspFor(p), undefined, `${p} has no ad policy`);
 });

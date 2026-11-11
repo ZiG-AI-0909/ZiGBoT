@@ -2,29 +2,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import seo from './lib/seo.js';
 import ads from './lib/ads.js';
+import csp from './lib/csp.js';
 
-const cspDirectives = [
-    "default-src 'self'",
-    // *.razorpay.com: Razorpay Standard Checkout (loaded only when someone
-    // pays) pulls its code, styles, fonts and icons from several Razorpay
-    // hosts (checkout.razorpay.com, checkout-static-next.razorpay.com,
-    // cdn.razorpay.com, api.razorpay.com, lumberjack.razorpay.com, ...)
-    // that change over time; blocking any of them makes rzp.open() fail
-    // silently. The wildcard stays limited to Razorpay's own domain.
-    "img-src 'self' data: blob: https://cdn.discordapp.com https://*.razorpay.com",
-    "style-src 'self' 'unsafe-inline' https://*.razorpay.com",
-    "font-src 'self' data: https://*.razorpay.com",
-    // Next.js dev mode needs eval for hot reloading; production never gets it.
-    process.env.NODE_ENV === 'development'
-        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.razorpay.com"
-        : "script-src 'self' 'unsafe-inline' https://*.razorpay.com",
-    // The Checkout modal is an iframe served by Razorpay.
-    "frame-src https://*.razorpay.com",
-    "connect-src 'self' https://*.razorpay.com",
-    "frame-ancestors 'none'",
-    "base-uri 'self'",
-    "form-action 'self' https://discord.com https://*.supabase.co https://*.razorpay.com"
-];
+// One source for the policy: lib/csp.js (also used by middleware.js).
+const cspDirectives = csp.staticCspDirectives({ dev: process.env.NODE_ENV === 'development' });
 
 /** @type {import('next').NextConfig} */
 const securityHeaders = [
@@ -32,9 +13,12 @@ const securityHeaders = [
     { key: 'X-Content-Type-Options', value: 'nosniff' },
     { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
     { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
-    { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
-    { key: 'Content-Security-Policy', value: cspDirectives.join('; ') }
+    { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' }
 ];
+// The signed-in areas (lib/csp.js NONCE_PATHS) get a per-request nonce
+// policy from middleware.js instead, so this static one skips them.
+const staticCsp = [{ key: 'Content-Security-Policy', value: cspDirectives.join('; ') }];
+const notNoncePaths = `/((?!${csp.NONCE_PATHS.map((p) => p.slice(1)).join('|')}).*)`;
 
 // Public pages (lib/seo.js PUBLIC_PAGES) also allow Google AdSense
 // (lib/ads.js). Everything else keeps the strict policy above.
@@ -59,7 +43,7 @@ const nextConfig = {
         ]);
         // Later rules win for the same header, so the ad policy follows the default.
         const publicRoutes = seo.PUBLIC_PAGES.map((page) => ({ source: page.path, headers: publicPageCsp }));
-        return [{ source: '/:path*', headers: securityHeaders }, ...publicRoutes, ...privateRoutes];
+        return [{ source: '/:path*', headers: securityHeaders }, { source: notNoncePaths, headers: staticCsp }, ...publicRoutes, ...privateRoutes];
     }
 };
 

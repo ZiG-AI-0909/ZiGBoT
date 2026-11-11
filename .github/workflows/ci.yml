@@ -63,3 +63,43 @@ jobs:
       - name: Dashboard build
         run: npx next build
         working-directory: dashboard
+
+  e2e:
+    name: Browser tests (Chromium, no login)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      # No real backend in CI: dummy values that resolve nowhere, so every
+      # login check simply sees a signed-out visitor.
+      NEXT_PUBLIC_SUPABASE_URL: https://supabase.invalid
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-dummy-anon-key
+      E2E_BROWSER: chromium
+      E2E_BASE_URL: http://localhost:3311
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx next build
+      - name: Start the dashboard
+        run: |
+          nohup npx next start -p 3311 > next.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf -o /dev/null http://localhost:3311/terms && exit 0; sleep 1; done
+          cat next.log; exit 1
+      - run: npx playwright test
+      - if: failure()
+        run: cat next.log || true
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: dashboard/test-results
+          retention-days: 7

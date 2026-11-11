@@ -3,6 +3,11 @@
    prefers-reduced-motion at the bottom of this file. */
 
 .landing { --l-grad: linear-gradient(100deg, #c084fc, #e040fb 45%, #22d3ee); }
+/* The hero ring spins forever, and a rotated box counts towards page width
+   (up to ~41% wider at 45 degrees), so on phones the page could be dragged
+   sideways at some moments. clip (not hidden) creates no scroll box, so
+   sticky and fixed elements keep working. Checked by e2e/site.spec.js. */
+.landing { overflow-x: clip; }
 
 /* Subtle film grain over the backdrop. */
 .grain {
