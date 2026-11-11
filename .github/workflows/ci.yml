@@ -1,0 +1,65 @@
+# Runs on every push to master and every pull request:
+#   1. secrets: gitleaks scans the new commits for passwords/API keys
+#   2. test:    syntax check + the full node:test suite + the dashboard build
+# Nothing here deploys anything; Render and Vercel deploy on their own.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Push / pull request: scans only the new commits. Manual run
+      # (workflow_dispatch): scans the whole history.
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_VERSION: 8.30.1
+
+  test:
+    name: Check, tests, dashboard build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            dashboard/package-lock.json
+      # --ignore-scripts: skips the yt-dlp / ffmpeg / opus downloads, which
+      # the tests do not need (same as the local Windows setup).
+      - name: Install bot dependencies
+        run: npm ci --ignore-scripts
+      # Some root tests load dashboard modules (e.g. sharp for identity images).
+      - name: Install dashboard dependencies
+        run: npm ci
+        working-directory: dashboard
+      - name: Syntax check
+        run: npm run check
+      - name: Test suite
+        run: npm test
+      - name: Dashboard build
+        run: npx next build
+        working-directory: dashboard
