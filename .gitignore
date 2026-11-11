@@ -8,3 +8,5 @@ dashboard/.env.local
 .env2
 bin/
 audit-reports/
+dashboard/test-results/
+dashboard/playwright-report/

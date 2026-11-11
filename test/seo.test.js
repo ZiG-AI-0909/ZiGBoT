@@ -72,7 +72,9 @@ test('private routes: noindex in metadata and an X-Robots-Tag header', async () 
         }
     }
     const site = headers.find((h) => h.source === '/:path*');
-    assert.ok(site.headers.some((h) => h.key === 'Content-Security-Policy'), 'security headers unchanged');
+    assert.ok(site.headers.some((h) => h.key === 'X-Frame-Options'), 'security headers unchanged');
+    // CSP: static rule for everything but the signed-in areas (nonce policy in middleware.js).
+    assert.ok(headers.some((h) => h.source.startsWith('/((?!') && h.headers.some((x) => x.key === 'Content-Security-Policy')), 'static CSP rule present');
     assert.ok(!site.headers.some((h) => h.key === 'X-Robots-Tag'), 'public pages are not noindexed');
 });
 
