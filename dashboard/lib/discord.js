@@ -86,9 +86,10 @@ export function assignableRoles(guild) {
 
 // View Channel, Send Messages, Embed Links, Read History, Add Reactions,
 // Connect, Speak, Manage Messages, Kick, Ban, Manage Channels, Manage Roles,
-// Moderate Members, View Audit Log (Anti-Nuke monitoring) — exactly what
-// ZiGBoT's tools use, never Administrator.
-const INVITE_PERMISSIONS = [10n, 11n, 14n, 16n, 6n, 20n, 21n, 13n, 1n, 2n, 4n, 28n, 40n, 7n]
+// Moderate Members, View Audit Log (Anti-Nuke monitoring), Manage Nicknames
+// (the optional "[AFK]" nickname) — exactly what ZiGBoT's tools use, never
+// Administrator.
+const INVITE_PERMISSIONS = [10n, 11n, 14n, 16n, 6n, 20n, 21n, 13n, 1n, 2n, 4n, 28n, 40n, 7n, 27n]
     .reduce((acc, bit) => acc | (1n << bit), 0n)
     .toString();
 

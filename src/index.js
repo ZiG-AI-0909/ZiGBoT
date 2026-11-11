@@ -72,6 +72,9 @@ const { ADULT_BANTER_TERMS } = require('../dashboard/lib/shared/profanity');
 const { createIdentityStore } = require('./identity/store');
 const { createIdentitySync } = require('./identity/sync');
 const { createIdentityCommands } = require('./identity/commands');
+const { createAfkStore } = require('./afk/store');
+const { createAfkHandler } = require('./afk/handler');
+const { createAvatarHandler } = require('./avatar/handler');
 const { version: BOT_VERSION } = require('../package.json');
 
 function logAiError(error) {
@@ -227,6 +230,12 @@ const client = new Client({
     // Safe default for sends that pass no allowedMentions (no @everyone/role pings).
     allowedMentions: DEFAULT_ALLOWED_MENTIONS
 });
+
+// AFK status (src/afk): kept in memory, saved in MongoDB once it connects.
+const afkStore = createAfkStore({ getCollection: () => brain.getAfkCollection() });
+const afkHandler = createAfkHandler({ store: afkStore, botId: () => client.user?.id });
+// Avatar viewer (src/avatar): "av @user", "@ZiGBoT show pfp @user", ...
+const avatarHandler = createAvatarHandler({ botId: () => client.user?.id, fetchUser: (id) => client.users.fetch(id) });
 
 // Anti-Nuke (free, always on): audit-log monitoring, alerts, optional containment.
 const antiNuke = createAntiNuke({
@@ -606,6 +615,13 @@ client.on(Events.MessageCreate, async (message) => {
     const { ctx: guildCtx, gSettings, behavior } = await guildRuntime(message.guild, message.member);
     if (guildCtx && guildCtx.config.enabled === false) return;
     if (guildCtx && !channelAllowed(guildCtx.config, message.channel)) return;
+
+    // AFK (automatic): "afk <reason>" sets it (and stops here); any other
+    // message welcomes an AFK author back and tells people who mention an
+    // AFK member, then carries on to the normal flow.
+    if ((await afkHandler.handle(message)).handled) return;
+    // Avatar viewer: an avatar request is answered here, never by the AI.
+    if (await avatarHandler.handle(message)) return;
     const memoryAllowed = !guildCtx || (guildCtx.config.memory_enabled !== false && hasFeature(behavior, 'memory'));
     const reputationAllowed = !guildCtx || guildCtx.config.reputation_enabled !== false;
 
@@ -1148,6 +1164,7 @@ startHealthServer();
     try {
         await brain.connectBrain(process.env.MONGODB_URI);
         warnStore = brain;
+        console.log(`[ZiGBoT AFK] ${await afkStore.load()} member(s) AFK restored.`);
         client.login(settings.discordToken);
     } catch (error) {
         console.error(`[ZiGBoT DB] MongoDB connection failed: ${error.message}`);

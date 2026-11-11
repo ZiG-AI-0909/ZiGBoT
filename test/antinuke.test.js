@@ -402,7 +402,7 @@ test('14. joining a server starts protection: settings, private alert channel, s
     assert.match(index, /client\.on\(Events\.GuildMemberAdd, \(member\) => \{\n\s+antiNuke\.onMemberAdd\(member\);/);
     assert.match(index, /await antiNuke\.setupNewGuild\(guild\)/);
     assert.match(index, /antiNuke\.start\(\);/);
-    assert.match(read('dashboard/lib/discord.js'), /const INVITE_PERMISSIONS = \[10n, 11n, 14n, 16n, 6n, 20n, 21n, 13n, 1n, 2n, 4n, 28n, 40n, 7n\]/, 'the invite asks for View Audit Log');
+    assert.match(read('dashboard/lib/discord.js'), /const INVITE_PERMISSIONS = \[10n, 11n, 14n, 16n, 6n, 20n, 21n, 13n, 1n, 2n, 4n, 28n, 40n, 7n, 27n\]/, 'the invite asks for View Audit Log');
 });
 
 test('an incident is recorded, alerted, and falls back to an owner DM when no channel works', async () => {

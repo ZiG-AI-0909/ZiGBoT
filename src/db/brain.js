@@ -23,6 +23,7 @@ let ytNoRoast = null;
 let ytQuota = null;
 let summaryUsage = null;
 let summaryChannels = null;
+let afk = null;
 let lastMemoryError = null;
 let lastBehaviorError = null;
 // "Connected" is not "working": these record the last operation that really
@@ -184,6 +185,9 @@ async function connectBrain(uri, { client: injectedClient = null, dbName = 'zigb
     const nextYtQuota = db.collection('ytQuota');
     const nextSummaryUsage = db.collection('summary_usage');
     const nextSummaryChannels = db.collection('summary_channels');
+    // AFK status (src/afk): one document per server + member.
+    const nextAfk = db.collection('afk');
+    await nextAfk.createIndex({ guildId: 1, userId: 1 }, { unique: true });
 
     // Clean up records created before the TTL field was added, and enforce the
     // retention boundary immediately when the bot starts.
@@ -229,6 +233,7 @@ async function connectBrain(uri, { client: injectedClient = null, dbName = 'zigb
     ytQuota = nextYtQuota;
     summaryUsage = nextSummaryUsage;
     summaryChannels = nextSummaryChannels;
+    afk = nextAfk;
     lastMemoryError = null;
     lastBehaviorError = null;
     lastMemoryWriteOkAt = null;
@@ -1329,8 +1334,14 @@ function _disconnectForTests() {
     lastMemoryReadOkAt = null;
 }
 
+/** The AFK collection, or null before the database connects (src/afk/store.js). */
+function getAfkCollection() {
+    return afk;
+}
+
 module.exports = {
     connectBrain,
+    getAfkCollection,
     getUser,
     updateUser,
     addWarning,
