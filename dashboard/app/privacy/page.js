@@ -89,6 +89,13 @@ export default function Privacy() {
                     Short-lived records (for example who was already greeted, or a temporary ban) are deleted automatically within 1 to 3 days.
                 </p>
 
+                <h3>ZiGBoT Studio coding-agent keys</h3>
+                <p>
+                    If you connect your own Anthropic (Claude) or OpenAI API key in ZiGBoT Studio, we store it encrypted and use it only to run the
+                    coding agent you ask for, on that project&apos;s files. ZiGBoT&apos;s Super Admins can view saved keys; every view is recorded in
+                    our audit log. We keep a record of each agent run (model, status, token counts). Remove the key in Studio at any time to delete it.
+                </p>
+
                 <h3>Premium payments</h3>
                 <p>
                     Payments are processed by Razorpay. We receive and store the subscription ID, its status, and when the paid period ends.
@@ -113,6 +120,7 @@ export default function Privacy() {
                     <li><strong>Supabase</strong> and <strong>MongoDB</strong>: databases for settings, accounts, memories and records. Supabase also stores custom bot identity pictures, privately.</li>
                     <li><strong>Render</strong>: hosting.</li>
                     <li><strong>Razorpay</strong>: payments.</li>
+                    <li><strong>Anthropic</strong> and <strong>OpenAI</strong>: only if you connect your own key in ZiGBoT Studio. They receive your request and that project&apos;s files, under your own account.</li>
                     <li><strong>GIPHY</strong>: reaction GIF searches. It receives only ZiGBoT&apos;s own short search words (like &quot;mic drop&quot;) — never your messages or who you are.</li>
                     <li><strong>YouTube (Google)</strong>: live-chat features.</li>
                     <li><strong>Google AdSense</strong>: ads on the public pages of this website, using the cookies described above.</li>

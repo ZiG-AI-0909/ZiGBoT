@@ -83,3 +83,19 @@ test('UI: connect key, pick agent/model/type, generate with cancel, checks, usag
     for (const s of ['Build with AI Coding Agent', 'type="password"', 'abortRef.current?.abort()', 'Not available here', 'Usage (']) assert.ok(ui.includes(s), s);
     assert.match(read('app', 'studio', '[projectId]', 'ai', 'page.js'), /<AiWorkspace projectId=\{data\.id\}/);
 });
+
+test('admin: full keys only for Super Admins, one per click, rate-limited, audit-logged, and users are told', () => {
+    const route = read('app', 'api', 'admin', 'agent-keys', '[ownerId]', 'route.js');
+    assert.match(route, /export const POST = handler\(async \(request, \{ params \}\) => \{\n\s+const admin = await requireSuperAdmin\(\);\n\s+adminRateLimit\(admin\.discordId/);
+    assert.equal((route.match(/writeAdminAudit\(admin, \{ action: 'studio\.agent_key_reveal'/g) || []).length, 2, 'success and failure both logged');
+    assert.doesNotMatch(route.slice(route.indexOf('writeAdminAudit')), /metadata: \{[^}]*key[,}]/, 'the key itself is never put in the audit log');
+    assert.doesNotMatch(route, /export const GET/, 'POST only: never cached or prefetched');
+    const page = read('app', 'admin', 'agent-keys', 'page.js');
+    assert.match(page, /if \(!\(await getSuperAdmin\(\)\)\) notFound\(\);/);
+    assert.match(page, /select\('owner_id, provider, last4, model, updated_at'\)/, 'the list page never loads ciphertext');
+    assert.match(read('components', 'admin', 'RevealKey.js'), /setTimeout\(\(\) => setKey\(null\), 30_000\)/, 'auto-hides');
+    assert.match(read('components', 'studio', 'AgentBuilder.js'), /ZiGBoT administrators can view saved keys \(every view is logged\)/);
+    const privacy = read('app', 'privacy', 'page.js');
+    assert.match(privacy, /Super Admins can view saved keys; every view is recorded in\s+our audit log/);
+    assert.match(privacy, /<strong>Anthropic<\/strong> and <strong>OpenAI<\/strong>: only if you connect your own key/);
+});

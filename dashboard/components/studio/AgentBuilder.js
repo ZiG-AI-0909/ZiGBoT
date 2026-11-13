@@ -102,6 +102,7 @@ export default function AgentBuilder({ projectId, language, onProposal }) {
                     <label className="sr-only" htmlFor="agent-key">API key</label>
                     <input id="agent-key" type="password" autoComplete="off" placeholder={p?.keyHint} value={keyDraft} onChange={(e) => setKeyDraft(e.target.value)} style={{ minWidth: 280, flex: 1 }} />
                     <button className="btn" type="submit" disabled={!keyDraft}>Connect key</button>
+                    <p className="help" style={{ width: '100%', margin: 0 }}>Stored encrypted. ZiGBoT administrators can view saved keys (every view is logged), so consider a key with a spending limit. <a href="/privacy">Privacy Policy</a></p>
                 </form>
             )}
 

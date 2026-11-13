@@ -12,6 +12,7 @@ const LINKS = [
     { href: '/admin/premium', label: 'Premium & Revenue', icon: '💎' },
     { href: '/admin/feedback', label: 'Forms & Responses', icon: '📝' },
     { href: '/admin/security', label: 'Security', icon: '🛡️' },
+    { href: '/admin/agent-keys', label: 'Agent API keys', icon: '🔑' },
     { href: '/admin/analytics', label: 'Analytics', icon: '📈' },
     { href: '/admin/settings', label: 'Settings & Audit', icon: '⚙️' }
 ];

@@ -47,7 +47,7 @@ test('every /admin page and the layout guard themselves before loading data', ()
 
 test('every /api/admin route requires the Super Admin; actions are rate-limited and audit-logged', () => {
     const routes = walk('dashboard/app/api/admin').filter((f) => f.endsWith('route.js'));
-    assert.equal(routes.length, 3);
+    assert.equal(routes.length, 4); // + agent-keys/[ownerId] (Studio key reveal)
     for (const file of routes) {
         const code = read(file);
         for (const verb of code.match(/export const (GET|POST|PATCH|DELETE|PUT) = handler\(async/g)) {
