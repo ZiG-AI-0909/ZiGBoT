@@ -284,6 +284,54 @@ function Canvas({ base, workflow, catalog, onSaved }) {
     );
 }
 
+/**
+ * "Describe the automation you want to create." The server asks the chosen
+ * AI for a workflow in the builder's schema, validates it and saves it as a
+ * draft; it opens on the canvas for editing. Nothing runs or activates.
+ */
+function AiWorkflowGenerator({ base, onCreated }) {
+    const [text, setText] = useState('');
+    const [engine, setEngine] = useState('zigbot');
+    const [engines, setEngines] = useState([{ id: 'zigbot', label: 'ZiGBoT AI' }]);
+    const [busy, setBusy] = useState(false);
+    const [note, setNote] = useState(null);
+    const abortRef = useRef(null);
+    useEffect(() => {
+        call('/api/studio/agents/keys').then((b) => setEngines([{ id: 'zigbot', label: 'ZiGBoT AI' }, ...b.providers.filter((p) => p.configured).map((p) => ({ id: p.id, label: `${p.label} (your key)` }))])).catch(() => {});
+    }, []);
+    async function generate(e) {
+        e.preventDefault();
+        const controller = new AbortController();
+        abortRef.current = controller;
+        setBusy(true); setNote(null);
+        try {
+            const r = await call(`${base}/generate`, { method: 'POST', body: JSON.stringify({ request: text, engine }), signal: controller.signal });
+            const extra = [r.problems.length ? `${r.problems.length} thing(s) to fill in or fix (marked on the canvas)` : 'no problems found', r.dropped.length ? `ignored: ${r.dropped.slice(0, 4).join(', ')}` : null].filter(Boolean).join(' · ');
+            setNote({ ok: `Created “${r.workflow.name}” as a draft: ${extra}. Edit any block, then test it in the simulator.` });
+            setText('');
+            await onCreated(r.workflow.id);
+        } catch (err) {
+            setNote(err.name === 'AbortError' ? { ok: 'Cancelled.' } : { error: err.message });
+        } finally { setBusy(false); abortRef.current = null; }
+    }
+    return (
+        <form className="card stack" onSubmit={generate} style={{ borderTop: '3px solid #fb923c' }}>
+            <label htmlFor="wf-ai"><strong>✨ Describe the automation you want to create.</strong></label>
+            <textarea id="wf-ai" rows={3} maxLength={1500} value={text} onChange={(e) => setText(e.target.value)} disabled={busy}
+                placeholder="When someone joins my Discord server, send them a welcome message, assign a role, and notify the moderators if the account is less than seven days old." />
+            <div className="row" style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <label className="sr-only" htmlFor="wf-engine">AI</label>
+                <select id="wf-engine" value={engine} onChange={(e) => setEngine(e.target.value)} disabled={busy}>{engines.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</select>
+                <button className="btn btn-primary" type="submit" disabled={busy || !text.trim()} aria-busy={busy}>{busy ? 'Designing…' : 'Generate workflow'}</button>
+                {busy ? <button className="btn" type="button" onClick={() => abortRef.current?.abort()}>Cancel</button> : null}
+            </div>
+            <p className="help" style={{ margin: 0 }}>The AI can only use the builder&apos;s blocks (no custom code). The result is saved as a draft you review and edit; activating still needs Premium.</p>
+            {note?.error ? <p className="error" role="alert">{note.error}</p> : null}
+            {note?.ok ? <p className="help" role="status">{note.ok}</p> : null}
+        </form>
+    );
+}
+
 export default function WorkflowBuilder({ projectId }) {
     const base = `/api/studio/projects/${projectId}/workflows`;
     const [list, setList] = useState(null);
@@ -311,6 +359,7 @@ export default function WorkflowBuilder({ projectId }) {
     return (
         <div className="stack">
             {error ? <p className="error" role="alert">{error}</p> : null}
+            <AiWorkflowGenerator base={base} onCreated={async (id) => { await load(); open(id); }} />
             <div className="card">
                 <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                     {(list || []).length === 0 ? <span className="help">No workflows yet.</span> : (list || []).map((w) => (
