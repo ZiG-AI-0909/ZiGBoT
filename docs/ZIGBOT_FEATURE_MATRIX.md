@@ -301,20 +301,22 @@ All Section J features are off by default and enabled per server in the dashboar
 
 ## L. Analytics
 
+Section L is off by default (Add-ons → Analytics). It stores only aggregated daily counts per server (`zb_feature_records`, kind `analytics`, key = the day in the server timezone), never message content or member ids; distinct active members are counted in memory and only the number is saved. Records older than 400 days are deleted. Dashboard: 📊 Analytics tab (SVG charts) and `GET /api/guilds/[guildId]/analytics` (JSON or `format=csv`, admin-verified). Tests: `test/section-l-analytics.test.js`.
+
 | Feature | Status | Proof | Action |
 |---|---|---|---|
-| Member growth | MISSING | Search `member growth|member join statistics|guildMemberAdd.*analytics` across `src/`, `dashboard/`, `supabase/`, `test/`: no per-guild member history/series found. | Implement |
-| Active members | MISSING | Search `active members|active users|message activity` across `src/`, `dashboard/`, `supabase/`, `test/`: no guild engagement counting system found. | Implement |
-| Message activity | MISSING | Search `message activity|message count analytics|channel activity` across `src/`, `dashboard/`, `supabase/`, `test/`: no general message telemetry found; consented summary buffering is not analytics. | Implement |
-| Channel activity | MISSING | Same activity search; no channel activity metrics pipeline found. | Implement |
-| Retention | MISSING | Search `retention|cohort|returning members` across `src/`, `dashboard/`, `supabase/`, `test/`: no community retention analysis found. | Implement |
-| Join and leave statistics | MISSING | Search `member join|member leave|guildMemberRemove` across `src/`, `dashboard/`, `supabase/`, `test/`: bot install/removal logs exist but no member join/leave analytics. | Implement |
-| Moderation statistics | PARTIAL | Anti-Nuke incident counts/severity are queryable by guild: `dashboard/app/api/guilds/[guildId]/antinuke/route.js:46-59`; test `settings persist, survive a restart, and bad stored values fall back safely`. No aggregate warnings/kicks/bans dashboard. | Improve |
-| Security statistics | WORKING (UNTESTED) | Per-guild recent/open-critical counts and status: `dashboard/app/api/guilds/[guildId]/antinuke/route.js:46-59`; no focused API-statistics assertion found. | Add tests |
-| Ticket statistics | MISSING | Ticket search across `src/`, `dashboard/`, `supabase/`, `test/` found no ticket schema or statistics query. | Implement |
-| Event participation | MISSING | Search `event participation|event RSVP|attendee count` across `src/`, `dashboard/`, `supabase/`, `test/`: no event participation records found. | Implement |
-| AI-generated reports | PARTIAL | Security reports use scoped incident data (`src/security/commands.js`); no general AI analytics report generator or report schedule. Tests `/security status and /security why are private and guild-scoped`. | Improve |
-| CSV export | PARTIAL | Admin feedback/business CSV export exists (`dashboard/app/api/admin/export/route.js`); test `CSV export escapes text and defuses spreadsheet formulas` (`test/superAdmin.test.js`). No community analytics export. | Improve |
+| Member growth | WORKING | Daily joins/leaves and net growth from the existing member listeners; tests `daily counts: messages per channel, joins, leaves, distinct active members; never content or ids`, `summary maths: net growth, leave rate, busiest channels`. | Done (Section L) |
+| Active members | WORKING | Distinct active members per day as a count only (lower bound if the bot restarts mid-day); same daily-counts test and `counts add up across flushes, active members never go down, and two workers do not double count`. | Done (Section L) |
+| Message activity | WORKING | Messages per day, counted first thing in the existing message listener (`features.observeMessage`), bots excluded; tests above and `src/index.js counts messages first thing in the existing message listener`. | Done (Section L) |
+| Channel activity | WORKING | Messages per channel per day (threads count to their parent, max 200 channels/day), busiest channels in summaries, CSV and charts; daily-counts test. | Done (Section L) |
+| Retention | PARTIAL | Leave rate (leaves / joins) and net growth over a period are reported; true cohort retention would need stored member ids, which this section deliberately does not keep. | PARTIAL |
+| Join and leave statistics | WORKING | Daily joins and leaves, with totals, net and leave rate in `/analytics summary`, CSV and charts; tests above. | Done (Section L) |
+| Moderation statistics | WORKING | Daily moderation case count read from the existing case store (`brain.listModerationCases`) at an hourly snapshot; daily-counts test (`moderation` field). | Done (Section L) |
+| Security statistics | WORKING | Daily security incident count from the existing security integration (`getIncidents`) at the snapshot, plus the unchanged Anti-Nuke API counts; daily-counts test (`security` field). | Done (Section L) |
+| Ticket statistics | WORKING | Daily tickets opened via a new read-only, guild-scoped `SupabaseTicketStore.countTicketsSince`; tests `ticket counting is guild-scoped and read-only`, daily-counts test (`tickets` field). | Done (Section L) |
+| Event participation | WORKING | Daily participants of giveaways and tournaments (Section G records) as a count; snapshot in `src/features/analytics.js`, included in summaries and CSV. | Done (Section L) |
+| AI-generated reports | WORKING | `/analytics report` (Manage Server): the existing provider gets aggregate numbers only (no content, ids or channel ids) in the untrusted-data wrapper; output cleaned of pings; exact numbers shown even if the AI fails; test `/analytics: off says so, needs Manage Server, AI report gets aggregates only`. | Done (Section L) |
+| CSV export | WORKING | Community analytics CSV from the dashboard (`format=csv`), using the existing formula-injection-safe `toCsv`; test `CSV export: numbers only, oldest first, formula-safe; bad rows ignored`. | Done (Section L) |
 
 ## M. Developer Tools
 

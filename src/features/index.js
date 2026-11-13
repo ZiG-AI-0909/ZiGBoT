@@ -12,8 +12,9 @@ const { createAiTools } = require('./aiTools');
 const { createSecurityPlus } = require('./securityPlus');
 const { createTempVoice } = require('./tempVoice');
 const { createSocial, createTwitchApi } = require('./social');
+const { createAnalytics } = require('./analytics');
 
-function createFeatures({ settings = {}, resolveContext, auditLog, getClient, store = null, now = () => Date.now(), logger = console, renderWelcomeImage, renderRankCard, aiClient = null, aiModel = '', listWarnings = null }) {
+function createFeatures({ settings = {}, resolveContext, auditLog, getClient, store = null, now = () => Date.now(), logger = console, renderWelcomeImage, renderRankCard, aiClient = null, aiModel = '', listWarnings = null, counters = {} }) {
     const supabase = new SupabaseFeatureStore({ supabaseUrl: settings.supabaseUrl, serviceRoleKey: settings.supabaseServiceRoleKey });
     const featureStore = store || (supabase.enabled ? supabase : new MemoryFeatureStore({ now }));
     const scheduler = createScheduler({ store: featureStore, now, logger });
@@ -30,7 +31,8 @@ function createFeatures({ settings = {}, resolveContext, auditLog, getClient, st
         createEngagement({ ...shared, renderRankCard: rankCard })
     ];
     const aiTools = createAiTools({ ...shared, aiClient, aiModel, listWarnings });
-    modules.push(aiTools);
+    const analytics = createAnalytics({ ...shared, aiClient, aiModel, counters });
+    modules.push(aiTools, analytics);
 
     const each = (hook, ...args) => Promise.all(modules.filter((m) => typeof m[hook] === 'function').map((m) => Promise.resolve(m[hook](...args))
         .catch((error) => logger.error?.(`[ZiGBoT FEATURES] ${hook} failed: ${error?.message || error}`))));
@@ -46,6 +48,8 @@ function createFeatures({ settings = {}, resolveContext, auditLog, getClient, st
         onMemberUpdate: (oldMember, newMember) => each('onMemberUpdate', oldMember, newMember),
         onReaction: (reaction, user, added) => each('onReaction', reaction, user, added),
         onVoiceState: (oldState, newState) => each('onVoiceState', oldState, newState),
+        /** Analytics counts (Section L), called first in the message listener. Never throws. */
+        observeMessage: (message) => analytics.observeMessage(message),
         /** Per-channel / per-server AI limits (Section D). true = the AI may reply. */
         allowAiReply: (message) => aiTools.allowAiReply(message),
         /** true when a module fully handled the message (the caller then stops). */

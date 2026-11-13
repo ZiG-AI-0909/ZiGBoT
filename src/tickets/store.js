@@ -145,6 +145,17 @@ class SupabaseTicketStore {
         return row && String(row.guild_id) === guild ? row : null;
     }
 
+    /** Number of tickets opened in this guild since an ISO time (analytics; read-only). */
+    async countTicketsSince(guildId, sinceIso) {
+        const guild = this.assertGuild(guildId);
+        if (!this.enabled) return 0;
+        const since = new Date(sinceIso);
+        if (Number.isNaN(since.getTime())) throw new Error('Invalid ticket count time.');
+        const query = new URLSearchParams({ select: 'id,guild_id', guild_id: `eq.${guild}`, created_at: `gte.${since.toISOString()}`, limit: '1000' });
+        const rows = await this.request(`zb_tickets?${query}`);
+        return Array.isArray(rows) ? rows.filter((row) => String(row.guild_id) === guild).length : 0;
+    }
+
     async rateTicket(guildId, id, openerId, rating) {
         const guild = this.assertGuild(guildId);
         const ticketId = this.assertTicketId(id);

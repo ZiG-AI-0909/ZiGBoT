@@ -174,6 +174,12 @@ const FEATURE_SECTIONS = {
             int('poll_minutes', 'Check every (minutes)', 10, 5, 1440)
         ]
     },
+    analytics: {
+        label: 'Analytics',
+        fields: [
+            bool('analytics_enabled', 'Collect daily counts (joins, leaves, messages per channel, active members, moderation, security and tickets). Never message content or member ids.')
+        ]
+    },
     security: {
         label: 'Security+',
         fields: [

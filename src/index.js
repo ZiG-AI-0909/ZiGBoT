@@ -167,7 +167,13 @@ const features = createFeatures({
     getClient: () => client,
     aiClient: ai.client,
     aiModel: ai.model,
-    listWarnings: (guildId, userId) => brain.listWarnings(guildId, userId)
+    listWarnings: (guildId, userId) => brain.listWarnings(guildId, userId),
+    // Analytics (Section L) reads counts from the existing stores, at snapshot time.
+    counters: {
+        moderationCases: (guildId) => brain.listModerationCases(guildId, 100),
+        securityIncidents: (guildId) => securityIntegration.getIncidents(guildId),
+        ticketsSince: (guildId, sinceIso) => ticketStore.countTicketsSince(guildId, sinceIso)
+    }
 });
 const ticketCommands = createTicketCommands({
     store: ticketStore,
@@ -727,6 +733,8 @@ client.on(Events.MessageCreate, async (message) => {
     void securityEventHandlers.messageCreate(message);
     // Ignore all bots
     if (message.author.bot || !client.user) return;
+    // Analytics (opt-in): daily counts only, no content; never blocks anything.
+    features.observeMessage(message);
 
     // Per-server context: config is loaded for THIS message's guild only.
     const { ctx: guildCtx, gSettings, behavior } = await guildRuntime(message.guild, message.member);

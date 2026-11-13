@@ -162,9 +162,21 @@ function voiceCommands() {
     ];
 }
 
+function analyticsCommands() {
+    const days = (o) => o.setName('days').setDescription('How many days (1-90, default 7)').setMinValue(1).setMaxValue(90);
+    return [
+        new SlashCommandBuilder()
+            .setName('analytics')
+            .setDescription('Admin: community statistics from daily counts')
+            .addSubcommand((s) => s.setName('summary').setDescription('Totals and trends').addIntegerOption(days))
+            .addSubcommand((s) => s.setName('report').setDescription('AI-written report from the counts (advisory)').addIntegerOption(days))
+            .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    ];
+}
+
 /** Every optional-feature command, as builders (src/slash.js turns them into JSON). */
 function featureCommandBuilders() {
-    return [...communityCommands(), ...automationCommands(), ...engagementCommands(), ...aiCommands(), ...voiceCommands()];
+    return [...communityCommands(), ...automationCommands(), ...engagementCommands(), ...aiCommands(), ...voiceCommands(), ...analyticsCommands()];
 }
 
 module.exports = { featureCommandBuilders };

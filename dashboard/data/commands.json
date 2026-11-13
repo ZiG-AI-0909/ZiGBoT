@@ -1701,6 +1701,48 @@
               "example": "/ai modreview member:@member"
             }
           ]
+        },
+        {
+          "name": "analytics",
+          "description": "Admin: community statistics from daily counts",
+          "audience": "admin",
+          "permission": "Manage Server",
+          "about": "Admins see community statistics built from daily counts only (no message content, no member ids): joins and leaves, messages per channel, active members, moderation, security and tickets, plus an optional AI-written report from those numbers. Off until an admin enables analytics (Add-ons, Analytics). Charts and CSV export are in the dashboard.",
+          "privacyLink": true,
+          "subcommands": [
+            {
+              "name": "summary",
+              "description": "Totals and trends",
+              "audience": "admin",
+              "options": [
+                {
+                  "name": "days",
+                  "type": "number",
+                  "required": false,
+                  "description": "How many days (1-90, default 7)",
+                  "min": 1,
+                  "max": 90
+                }
+              ],
+              "example": "/analytics summary"
+            },
+            {
+              "name": "report",
+              "description": "AI-written report from the counts (advisory)",
+              "audience": "admin",
+              "options": [
+                {
+                  "name": "days",
+                  "type": "number",
+                  "required": false,
+                  "description": "How many days (1-90, default 7)",
+                  "min": 1,
+                  "max": 90
+                }
+              ],
+              "example": "/analytics report"
+            }
+          ]
         }
       ]
     },

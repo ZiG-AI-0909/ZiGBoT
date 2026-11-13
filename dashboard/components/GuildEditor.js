@@ -7,6 +7,7 @@ import GreetingsCard from './GreetingsCard';
 import LanguageSelect from './LanguageSelect';
 import PersonaTemplates from './PersonaTemplates';
 import AddonsTab from './AddonsTab';
+import AnalyticsTab from './AnalyticsTab';
 
 const TABS = [
     { id: 'behaviour', label: 'AI behaviour' },
@@ -17,6 +18,7 @@ const TABS = [
     { id: 'moderation', label: 'Moderation' },
     { id: 'tickets', label: 'Tickets' },
     { id: 'addons', label: 'Add-ons' },
+    { id: 'analytics', label: '📊 Analytics' },
     { id: 'antinuke', label: '🛡️ Anti-Nuke' },
     { id: 'music', label: '🎵 Music' },
     { id: 'voice', label: '🎙️ Voice' },
@@ -281,6 +283,7 @@ export default function GuildEditor({ initial, meta }) {
                 {tab === 'features' ? <FeaturesTab draft={draft} set={set} isHome={initial.guild.isHome} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'moderation' ? <ModerationTab draft={draft} set={set} errors={fieldErrors} /> : null}
                 {tab === 'tickets' ? <TicketsTab draft={draft} set={set} errors={fieldErrors} channels={channels} roles={roles} categories={initial.ticketCategories || []} /> : null}
+                {tab === 'analytics' ? <AnalyticsTab guildId={initial.guild.id} enabled={Boolean(saved?.feature_settings?.analytics?.analytics_enabled)} /> : null}
                 {tab === 'addons' ? <AddonsTab draft={draft} set={set} errors={fieldErrors} channels={channels} roles={roles} /> : null}
                 {tab === 'music' ? <MusicTab guildId={initial.guild.id} draft={draft} set={set} errors={fieldErrors} roles={roles} channels={channels} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'premium' ? <PremiumTab guildId={initial.guild.id} plan={plan} setPlan={setPlan} perks={meta.perks} contactUrl={meta.contactUrl} toast={toast} /> : null}
