@@ -91,8 +91,8 @@ export async function loadOverview() {
             purchases: purchaseRows.data ? stats.monthlySeries(purchaseRows.data, { date: (r) => r.verified_at }) : null,
             revenue: payments.available ? stats.monthlySeries(captured, { date: (p) => p.created_at * 1000, value: (p) => ((Number(p.amount) || 0) - (Number(p.amount_refunded) || 0)) / 100 }) : null,
             plans: purchaseRows.data ? [
-                { key: 'monthly', label: 'Monthly (₹399)', value: purchaseRows.data.filter((p) => p.plan_period === 'monthly').length },
-                { key: 'yearly', label: 'Yearly (₹3,999)', value: purchaseRows.data.filter((p) => p.plan_period === 'yearly').length }
+                { key: 'monthly', label: 'Monthly', value: purchaseRows.data.filter((p) => p.plan_period === 'monthly').length },
+                { key: 'yearly', label: 'Yearly', value: purchaseRows.data.filter((p) => p.plan_period === 'yearly').length }
             ] : null,
             ratings: feedbackStats?.ratingDistribution ?? null,
             incidents: events.data ? stats.monthlySeries(events.data, { date: (r) => r.created_at }) : null

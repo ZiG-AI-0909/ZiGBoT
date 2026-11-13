@@ -2,7 +2,8 @@ import { handler, json, readJson, HttpError } from '@/lib/http';
 import workflows from '@/lib/studio/workflows';
 import { ownedWorkflow } from '@/lib/studio/workflowServer';
 import market from '@/lib/studio/marketplace';
-import { requireStudioUser, getPlan } from '@/lib/studio/server';
+import { requireStudioUser } from '@/lib/studio/server';
+import { getEffectivePlan } from '@/lib/studio/entitlementServer';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,11 +11,12 @@ export const dynamic = 'force-dynamic';
 // (mocked Discord, no network, no AI, bounded loops / steps / time).
 // At most LIMITS.runsPerDay test runs per user per day; 20 kept per workflow.
 export const POST = handler(async (request, { params }) => {
-    const { supabase, ownerId, project, workflow } = await ownedWorkflow(params, await requireStudioUser());
+    const session = await requireStudioUser();
+    const { supabase, ownerId, project, workflow } = await ownedWorkflow(params, session);
     const since = new Date(Date.now() - 86400000).toISOString();
     const { count } = await supabase.from('studio_workflow_runs').select('id', { count: 'exact', head: true }).eq('owner_id', ownerId).gte('created_at', since);
     // Plan limit (Free = workflows.LIMITS.runsPerDay = 200).
-    const perDay = market.limitsFor(await getPlan(supabase, ownerId)).simulatorRunsPerDay;
+    const perDay = market.limitsFor(await getEffectivePlan(session)).simulatorRunsPerDay;
     if ((count || 0) >= perDay) throw new HttpError(429, `You can test ${perDay} times per day on your plan. Try again tomorrow.`);
     const body = await readJson(request, 16 * 1024);
     const result = workflows.simulate(workflow.graph, { triggerId: body?.triggerId, event: body?.event });

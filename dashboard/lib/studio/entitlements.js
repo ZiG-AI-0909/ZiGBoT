@@ -69,9 +69,10 @@ function paywall({ priceLabels = {}, billingEnabled = false } = {}) {
             'Higher daily limits for AI and simulator runs',
             'Everything in ZiGBoT Premium for your server'
         ],
+        // Yearly first and recommended: it saves the most (computed from the labels).
         plans: [
-            { id: 'monthly', label: 'Premium monthly', price: priceLabels.monthly || null },
-            { id: 'yearly', label: 'Premium yearly', price: priceLabels.yearly || null }
+            { id: 'yearly', label: 'Premium yearly', price: priceLabels.yearly || null, recommended: true, saving: require('../pricing').yearlySavings(priceLabels)?.text || null },
+            { id: 'monthly', label: 'Premium monthly', price: priceLabels.monthly || null }
         ],
         howToUpgrade: billingEnabled
             ? 'Open one of your servers in the dashboard, go to Premium and subscribe. Automations unlock for every server admin of a Premium server.'

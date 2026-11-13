@@ -25,7 +25,8 @@ export default function PremiumPaywall({ info, onClose }) {
                 <div className="paywall-plans">
                     {(info.plans || []).map((p) => (
                         <div key={p.id} className={`paywall-plan${p.id === 'yearly' ? ' is-best' : ''}`}>
-                            <strong>{p.label}</strong>
+                            <strong>{p.label}{p.recommended ? ' ⭐ Best value' : ''}</strong>
+                            {p.saving ? <span className="help" style={{ color: 'var(--ok)' }}>{p.saving}</span> : null}
                             <span className="paywall-price">{p.price || 'See the Premium tab'}</span>
                         </div>
                     ))}

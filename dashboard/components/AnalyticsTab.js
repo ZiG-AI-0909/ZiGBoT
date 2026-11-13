@@ -27,8 +27,11 @@ function Bars({ rows, series }) {
     );
 }
 
-export default function AnalyticsTab({ guildId, enabled }) {
-    const [days, setDays] = useState(30);
+export default function AnalyticsTab({ guildId, enabled, premium: premiumProp = false }) {
+    // The server decides (it answers with the real plan); the prop only avoids a flash.
+    const [serverPremium, setServerPremium] = useState(null);
+    const premium = serverPremium ?? premiumProp;
+    const [days, setDays] = useState(7);
     const [state, setState] = useState({ loading: true, rows: [], error: null });
 
     useEffect(() => {
@@ -38,7 +41,7 @@ export default function AnalyticsTab({ guildId, enabled }) {
             .then(async (res) => {
                 const body = await res.json().catch(() => ({}));
                 if (!res.ok) throw new Error(body.error || 'Could not load analytics.');
-                if (alive) setState({ loading: false, rows: body.rows || [], error: null });
+                if (alive) { setState({ loading: false, rows: body.rows || [], error: null }); if (typeof body.premium === 'boolean') setServerPremium(body.premium); }
             })
             .catch((error) => alive && setState({ loading: false, rows: [], error: error.message }));
         return () => { alive = false; };
@@ -55,12 +58,14 @@ export default function AnalyticsTab({ guildId, enabled }) {
                     <span className="label">Period</span>
                     <select id="analytics-days" value={days} onChange={(e) => setDays(Number(e.target.value))}>
                         <option value={7}>Last 7 days</option>
-                        <option value={30}>Last 30 days</option>
-                        <option value={90}>Last 90 days</option>
+                        <option value={30} disabled={!premium}>Last 30 days{premium ? '' : ' (Premium)'}</option>
+                        <option value={90} disabled={!premium}>Last 90 days{premium ? '' : ' (Premium)'}</option>
+                        {premium ? <option value={365}>Last year</option> : null}
                     </select>
                 </label>
-                <a className="btn" href={`/api/guilds/${guildId}/analytics?days=${days}&format=csv`} download>Export CSV</a>
+                {premium ? <a className="btn" href={`/api/guilds/${guildId}/analytics?days=${days}&format=csv`} download>Export CSV</a> : null}
             </div>
+            {!premium ? <p className="help">Free shows the last 7 days. 💎 Premium unlocks full history and CSV export.</p> : null}
             {state.loading ? <p className="help" aria-live="polite">Loading…</p> : null}
             {state.error ? <p className="error" role="alert">{state.error}</p> : null}
             {!state.loading && !state.error && state.rows.length === 0 ? <p className="help">No data yet.</p> : null}

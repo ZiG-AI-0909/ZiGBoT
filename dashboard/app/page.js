@@ -14,6 +14,7 @@ import { env } from '@/lib/env';
 import { publicServerCount } from '@/lib/publicStats';
 import landing from '@/lib/landing';
 import seo from '@/lib/seo';
+import pricing from '@/lib/pricing';
 
 // Title, description, canonical and sharing tags: lib/seo.js.
 export const metadata = seo.pageMetadata('/');
@@ -70,6 +71,7 @@ export default async function Home({ searchParams }) {
     } catch {
         prices = { monthly: '', yearly: '' };
     }
+    const savings = pricing.yearlySavings(prices);
     const servers = await publicServerCount();
     const dashboardHref = current ? '/dashboard' : '/auth/login';
     const studioHref = current ? '/studio' : '/auth/login';
@@ -227,9 +229,9 @@ export default async function Home({ searchParams }) {
                         <p className="muted">Free does the vibes. Premium turns the volume up — per server. Admins of a Premium server can also activate their ZiGBoT Studio automations.</p>
                         {prices.monthly || prices.yearly ? (
                             <p className="l-prices">
+                                {prices.yearly ? <span><strong>{prices.yearly}</strong> yearly{savings ? <span className="pill pill-premium" style={{ marginLeft: 8 }}>Best value · {savings.text}</span> : null}</span> : null}
+                                {prices.monthly && prices.yearly ? <span className="muted"> · or </span> : null}
                                 {prices.monthly ? <span><strong>{prices.monthly}</strong> monthly</span> : null}
-                                {prices.monthly && prices.yearly ? <span className="muted"> · </span> : null}
-                                {prices.yearly ? <span><strong>{prices.yearly}</strong> yearly</span> : null}
                             </p>
                         ) : null}
                         <table className="l-compare">

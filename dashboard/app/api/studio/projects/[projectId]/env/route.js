@@ -3,6 +3,9 @@ import secrets from '@/lib/studio/secrets';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireStudioUser, getOwnedProject } from '@/lib/studio/server';
 
+import { getEffectivePlan } from '@/lib/studio/entitlementServer';
+import market from '@/lib/studio/marketplace';
+
 export const dynamic = 'force-dynamic';
 
 // Encrypted environment variables for the owner's project (same storage and
@@ -10,14 +13,14 @@ export const dynamic = 'force-dynamic';
 // never returned or logged; answers carry name + last 4 only). The bot
 // token itself is managed by ../token (checked with Discord first).
 const RESERVED = new Set(['DISCORD_TOKEN']);
-const MAX_VARS = 50;
 const MAX_VALUE = 4096;
 
 async function owned(params) {
     const { projectId } = await params;
-    const { supabase, ownerId } = await requireStudioUser();
+    const session = await requireStudioUser();
+    const { supabase, ownerId } = session;
     const project = await getOwnedProject(supabase, ownerId, projectId);
-    return { project, ownerId, db: createServiceClient() };
+    return { project, ownerId, session, db: createServiceClient() };
 }
 
 export const GET = handler(async (_request, { params }) => {
@@ -29,7 +32,8 @@ export const GET = handler(async (_request, { params }) => {
 
 // PUT { name, value }
 export const PUT = handler(async (request, { params }) => {
-    const { project, ownerId, db } = await owned(params);
+    const { project, ownerId, session, db } = await owned(params);
+    const MAX_VARS = market.limitsFor(await getEffectivePlan(session)).envVars;
     if (!process.env.STUDIO_SECRETS_KEY) throw new HttpError(503, 'Variable storage is not set up on this server yet (STUDIO_SECRETS_KEY).');
     const body = await readJson(request, 8192);
     const name = String(body?.name ?? '').trim();
@@ -38,7 +42,7 @@ export const PUT = handler(async (request, { params }) => {
     if (RESERVED.has(name)) throw new HttpError(422, 'Set the bot token on the Customize page (it is checked with Discord first).', { fieldErrors: { name: 'Reserved.' } });
     if (!value || value.length > MAX_VALUE) throw new HttpError(422, `Values are 1-${MAX_VALUE} characters.`, { fieldErrors: { value: 'Invalid value.' } });
     const { data: existing } = await db.from('studio_secrets').select('name').eq('project_id', project.id).eq('owner_id', ownerId);
-    if (!(existing || []).some((v) => v.name === name) && (existing || []).length >= MAX_VARS) throw new HttpError(403, `At most ${MAX_VARS} variables per project.`);
+    if (!(existing || []).some((v) => v.name === name) && (existing || []).length >= MAX_VARS) throw new HttpError(403, `Your plan allows ${MAX_VARS} variables per project${MAX_VARS < 50 ? '; Premium allows 50' : ''}.`);
     let sealed;
     try {
         sealed = secrets.encryptSecret(value, { key: process.env.STUDIO_SECRETS_KEY, aad: secrets.aadFor(project.id, name) });

@@ -9,8 +9,8 @@ const { FEEDBACK_OPTIONS, optionLabel } = shared;
 
 // Every form ZiGBoT has. New forms get a row here.
 const FORMS = [
-    { plan: 'monthly', name: 'First-Time Premium Feedback — ₹399 plan' },
-    { plan: 'yearly', name: 'First-Time Premium Feedback — ₹3,999 plan' }
+    { plan: 'monthly', name: 'First-Time Premium Feedback — Monthly plan' },
+    { plan: 'yearly', name: 'First-Time Premium Feedback — Yearly plan' }
 ];
 const formName = (plan) => FORMS.find((f) => f.plan === plan)?.name || 'Premium feedback';
 const FILTER_KEYS = ['q', 'plan', 'status', 'rating', 'from', 'to', 'issue', 'archived', 'sort'];
@@ -43,10 +43,10 @@ export default async function FormsAndResponses({ searchParams }) {
                     <div className="adm-grid">
                         <BarChart title="Submissions per month" data={data.trend} unavailable="No data." />
                         <section className="card stack">
-                            <h3 style={{ margin: 0, fontSize: 15 }}>₹399 vs ₹3,999</h3>
+                            <h3 style={{ margin: 0, fontSize: 15 }}>Monthly vs Yearly</h3>
                             <div className="adm-table-wrap">
                                 <table className="adm-table">
-                                    <thead><tr><th /><th>All</th><th>₹399</th><th>₹3,999</th></tr></thead>
+                                    <thead><tr><th /><th>All</th><th>Monthly</th><th>Yearly</th></tr></thead>
                                     <tbody>
                                         <tr><td>Satisfaction (1-5)</td><td className="num">{show(st.all.avgRating)}</td><td className="num">{show(st.monthly.avgRating)}</td><td className="num">{show(st.yearly.avgRating)}</td></tr>
                                         <tr><td>Activation ease (1-5)</td><td className="num">{show(st.all.avgEase)}</td><td className="num">{show(st.monthly.avgEase)}</td><td className="num">{show(st.yearly.avgEase)}</td></tr>
@@ -109,7 +109,7 @@ export default async function FormsAndResponses({ searchParams }) {
                                 <td>{formName(r.plan_period)}</td>
                                 <td>{r.username || <span className="help">unknown</span>}</td>
                                 <td>{r.discord_user_id ? <code>{r.discord_user_id}</code> : '—'}</td>
-                                <td>{r.plan_period === 'yearly' ? '₹3,999' : '₹399'}</td>
+                                <td>{r.plan_period === 'yearly' ? 'Yearly' : 'Monthly'}</td>
                                 <td><When at={r.submitted_at} /></td>
                                 <td className="num">{r.overall_rating}★</td>
                                 <td><Status value={r.archived_at ? 'archived' : r.review_status} /></td>

@@ -8,6 +8,9 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { runAgent } from '@/lib/studio/agentProviders';
 import { requireStudioUser, getOwnedProject } from '@/lib/studio/server';
 
+import { getEffectivePlan } from '@/lib/studio/entitlementServer';
+import market from '@/lib/studio/marketplace';
+
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
@@ -16,7 +19,9 @@ const since = () => new Date(Date.now() - 86400000).toISOString();
 // GET: this project's recent agent runs (usage tracking).
 export const GET = handler(async (_request, { params }) => {
     const { projectId } = await params;
-    const { supabase, ownerId } = await requireStudioUser();
+    const session = await requireStudioUser();
+    const { supabase, ownerId } = session;
+    const agentRunsPerDay = market.limitsFor(await getEffectivePlan(session)).agentRunsPerDay;
     const project = await getOwnedProject(supabase, ownerId, projectId);
     const { data } = await supabase.from('studio_agent_runs').select('id, provider, model, status, error, input_tokens, output_tokens, duration_ms, proposal_id, created_at').eq('project_id', project.id).eq('owner_id', ownerId).order('id', { ascending: false }).limit(20);
     return json({ runs: data || [] });
@@ -45,7 +50,7 @@ export const POST = handler(async (request, { params }) => {
     // Per-user daily cap (claimed first: the run row is the claim).
     let runId = null;
     const allowed = await claimQuota({
-        limit: agents.LIMITS.runsPerDay,
+        limit: agentRunsPerDay,
         insert: async () => {
             const { data, error } = await db.from('studio_agent_runs').insert({ owner_id: ownerId, project_id: project.id, provider: stored.provider, model: resolved.model }).select('id').single();
             if (error) throw new HttpError(503, 'Agent storage is not set up yet: run the newest files in supabase/migrations.');
@@ -58,7 +63,7 @@ export const POST = handler(async (request, { params }) => {
         }
     });
     const finish = (patch) => db.from('studio_agent_runs').update(patch).eq('id', runId).eq('owner_id', ownerId);
-    if (!allowed) { await finish({ status: 'failed', error: 'daily limit' }); throw new HttpError(429, `You can run coding agents ${agents.LIMITS.runsPerDay} times per day. Try again tomorrow.`); }
+    if (!allowed) { await finish({ status: 'failed', error: 'daily limit' }); throw new HttpError(429, `You can run coding agents ${agentRunsPerDay} times per day on your plan. Try again tomorrow.`); }
 
     const started = Date.now();
     try {

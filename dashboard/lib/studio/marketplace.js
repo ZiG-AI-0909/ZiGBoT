@@ -15,9 +15,9 @@ const projectFiles = require('./files');
 const { PLANS } = require('./projects');
 
 const PLAN_LIMITS = Object.freeze({
-    free: { projects: PLANS.free.projects, aiPerDay: 20, templates: 1, simulatorRunsPerDay: 200 },
-    developer: { projects: PLANS.developer.projects, aiPerDay: 100, templates: 10, simulatorRunsPerDay: 1000 },
-    premium: { projects: PLANS.premium.projects, aiPerDay: 300, templates: 50, simulatorRunsPerDay: 5000 }
+    free: { projects: PLANS.free.projects, aiPerDay: 20, templates: 1, simulatorRunsPerDay: 200, agentRunsPerDay: 10, runners: 1, envVars: 5, analyticsDays: 7 },
+    developer: { projects: PLANS.developer.projects, aiPerDay: 100, templates: 10, simulatorRunsPerDay: 1000, agentRunsPerDay: 50, runners: 3, envVars: 50, analyticsDays: 400 },
+    premium: { projects: PLANS.premium.projects, aiPerDay: 300, templates: 50, simulatorRunsPerDay: 5000, agentRunsPerDay: 100, runners: 3, envVars: 50, analyticsDays: 400 }
 });
 const limitsFor = (plan) => PLAN_LIMITS[plan] || PLAN_LIMITS.free;
 

@@ -26,7 +26,7 @@ export default async function FeedbackResponse({ params }) {
                 <section className="card stack">
                     <h2 style={{ margin: 0 }}>Customer &amp; purchase</h2>
                     <dl className="adm-dl">
-                        <dt>Form</dt><dd>First-Time Premium Feedback — {r.plan_period === 'yearly' ? '₹3,999' : '₹399'} plan</dd>
+                        <dt>Form</dt><dd>First-Time Premium Feedback — {r.plan_period === 'yearly' ? 'Yearly' : 'Monthly'} plan</dd>
                         <dt>User</dt><dd>{profile?.username || 'unknown'}{r.user_id ? <> · <a href={`/admin/users/${r.user_id}`}>profile</a></> : null}</dd>
                         <dt>Discord user ID</dt><dd>{r.discord_user_id ? <code>{r.discord_user_id}</code> : '—'}</dd>
                         <dt>Plan (verified)</dt><dd>{planLabel(r)} · {stats.formatMoney(r.amount_paise, r.currency || 'INR')}</dd>

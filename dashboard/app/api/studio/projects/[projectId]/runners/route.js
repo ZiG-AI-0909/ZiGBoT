@@ -5,6 +5,9 @@ import { env } from '@/lib/env';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireStudioUser, getOwnedProject } from '@/lib/studio/server';
 
+import { getEffectivePlan } from '@/lib/studio/entitlementServer';
+import market from '@/lib/studio/marketplace';
+
 export const dynamic = 'force-dynamic';
 
 // GET: this project's self-hosted runners, recent commands and log lines.
@@ -29,14 +32,16 @@ export const GET = handler(async (_request, { params }) => {
 // POST { action: 'add', name } | { action: 'command', runnerId, command } | { action: 'remove', runnerId }
 export const POST = handler(async (request, { params }) => {
     const { projectId } = await params;
-    const { supabase, ownerId } = await requireStudioUser();
+    const session = await requireStudioUser();
+    const { supabase, ownerId } = session;
     const project = await getOwnedProject(supabase, ownerId, projectId);
     const body = await readJson(request);
     const db = createServiceClient();
 
     if (body?.action === 'add') {
         const { count } = await db.from('studio_runners').select('id', { count: 'exact', head: true }).eq('project_id', project.id).eq('owner_id', ownerId).neq('status', 'revoked');
-        if ((count || 0) >= runner.LIMITS.runnersPerProject) throw new HttpError(403, `At most ${runner.LIMITS.runnersPerProject} runners per project. Remove one first.`);
+        const maxRunners = market.limitsFor(await getEffectivePlan(session)).runners;
+        if ((count || 0) >= maxRunners) throw new HttpError(403, `Your plan allows ${maxRunners} runner(s) per project. Remove one first${maxRunners < 3 ? ', or upgrade to Premium for more' : ''}.`, { code: 'plan_limit' });
         const code = runner.newPairingCode();
         const expiresAt = new Date(Date.now() + runner.LIMITS.pairingMinutes * 60_000).toISOString();
         const { data, error } = await db.from('studio_runners').insert({ project_id: project.id, owner_id: ownerId, name: runner.cleanName(body.name), status: 'pairing', pairing_code_hash: runner.hashPairingCode(code), pairing_expires_at: expiresAt }).select('id, name').single();

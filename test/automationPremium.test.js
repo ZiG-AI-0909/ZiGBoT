@@ -46,8 +46,8 @@ test('paywall explains why, what it unlocks, plans and how to upgrade', () => {
     const p = ent.paywall({ priceLabels: { monthly: '₹99/mo' }, billingEnabled: true });
     assert.equal(p.code, 'premium_required');
     assert.ok(p.why && p.unlocks.length >= 3 && p.howToUpgrade);
-    assert.deepEqual(p.plans.map((x) => x.id), ['monthly', 'yearly']);
-    assert.equal(p.plans[0].price, '₹99/mo');
+    assert.deepEqual(p.plans.map((x) => x.id), ['yearly', 'monthly'], 'yearly first: it saves the most');
+    assert.equal(p.plans[1].price, '₹99/mo');
     assert.match(ent.paywall({ billingEnabled: false }).howToUpgrade, /not switched on/);
 });
 

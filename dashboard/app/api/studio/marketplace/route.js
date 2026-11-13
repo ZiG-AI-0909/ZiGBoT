@@ -2,7 +2,8 @@ import { handler, json, readJson, HttpError } from '@/lib/http';
 import market from '@/lib/studio/marketplace';
 import { createServiceClient } from '@/lib/supabase/server';
 import { isSuperAdmin } from '@/lib/admin';
-import { requireStudioUser, getOwnedProject, getPlan } from '@/lib/studio/server';
+import { requireStudioUser, getOwnedProject } from '@/lib/studio/server';
+import { getEffectivePlan } from '@/lib/studio/entitlementServer';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +16,7 @@ export const GET = handler(async () => {
     const { supabase, ownerId } = current;
     const { data, error } = await supabase.from('studio_templates').select(LIST).order('created_at', { ascending: false }).limit(200);
     if (error) throw new HttpError(503, 'Marketplace storage is not set up yet: run the newest files in supabase/migrations.');
-    const plan = await getPlan(supabase, ownerId);
+    const plan = await getEffectivePlan(current);
     let review = [];
     if (isSuperAdmin(current.discordId)) {
         const { data: queue } = await createServiceClient().from('studio_templates').select(LIST).eq('status', 'pending_review').order('created_at').limit(100);
@@ -34,12 +35,13 @@ export const GET = handler(async () => {
 // goes to "pending review". Written with the service role so the status
 // cannot be set by the browser.
 export const POST = handler(async (request) => {
-    const { supabase, ownerId } = await requireStudioUser();
+    const session = await requireStudioUser();
+    const { supabase, ownerId } = session;
     const body = await readJson(request, 8192);
     const project = await getOwnedProject(supabase, ownerId, body?.projectId);
     const listing = market.validateListing(body);
     if (listing.errors) throw new HttpError(422, 'Some fields need fixing.', { fieldErrors: listing.errors });
-    const plan = await getPlan(supabase, ownerId);
+    const plan = await getEffectivePlan(session);
     const db = createServiceClient();
     const { count } = await db.from('studio_templates').select('id', { count: 'exact', head: true }).eq('owner_id', ownerId).in('status', ['pending_review', 'published']);
     if ((count || 0) >= market.limitsFor(plan).templates) throw new HttpError(403, `Your plan allows ${market.limitsFor(plan).templates} published template(s).`, { code: 'plan_limit' });

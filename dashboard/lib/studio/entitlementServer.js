@@ -73,6 +73,18 @@ export async function getEntitlementForOwner(ownerId) {
     }
 }
 
+/**
+ * The plan whose limits apply in Studio. One Premium for both products:
+ * a ZiGBoT Premium server (or home server / bot owner) unlocks Studio
+ * Premium limits for its admins; a Studio plan counts only while unexpired.
+ * 'free' | 'developer' | 'premium'. Fails closed to 'free'.
+ */
+export async function getEffectivePlan(session) {
+    const entitlement = await getAutomationEntitlement(session);
+    if (!entitlement.premium) return 'free';
+    return entitlement.source === 'studio_developer' ? 'developer' : 'premium';
+}
+
 export function paywallBody() {
     return ent.paywall({ priceLabels: env.premiumPriceLabels, billingEnabled: env.billingEnabled });
 }

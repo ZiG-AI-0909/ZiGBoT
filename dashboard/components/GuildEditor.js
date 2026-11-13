@@ -9,6 +9,7 @@ import PersonaTemplates from './PersonaTemplates';
 import AddonsTab from './AddonsTab';
 import AnalyticsTab from './AnalyticsTab';
 import { useSectionNav } from './AppShell';
+import { yearlySavings } from '@/lib/pricing';
 
 const TABS = [
     { id: 'behaviour', label: 'AI behaviour' },
@@ -300,7 +301,7 @@ export default function GuildEditor({ initial, meta }) {
                 {tab === 'features' ? <FeaturesTab draft={draft} set={set} isHome={initial.guild.isHome} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'moderation' ? <ModerationTab draft={draft} set={set} errors={fieldErrors} /> : null}
                 {tab === 'tickets' ? <TicketsTab draft={draft} set={set} errors={fieldErrors} channels={channels} roles={roles} categories={initial.ticketCategories || []} /> : null}
-                {tab === 'analytics' ? <AnalyticsTab guildId={initial.guild.id} enabled={Boolean(saved?.feature_settings?.analytics?.analytics_enabled)} /> : null}
+                {tab === 'analytics' ? <AnalyticsTab guildId={initial.guild.id} enabled={Boolean(saved?.feature_settings?.analytics?.analytics_enabled)} premium={premium} /> : null}
                 {tab === 'addons' ? <AddonsTab draft={draft} set={set} errors={fieldErrors} channels={channels} roles={roles} guildId={initial.guild.id} /> : null}
                 {tab === 'music' ? <MusicTab guildId={initial.guild.id} draft={draft} set={set} errors={fieldErrors} roles={roles} channels={channels} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'premium' ? <PremiumTab guildId={initial.guild.id} plan={plan} setPlan={setPlan} perks={meta.perks} contactUrl={meta.contactUrl} toast={toast} /> : null}
@@ -1336,13 +1337,15 @@ function PremiumTab({ guildId, plan, setPlan, perks, contactUrl, toast }) {
                 </div>
                 {canBuy ? (
                     plan.billingEnabled ? (
-                        <div className="row">
-                            <button className="btn btn-primary btn-lg" onClick={() => checkout('monthly')} disabled={Boolean(busy)}>
-                                {busy === 'monthly' ? 'Opening Razorpay…' : `Monthly${plan.prices?.monthly ? ` · ${plan.prices.monthly}` : ''}`}
-                            </button>
+                        <div className="row" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+                            {/* Yearly first: it is the better deal (saving computed from the price labels). */}
                             <button className="btn btn-primary btn-lg" onClick={() => checkout('yearly')} disabled={Boolean(busy)}>
                                 {busy === 'yearly' ? 'Opening Razorpay…' : `Yearly${plan.prices?.yearly ? ` · ${plan.prices.yearly}` : ''}`}
                             </button>
+                            <button className="btn btn-lg" onClick={() => checkout('monthly')} disabled={Boolean(busy)}>
+                                {busy === 'monthly' ? 'Opening Razorpay…' : `Monthly${plan.prices?.monthly ? ` · ${plan.prices.monthly}` : ''}`}
+                            </button>
+                            {yearlySavings(plan.prices || {}) ? <span className="pill pill-premium">⭐ Best value: {yearlySavings(plan.prices).text}</span> : null}
                             {watching || plan.checkoutPending ? (
                                 <button className="btn" onClick={refresh} disabled={Boolean(busy)}>{busy === 'refresh' ? 'Checking…' : 'I’ve paid — check now'}</button>
                             ) : null}
