@@ -214,3 +214,23 @@ test('versions: owner-only RLS and pruned to the newest 50 per project', async (
     await as(A);
     await db.query('delete from public.studio_projects where id = $1', [id]);
 });
+
+// Phase 5 tables: workflows and runs are owner-only; 20 workflows per project.
+test('workflows: owner-only RLS, run history owner-only, 20 per project', async () => {
+    await as(A);
+    const { rows: [{ id }] } = await insertProject(A, 'Flow bot');
+    const { rows: [{ id: wfId }] } = await db.query("insert into public.studio_workflows (project_id, owner_id, name) values ($1, $2, 'Greeter') returning id", [id, A]);
+    await db.query('insert into public.studio_workflow_runs (workflow_id, project_id, owner_id, ok) values ($1, $2, $3, true)', [wfId, id, A]);
+    await as(B);
+    assert.equal((await db.query('select * from public.studio_workflows where project_id = $1', [id])).rows.length, 0);
+    assert.equal((await db.query('select * from public.studio_workflow_runs where workflow_id = $1', [wfId])).rows.length, 0);
+    assert.equal((await db.query("update public.studio_workflows set name = 'hacked' where id = $1 returning id", [wfId])).rows.length, 0);
+    await assert.rejects(db.query("insert into public.studio_workflows (project_id, owner_id, name) values ($1, $2, 'evil')", [id, B]), /row-level security/);
+    await assert.rejects(db.query('insert into public.studio_workflow_runs (workflow_id, project_id, owner_id, ok) values ($1, $2, $3, true)', [wfId, id, B]), /row-level security/);
+    await as(A);
+    for (let i = 0; i < 19; i += 1) await db.query('insert into public.studio_workflows (project_id, owner_id, name) values ($1, $2, $3)', [id, A, `w${i}`]);
+    await assert.rejects(db.query("insert into public.studio_workflows (project_id, owner_id, name) values ($1, $2, 'one too many')", [id, A]), /studio_workflow_limit/);
+    for (let i = 0; i < 22; i += 1) await db.query('insert into public.studio_workflow_runs (workflow_id, project_id, owner_id, ok) values ($1, $2, $3, true)', [wfId, id, A]);
+    assert.equal((await db.query('select count(*)::int as n from public.studio_workflow_runs where workflow_id = $1', [wfId])).rows[0].n, 20);
+    await db.query('delete from public.studio_projects where id = $1', [id]);
+});

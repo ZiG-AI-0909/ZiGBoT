@@ -60,11 +60,26 @@ Status: WORKING (a named test exercises it), PARTIAL, MISSING, NOT AVAILABLE (ne
 | Checks: validate structure, syntax check, lint (static only) | WORKING | `lib/studio/checks.js` (TypeScript parser, JSON.parse, text rules; nothing executed); test `checks: generated projects pass; syntax errors and leaks are found without running anything` |
 | Run tests / npm install | NOT AVAILABLE | Needs a sandbox to run customer code; shown as not available in the Checks panel |
 
+## Phase 5: Visual builder
+
+| Feature | Status | Proof |
+|---|---|---|
+| React Flow canvas: drag/drop, connect, edit, duplicate, delete, undo/redo | WORKING | `components/studio/WorkflowBuilder.js` (`@xyflow/react` 12.3.6), page `/studio/[id]/builder` (owner check). Built, not browser-tested |
+| Blocks: 10 triggers, 9 conditions, 10 actions, 7 AI, 8 logic, 4 integrations | WORKING | Fixed catalog in `lib/studio/workflows.js`; no code block exists; test `catalog covers the spec families and is plain data` |
+| Save/load, import/export JSON | WORKING | `supabase/migrations/20261115000004_studio_workflows.sql` (owner-only RLS, 20 per project, 256 KB); routes `workflows`, `workflows/[id]`, `workflows/[id]/export` (GET); test `workflows: owner-only RLS, run history owner-only, 20 per project` |
+| Validation: inputs, cycles, unreachable blocks, unknown blocks/settings | WORKING | `validateWorkflow`; tests `validation: ...` (2) |
+| Simulator on a mocked Discord (test workflow) | WORKING | `simulate`: no Discord, network or AI calls; tests `simulator: ...` (3) |
+| No infinite loops: loops max 50, 1000 steps, 5 s | WORKING | test `simulator: loops are capped at 50 and runs stop at the step and time budgets (no infinite loop)` |
+| HTTP block: approved hosts + SSRF protection | WORKING | `checkUrlShape` / `checkHttpTarget` (https only, no IPs/credentials/odd ports, every DNS answer must be public); test `HTTP block: allowlist and SSRF protection (127.0.0.1, 169.254.169.254, private DNS answers)` |
+| Execution history and errors | WORKING | `studio_workflow_runs` (20 per workflow), shown in the builder |
+| Per-user limits | WORKING | 200 simulator runs per user per day (`simulate` route), 20 workflows per project (database trigger) |
+| Export workflow as code | PARTIAL | discord.js (JavaScript) module, compiles (test `export: ...`); written into discord.js JS projects. TypeScript and discord.py projects: download only, not converted |
+| AI blocks running for real | NOT AVAILABLE | Simulated in the builder; exported code needs the bot owner's own AI provider (Phase 6 covers Studio's AI creator) |
+
 ## Later phases
 
 | Phase | Status |
 |---|---|
-| 5 Visual builder | MISSING |
 | 6 AI bot creator | MISSING |
 | 7 Deployment foundation | MISSING (real hosting NOT AVAILABLE) |
 | 8 Marketplace and billing | MISSING (payments BLOCKED) |
