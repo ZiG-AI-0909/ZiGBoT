@@ -34,6 +34,7 @@ export default async function StudioProject({ params }) {
                     <Link className="btn" href={`/studio/${project.id}/code`}>Open Code Studio</Link>
                     <Link className="btn" href={`/studio/${project.id}/builder`}>Visual builder</Link>
                     <Link className="btn" href={`/studio/${project.id}/ai`}>AI creator</Link>
+                    <Link className="btn" href={`/studio/${project.id}/deployments`}>Deployments</Link>
                 </div>
                 <p className="help">Start it on your own computer: {framework?.start}. The zip never contains your bot token: copy <code>.env.example</code> to <code>.env</code> and fill it in.</p>
             </div>

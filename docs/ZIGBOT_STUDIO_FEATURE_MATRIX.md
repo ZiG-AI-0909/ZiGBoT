@@ -88,6 +88,18 @@ Status: WORKING (a named test exercises it), PARTIAL, MISSING, NOT AVAILABLE (ne
 | Context isolated per project | WORKING | Only this project's files (owner + project filters + RLS); migration `20261115000005_studio_ai.sql`, test `ai: proposals and usage are owner-only; ...` |
 | AI creator page | WORKING | `/studio/[id]/ai` (`components/studio/AiCreator.js`). Built, not browser-tested |
 
+## Phase 7: Deployment foundation
+
+| Feature | Status | Proof |
+|---|---|---|
+| Runtime provider interface (start/stop/restart/deploy/rollback/logs/metrics) | WORKING | `lib/studio/runtime.js` `assertProvider`; test `provider interface: ...` |
+| MockProvider for tests | WORKING | `MockProvider` (in memory); used by the history and rollback tests |
+| Deployment history (newest 10) and rollback | WORKING (MockProvider) | `createDeployments`: versions, superseded/failed/rolled_back, rollback re-deploys the previous working version's files; tests `deploy history with MockProvider: ...`, `rollback with MockProvider: ...`. Migration `20261115000006_studio_deployments.sql` (owner reads, server writes, stored files not readable by browsers); test `deployments: owner reads (not the stored files), only the service role writes` |
+| Secrets kept out of deployments | WORKING | .env/keys never shipped or stored; env values go to the provider only, never into history (same tests) |
+| Deployments page | WORKING | `/studio/[id]/deployments` shows "Hosting coming soon", disabled controls, history, .zip download. Built, not browser-tested |
+| Real hosting (running customer bots) | NOT AVAILABLE | No isolated runtime infrastructure. `getProvider()` returns `NotAvailableProvider`; the route answers 503 `runtime_not_available`; no customer code runs on this server (test `real hosting is NOT AVAILABLE: ...`) |
+| Live logs and metrics | NOT AVAILABLE | Interface + MockProvider only; needs real hosting |
+
 ## Later phases
 
 | Phase | Status |

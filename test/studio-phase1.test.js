@@ -253,3 +253,20 @@ test('ai: proposals and usage are owner-only; proposals pruned to 30 per project
     assert.equal((await db.query('select count(*)::int as n from public.studio_ai_proposals where project_id = $1', [id])).rows[0].n, 30);
     await db.query('delete from public.studio_projects where id = $1', [id]);
 });
+
+// Phase 7 table: deployment history is readable by the owner only, written by the server only.
+test('deployments: owner reads (not the stored files), only the service role writes', async () => {
+    await as(A);
+    const { rows: [{ id }] } = await insertProject(A, 'Deploy bot');
+    await assert.rejects(db.query("insert into public.studio_deployments (project_id, owner_id, version, status, provider) values ($1, $2, 1, 'live', 'mock')", [id, A]), /permission denied/);
+    await asService();
+    await db.query("insert into public.studio_deployments (project_id, owner_id, version, status, provider, files) values ($1, $2, 1, 'live', 'mock', '[]')", [id, A]);
+    await as(A);
+    assert.equal((await db.query('select id, version, status from public.studio_deployments where project_id = $1', [id])).rows.length, 1);
+    await assert.rejects(db.query('select files from public.studio_deployments'), /permission denied/);
+    await assert.rejects(db.query("update public.studio_deployments set status = 'stopped'"), /permission denied/);
+    await as(B);
+    assert.equal((await db.query('select id from public.studio_deployments where project_id = $1', [id])).rows.length, 0);
+    await as(A);
+    await db.query('delete from public.studio_projects where id = $1', [id]);
+});
