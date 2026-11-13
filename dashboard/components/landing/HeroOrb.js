@@ -253,7 +253,7 @@ export default function HeroOrb() {
                 </svg>
             </div>
             <div className="zig-float">
-                <button type="button" className="zig-poke" aria-label="Poke ZiG" onClick={poke}>
+                <button type="button" className="zig-poke" aria-label="ZiG, poke me" onClick={poke}>
                     <span className="zig-body">
                         <MascotSvg eyesRef={eyesRef} mouthRef={mouthRef} />
                     </span>

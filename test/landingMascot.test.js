@@ -97,7 +97,7 @@ test('the flame ring path is deterministic and closed', () => {
 
 test('the hero mascot: SVG parts, a real button, no new dependencies, reduced motion respected', () => {
     const component = read('dashboard/components/landing/HeroOrb.js');
-    assert.match(component, /<button type="button" className="zig-poke" aria-label="Poke ZiG" onClick=\{poke\}>/);
+    assert.match(component, /<button type="button" className="zig-poke" aria-label="ZiG, poke me" onClick=\{poke\}>/); // name starts with the visible "ZiG" (label-in-name)
     for (const part of ['zig-hood-text', '>ZIG<', 'zig-cup-l', 'zig-cup-r', '>Z<', 'zig-crown', 'zig-screen', 'zig-flames', 'zig-x-wink', 'zig-tongue', 'zig-x-heart', 'zig-x-surprised', 'zig-x-dizzy', 'zig-x-happy']) {
         assert.ok(component.includes(part), `mascot has ${part}`);
     }
@@ -130,4 +130,15 @@ test('the "fr fr" sticker no longer rises through the mascot column', () => {
     const background = read('dashboard/components/HomeBackground.js');
     const left = Number(background.match(/text: 'fr fr', left: '(\d+)%'/)[1]);
     assert.ok(left < 40, `fr fr is at ${left}%`);
+});
+
+test('performance and accessibility audit fixes (Lighthouse)', () => {
+    const page = read('dashboard/app/page.js');
+    assert.match(page, /<main className="shell home landing">/, 'the landing page has a <main> landmark');
+    assert.match(page, /<\/main>\r?\n\s+\);/);
+    const demo = read('dashboard/components/landing/ChatDemo.js');
+    assert.match(demo, /src="\/zigbot-72\.webp" alt="" width="36" height="36" loading="lazy"/, 'avatar sized for its 36px slot (2x)');
+    assert.ok(fs.existsSync(path.join(__dirname, '..', 'dashboard', 'public', 'zigbot-72.webp')));
+    const pkg = JSON.parse(read('dashboard/package.json'));
+    assert.ok(pkg.browserslist.every((b) => /\d/.test(b)), 'modern browser targets: no legacy polyfills');
 });

@@ -103,7 +103,7 @@ export default async function Home({ searchParams }) {
     ];
 
     return (
-        <div className="shell home landing">
+        <main className="shell home landing">
             {jsonLd.map((data) => <script key={data['@type']} type="application/ld+json" dangerouslySetInnerHTML={{ __html: seo.jsonLdScript(data) }} />)}
             <HomeBackground />
             <div className="grain" aria-hidden="true" />
@@ -323,6 +323,6 @@ export default async function Home({ searchParams }) {
                     <Link className="btn btn-lg" href="/commands">See commands</Link>
                 </div>
             </Reveal>
-        </div>
+        </main>
     );
 }
