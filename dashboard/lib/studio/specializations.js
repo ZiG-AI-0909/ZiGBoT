@@ -56,14 +56,15 @@ const SPECIALIZATIONS = Object.freeze([
         icon: 'ai',
         accent: '#f472b6',
         tagline: 'Turn natural-language instructions into powerful AI agents, prompts, and development projects.',
-        technologies: ['ZiGBoT AI creator', 'Plain-language requests'],
+        technologies: ['ZiGBoT AI creator', 'Claude (Anthropic API)', 'OpenAI API', 'Plain-language requests'],
         features: [
+            { label: 'Build with your own Claude or OpenAI coding agent', source: 'dashboard/lib/studio/agents.js' },
             { label: 'Describe what you want in plain language', source: 'dashboard/components/studio/AiCreator.js' },
             { label: 'Multi-step plans before any code', source: 'dashboard/lib/studio/aiCreator.js' },
             { label: 'Code generation from prompts, shown as diffs', source: 'dashboard/lib/studio/aiCreator.js' },
             { label: 'Nothing is written until you approve', source: 'dashboard/app/api/studio/projects/[projectId]/ai/[proposalId]/route.js' }
         ],
-        later: ['Claude Code, OpenAI Codex and GitHub Copilot connections', 'Prompt optimisation and saved agent setups'],
+        later: ['GitHub Copilot, Claude Code and Codex command-line agents', 'Prompt optimisation and saved agent setups'],
         workspace: 'ai',
         tools: ['ai', 'code', 'builder', 'deployments', 'customize'],
         aiContext: 'The owner chose Prompt Engineering: restate the request as a short numbered plan first, ask for nothing interactively, and keep each change small and explained.'

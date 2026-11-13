@@ -34,7 +34,7 @@ test('honesty: every listed feature names a module that exists; unbuilt integrat
     }
     const later = specs.SPECIALIZATIONS.flatMap((s) => s.later).join(' ');
     assert.match(later, /n8n, Zapier and Power Automate/);
-    assert.match(later, /Claude Code, OpenAI Codex and GitHub Copilot/);
+    assert.match(later, /GitHub Copilot, Claude Code and Codex command-line agents/);
 });
 
 test('projects store the specialization when given; older clients still work', () => {

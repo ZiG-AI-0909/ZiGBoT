@@ -15,12 +15,14 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.8.0",
     "@monaco-editor/react": "4.7.0",
     "@supabase/ssr": "0.12.7",
     "@supabase/supabase-js": "2.118.0",
     "@xyflow/react": "12.3.6",
     "monaco-editor": "0.52.2",
     "next": "15.5.28",
+    "openai": "7.56.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "server-only": "0.0.1",

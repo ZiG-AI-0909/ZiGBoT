@@ -60,7 +60,7 @@ export default function AiCreator({ projectId }) {
             {(state?.proposals || []).length === 0 ? <p className="help">No proposals yet.</p> : state.proposals.map((p) => (
                 <article key={p.id} className="card stack">
                     <div className="row" style={{ justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                        <strong>{p.request.slice(0, 120)}</strong>
+                        <strong>{p.request.slice(0, 120)}{p.model ? <span className="pill" style={{ marginLeft: 8 }}>{p.model}</span> : null}</strong>
                         <span className="help">{new Date(p.createdAt).toLocaleString()} · {p.status}</span>
                     </div>
                     {p.plan.length ? <ol>{p.plan.map((s, i) => <li key={i}>{s}</li>)}</ol> : null}

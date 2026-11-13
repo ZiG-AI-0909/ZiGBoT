@@ -260,15 +260,21 @@ const studioModes = [
         id: 'prompt',
         icon: '✨',
         title: 'Prompt Engineering Studio',
-        status: 'coming_soon',
-        text: 'Turn plain-language instructions into prompts, agent setups and project plans.',
-        points: ['Prompt writing and optimisation', 'Multi-step instructions and project planning', 'Connect supported AI coding agents'],
-        sources: ['ZIGBOT_STUDIO_MASTER.md']
+        status: 'available',
+        text: 'Turn plain-language instructions into real code with the coding agent you already use.',
+        points: [
+            'Build with your own Claude or OpenAI account (your API key, stored encrypted)',
+            'Multi-step plans, then file diffs you review',
+            'Static checks on every proposal before you approve',
+            'Prompt optimisation and saved agent setups: coming soon'
+        ],
+        sources: ['dashboard/lib/studio/agents.js', 'dashboard/components/studio/AgentBuilder.js', 'dashboard/app/api/studio/projects/[projectId]/agent/route.js']
     }
 ];
 
 // Product updates: newest first, each tied to what shipped.
 const updates = [
+    { date: '2026-11', title: 'Build with AI coding agents', text: 'Connect your own Claude or OpenAI key and turn a prompt into reviewed, checked code.', sources: ['dashboard/lib/studio/agents.js'] },
     { date: '2026-11', title: 'Self-hosted runner', text: 'Pair your own VPS or PC and deploy, start, stop and watch logs from the Deployments page.', sources: ['dashboard/public/runner/zigbot-runner.mjs', 'dashboard/app/api/runner/pair/route.js'] },
     { date: '2026-11', title: 'Premium automations', text: 'Design and test workflows for free; activate them with Premium.', sources: ['dashboard/lib/studio/entitlements.js'] },
     { date: '2026-11', title: 'New dashboard navigation', text: 'A sidebar for servers, Studio and every server setting.', sources: ['dashboard/components/AppShell.js'] },

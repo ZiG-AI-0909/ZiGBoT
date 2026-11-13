@@ -291,7 +291,7 @@ test('Studio modes and product updates name files that exist; unbuilt modes are 
         assert.ok(item.sources.length > 0, `${item.id || item.title} needs a source`);
         for (const file of item.sources) assert.ok(fs.existsSync(path.join(root, file)), `${file} (for ${item.id || item.title}) does not exist`);
     }
-    assert.deepEqual(landing.studioModes.map((m) => [m.id, m.status]), [['coding', 'available'], ['workflows', 'available'], ['prompt', 'coming_soon']]);
+    assert.deepEqual(landing.studioModes.map((m) => [m.id, m.status]), [['coding', 'available'], ['workflows', 'available'], ['prompt', 'available']]);
     const page = read('dashboard/app/page.js');
     assert.match(page, /mode\.status === 'coming_soon' \? <span className="pill">Coming soon<\/span>/);
     assert.match(page, /landing\.updates\.map/);

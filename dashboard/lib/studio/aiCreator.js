@@ -130,7 +130,7 @@ function planApply(proposal, files) {
 function publicProposal(row) {
     return {
         id: row.id, status: row.status, request: row.request, createdAt: row.created_at,
-        plan: row.plan || [], rejected: row.rejected || [],
+        plan: row.plan || [], rejected: row.rejected || [], agent: row.agent || null, model: row.model || null,
         changes: (row.changes || []).map((c) => ({ path: c.path, action: c.action, diff: (c.diff || []).slice(0, 2000) }))
     };
 }
