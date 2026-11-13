@@ -1,6 +1,7 @@
 require('dotenv').config();
 
-const { Client, GatewayIntentBits, Events } = require('discord.js');
+const { Client, GatewayIntentBits, Events, Partials } = require('discord.js');
+const { createFeatures } = require('./features');
 const { loadSettings } = require('./config/settings');
 const {
     createAiClient,
@@ -155,6 +156,16 @@ const ticketStore = new SupabaseTicketStore({
     supabaseUrl: settings.supabaseUrl,
     serviceRoleKey: settings.supabaseServiceRoleKey
 });
+// Optional features (sections C-M), all off per server by default.
+const features = createFeatures({
+    settings,
+    resolveContext: async (guild) => {
+        const ctx = await guildStore.getGuildContext(guild);
+        return { config: ctx?.config || {}, settings: ctx ? buildGuildSettings(settings, ctx) : settings, premium: Boolean(ctx?.premium) };
+    },
+    auditLog,
+    getClient: () => client
+});
 const ticketCommands = createTicketCommands({
     store: ticketStore,
     resolveContext: async (guild) => {
@@ -251,9 +262,13 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildVoiceStates,
+        // Optional features: starboard and reaction-role panels.
+        GatewayIntentBits.GuildMessageReactions,
         // Anti-Nuke: live audit-log entries (not a privileged intent).
         GatewayIntentBits.GuildModeration
     ],
+    // Reactions on messages sent before the bot started (starboard, role panels).
+    partials: [Partials.Message, Partials.Reaction],
     // Safe default for sends that pass no allowedMentions (no @everyone/role pings).
     allowedMentions: DEFAULT_ALLOWED_MENTIONS
 });
@@ -300,7 +315,12 @@ client.on(Events.GuildAuditLogEntryCreate, (entry, guild) => {
 client.on(Events.GuildMemberAdd, (member) => {
     antiNuke.onMemberAdd(member);
     void securityEventHandlers.guildMemberAdd(member);
+    void features.onMemberAdd(member);
 });
+// Optional features (src/features): goodbye messages, starboard, reaction roles.
+client.on(Events.GuildMemberRemove, (member) => { void features.onMemberRemove(member); });
+client.on(Events.MessageReactionAdd, (reaction, user) => { void features.onReaction(reaction, user, true); });
+client.on(Events.MessageReactionRemove, (reaction, user) => { void features.onReaction(reaction, user, false); });
 client.on(Events.ChannelDelete, securityEventHandlers.channelDelete);
 client.on(Events.GuildRoleDelete, securityEventHandlers.roleDelete);
 client.on(Events.GuildBanAdd, securityEventHandlers.guildBanAdd);
@@ -320,6 +340,7 @@ console.log(`[ZiGBoT IDENTITY] Custom bot identity: ${identitySync.mode === 'ful
 client.once(Events.ClientReady, async (c) => {
     console.log(`✅ ${c.user.tag} is online and ready in ${c.guilds.cache.size} server(s)! (Mention-driven mode with role-based personas active)`);
     punishmentExpiry.start();
+    features.start();
     // Make sure every server the bot is in has a config row (safe defaults
     // for new servers). Failures are logged; the bot keeps running.
     if (guildStore.enabled) {
@@ -407,6 +428,11 @@ client.on(Events.GuildDelete, async (guild) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
+    if (features.isComponent(interaction)) {
+        await features.handleComponent(interaction)
+            .catch((error) => console.error(`[ZiGBoT FEATURES] Component failed: ${error?.code || error?.name || 'Error'}`));
+        return;
+    }
     if (ticketCommands.isComponent(interaction)) {
         await ticketCommands.handleComponent(interaction)
             .catch((error) => console.error(`[ZiGBoT TICKETS] Component failed: ${error?.code || error?.name || 'Error'}`));
@@ -442,6 +468,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return;
     }
     if (!interaction.isChatInputCommand()) return;
+    if (features.handlesSlash(interaction)) {
+        await features.handleSlash(interaction)
+            .catch((error) => console.error(`[ZiGBoT FEATURES] /${interaction.commandName} failed: ${error?.code || error?.name || 'Error'}`));
+        return;
+    }
     if (interaction.commandName === 'ticket') {
         await ticketCommands.handleSlash(interaction)
             .catch((error) => console.error(`[ZiGBoT TICKETS] /ticket failed: ${error?.code || error?.name || 'Error'}`));

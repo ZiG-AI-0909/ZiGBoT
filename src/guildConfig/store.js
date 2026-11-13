@@ -42,7 +42,7 @@ const SETUP_FIELDS = [
     'moderation_invites_filter_enabled', 'moderation_word_filter_enabled',
     'moderation_filtered_words', 'moderation_appeals_enabled', 'utility_commands',
     'ticketing_enabled', 'ticket_category_ids', 'ticket_staff_role_ids',
-    'ticket_senior_role_id', 'ticket_log_channel_id'
+    'ticket_senior_role_id', 'ticket_log_channel_id', 'feature_settings'
 ];
 const GIF_FREQUENCY_NAMES = ['rare', 'normal', 'often'];
 const SETUP_PRONOUNS = ['she/her', 'he/him', 'they/them'];

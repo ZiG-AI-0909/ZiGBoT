@@ -16,5 +16,6 @@ module.exports = {
     ...require('./personaTemplates'),
     ...require('./antinuke'),
     ...require('./greetings'),
-    ...require('./feedback')
+    ...require('./feedback'),
+    ...require('./features')
 };

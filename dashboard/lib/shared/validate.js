@@ -12,6 +12,7 @@ const {
 const { defaultGuildConfig } = require('./defaults');
 const { LANGUAGE_VALUES, DEFAULT_LANGUAGE } = require('./languages');
 const { validateGifSettings, sanitizeGifSettings } = require('./gifs');
+const { validateFeatureSettings, sanitizeFeatureSettings } = require('./features');
 
 const SNOWFLAKE = /^\d{17,20}$/;
 
@@ -250,8 +251,12 @@ function validateGuildConfig(input, ctx = {}) {
         female_role_ids: checkIdList(errors, 'female_role_ids', input.female_role_ids, ctx.roleIds || null).slice(0, 10),
         adult_role_ids: checkIdList(errors, 'adult_role_ids', input.adult_role_ids, ctx.roleIds || null).slice(0, 10),
         minor_role_ids: checkIdList(errors, 'minor_role_ids', input.minor_role_ids, ctx.roleIds || null).slice(0, 10),
-        gif_settings: null
+        gif_settings: null,
+        feature_settings: null
     };
+    const features = validateFeatureSettings(input.feature_settings, { channelIds: channels, roleIds: ctx.roleIds || null, guildId: ctx.guildId });
+    for (const [key, message] of Object.entries(features.errors)) errors[key === 'feature_settings' ? key : `feature_settings.${key}`] = message;
+    value.feature_settings = features.value;
     const gifs = validateGifSettings(input.gif_settings, { channelIds: channels });
     if (gifs.error) errors.gif_settings = gifs.error;
     value.gif_settings = gifs.value;
@@ -388,6 +393,8 @@ function sanitizeStoredConfig(row, { guildId } = {}) {
             out[key] = SNOWFLAKE.test(String(row[key])) ? String(row[key]) : null;
         } else if (key === 'gif_settings') {
             out[key] = sanitizeGifSettings(row[key]);
+        } else if (key === 'feature_settings') {
+            out[key] = sanitizeFeatureSettings(row[key], { guildId });
         } else if (key === 'owner_pronouns') {
             out[key] = PRONOUNS.includes(row[key]) ? row[key] : null;
         } else if (expected === typeof row[key]) {

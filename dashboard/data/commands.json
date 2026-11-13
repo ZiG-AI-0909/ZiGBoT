@@ -833,6 +833,211 @@
             }
           ],
           "example": "/setup language:English owner_gender:Male (he/him)"
+        },
+        {
+          "name": "roles",
+          "description": "Staff: post a panel where members pick their own roles",
+          "audience": "admin",
+          "permission": "Manage Roles",
+          "about": "Posts a panel where members give themselves roles with buttons, a dropdown or reactions. Off until an admin enables role panels in the dashboard. Roles with staff permissions can never be put on a panel.",
+          "privacyLink": true,
+          "options": [
+            {
+              "name": "type",
+              "type": "text",
+              "required": true,
+              "description": "How members pick",
+              "choices": [
+                "Buttons",
+                "Dropdown menu",
+                "Reactions"
+              ]
+            },
+            {
+              "name": "role1",
+              "type": "role",
+              "required": true,
+              "description": "First role"
+            },
+            {
+              "name": "title",
+              "type": "text",
+              "required": false,
+              "description": "Panel title",
+              "maxLength": 200
+            },
+            {
+              "name": "role2",
+              "type": "role",
+              "required": false,
+              "description": "Role 2"
+            },
+            {
+              "name": "role3",
+              "type": "role",
+              "required": false,
+              "description": "Role 3"
+            },
+            {
+              "name": "role4",
+              "type": "role",
+              "required": false,
+              "description": "Role 4"
+            },
+            {
+              "name": "role5",
+              "type": "role",
+              "required": false,
+              "description": "Role 5"
+            }
+          ],
+          "example": "/roles type:Buttons role1:@role"
+        },
+        {
+          "name": "suggest",
+          "description": "Send a suggestion for this server",
+          "audience": "everyone",
+          "permission": null,
+          "about": "Sends your idea to the suggestions channel of the server, where members vote and staff approve or deny it. Off until an admin enables suggestions in the dashboard.",
+          "privacyLink": true,
+          "options": [
+            {
+              "name": "idea",
+              "type": "text",
+              "required": true,
+              "description": "Your suggestion",
+              "maxLength": 1500
+            }
+          ],
+          "example": "/suggest idea:<idea>"
+        },
+        {
+          "name": "community",
+          "description": "Birthdays, polls, announcements, reminders and server stats",
+          "audience": "everyone",
+          "permission": null,
+          "about": "Community tools, each off until an admin enables it in the dashboard: save your birthday (day and month only), polls, staff announcements and reminders, and quick server stats.",
+          "privacyLink": true,
+          "subcommands": [
+            {
+              "name": "birthday",
+              "description": "Save your birthday (day and month only)",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "day",
+                  "type": "number",
+                  "required": true,
+                  "description": "Day of the month",
+                  "min": 1,
+                  "max": 31
+                },
+                {
+                  "name": "month",
+                  "type": "number",
+                  "required": true,
+                  "description": "Month number",
+                  "min": 1,
+                  "max": 12
+                }
+              ],
+              "example": "/community birthday day:1 month:1"
+            },
+            {
+              "name": "birthday-remove",
+              "description": "Remove your saved birthday",
+              "audience": "everyone",
+              "options": [],
+              "example": "/community birthday-remove"
+            },
+            {
+              "name": "poll",
+              "description": "Staff: start a poll in this channel",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "question",
+                  "type": "text",
+                  "required": true,
+                  "description": "The question",
+                  "maxLength": 300
+                },
+                {
+                  "name": "options",
+                  "type": "text",
+                  "required": true,
+                  "description": "2 to 10 options separated by |",
+                  "maxLength": 600
+                },
+                {
+                  "name": "hours",
+                  "type": "number",
+                  "required": false,
+                  "description": "How long the poll runs (default 24)",
+                  "min": 1,
+                  "max": 168
+                }
+              ],
+              "example": "/community poll question:<question> options:<options>"
+            },
+            {
+              "name": "announce",
+              "description": "Staff: post an announcement",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "message",
+                  "type": "text",
+                  "required": true,
+                  "description": "What to announce",
+                  "maxLength": 1800
+                },
+                {
+                  "name": "channel",
+                  "type": "channel",
+                  "required": false,
+                  "description": "Where (default: this channel)"
+                }
+              ],
+              "example": "/community announce message:<message>"
+            },
+            {
+              "name": "remind",
+              "description": "Staff: post a reminder later",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "minutes",
+                  "type": "number",
+                  "required": true,
+                  "description": "In how many minutes",
+                  "min": 1,
+                  "max": 43200
+                },
+                {
+                  "name": "message",
+                  "type": "text",
+                  "required": true,
+                  "description": "The reminder",
+                  "maxLength": 1800
+                },
+                {
+                  "name": "channel",
+                  "type": "channel",
+                  "required": false,
+                  "description": "Where (default: this channel)"
+                }
+              ],
+              "example": "/community remind minutes:1 message:<message>"
+            },
+            {
+              "name": "stats",
+              "description": "Show member, channel and role counts",
+              "audience": "everyone",
+              "options": [],
+              "example": "/community stats"
+            }
+          ]
         }
       ]
     },

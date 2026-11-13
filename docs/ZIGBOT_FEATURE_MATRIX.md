@@ -124,24 +124,26 @@ context:
 
 ## C. Community Management
 
+All Section C features are off by default and enabled per server in the dashboard (Add-ons → Community, `zb_guild_configs.feature_settings.community`). Migration: `supabase/migrations/20261114000000_zigbot_features_community.sql`.
+
 | Feature | Status | Proof | Action |
 |---|---|---|---|
-| Welcome messages | PARTIAL | A setup/invite welcome is sent when the bot joins, not for each new member: `src/index.js:345-350`; tests `AI welcome line: one safe line, or nothing`, `welcome falls back to the fixed message when the AI fails or is slow` (`test/serverSetup.test.js`). | Improve |
-| Goodbye messages | MISSING | Search `goodbye|member.*leave|guildMemberRemove` in `src/`, `dashboard/`, `supabase/`, `test/`: no member departure message workflow found. | Implement |
-| Welcome images | MISSING | Search `welcome.?image|welcome.?card|member.*image` in `src/`, `dashboard/`, `supabase/`, `test/`: no member welcome image renderer or send hook found. | Implement |
-| Auto-role | MISSING | Search `auto.?role|guildMemberAdd.*roles|member.roles.add` in `src/`, `dashboard/`, `supabase/`, `test/`: no join-based role assignment rule found. | Implement |
-| Reaction roles | MISSING | Search `reaction.?role|messageReactionAdd|reaction role` in `src/`, `dashboard/`, `supabase/`, `test/`: no self-assign role flow found. | Implement |
-| Button roles | MISSING | Search `button.?role|role button|role select menu` in `src/`, `dashboard/`, `supabase/`, `test/`: no self-assign component workflow found. | Implement |
-| Dropdown roles | MISSING | Search `dropdown.?role|role select menu|StringSelectMenu` in `src/`, `dashboard/`, `supabase/`, `test/`: no role-selection menu found. | Implement |
-| Member milestones | MISSING | Search `member.?milestone|milestone` in `src/`, `dashboard/`, `supabase/`, `test/`: no milestone trigger/store found. | Implement |
-| Birthday announcements | MISSING | Search `birthday|birth.?date` in `src/`, `dashboard/`, `supabase/`, `test/`: no birthday profile/scheduler found. | Implement |
-| Server statistics | PARTIAL | Read-only server info reports member/channel counts: `src/tools/router.js:336-339`; test `read-only info action works without owner authorization` (`test/router.test.js`). No historical server analytics. | Improve |
-| Member count | WORKING | `get_server_info` includes `guild.memberCount`: `src/tools/router.js:336-339`; test `read-only info action works without owner authorization`. | Reuse |
-| Starboard | MISSING | Search `starboard|star board|starboard message` in `src/`, `dashboard/`, `supabase/`, `test/`: no reaction-based curation workflow found. | Implement |
-| Suggestions | PARTIAL | SaaS premium feedback collection exists, not server suggestion submission/voting: `dashboard/app/admin/feedback/page.js`; test `feedback statistics reflect exactly the stored responses` (`test/superAdmin.test.js`). | Improve |
-| Polls | MISSING | Search `poll|polls|createPoll` in `src/`, `dashboard/`, `supabase/`, `test/`: no Discord poll creation/voting workflow found. | Implement |
-| Announcements | PARTIAL | Scheduled greetings can send configured text and pings: `src/greetings/scheduler.js`; test `the greeting is sent at its time, once a day, with only the bot running` (`test/scheduledGreetings.test.js`). No generic announcement manager. | Improve |
-| Community reminders | MISSING | Search `community reminder|reminder|remind at` in `src/`, `dashboard/`, `supabase/`, `test/`: no reminder scheduler/command found. | Implement |
+| Welcome messages | WORKING | Opt-in per-member welcome with `{user}`/`{server}`/`{memberCount}` in the existing `GuildMemberAdd` listener: `src/features/community.js` (`onMemberAdd`); test `welcome: message with the member tagged once, image card, auto-role (bots skipped), milestone once` (`test/section-c-community.test.js`). The bot-join setup welcome is unchanged. | Done (Section C) |
+| Goodbye messages | WORKING | Opt-in `GuildMemberRemove` goodbye that names but never pings: `src/features/community.js` (`onMemberRemove`); test `goodbye names the member without pinging; the count channel is renamed at most once per 10 minutes`. | Done (Section C) |
+| Welcome images | WORKING | `@napi-rs/canvas` card (`src/features/welcomeImage.js`), attached when `welcome_image_enabled`; tests `welcome image is a real PNG of the expected size` and the welcome test above. | Done (Section C) |
+| Auto-role | WORKING | Opt-in join roles, bots skipped, staff/managed/above-bot roles refused and audited: `src/features/community.js`, `src/features/common.js` (`roleProblem`); test `welcome: message with the member tagged once, image card, auto-role (bots skipped), milestone once`. | Done (Section C) |
+| Reaction roles | WORKING | `/roles type:reactions` panel, persisted in `zb_feature_records`, mapped number emoji toggle the role: `src/features/community.js`; test `reaction panels add and remove the mapped role; a role that became unsafe is refused`. | Done (Section C) |
+| Button roles | WORKING | `/roles type:buttons`: only roles stored for that panel can be toggled; test `button and dropdown panels toggle only the panel's own roles, and are persisted`. | Done (Section C) |
+| Dropdown roles | WORKING | `/roles type:dropdown`: values outside the panel ignored; same test as button roles. | Done (Section C) |
+| Member milestones | WORKING | Every N members (default 100), posted once per count via a once-only record: `src/features/community.js`; welcome test above. | Done (Section C) |
+| Birthday announcements | WORKING | `/community birthday` stores day+month only; one daily post per server in its timezone (default Asia/Kolkata), only for members still present: `src/features/community.js` (`birthdayPosts`, `localDate`); tests `birthdays: day and month only, posted once per local day, only for members still here`, `templates, local dates and birthdays`. | Done (Section C) |
+| Server statistics | WORKING | `/community stats` (members, text/voice channels, roles, boosts); test `/community stats works for everyone and reports real counts`. Historical analytics are Section L. | Done (Section C) |
+| Member count | WORKING | Unchanged `get_server_info`, plus an opt-in member-count voice channel renamed at most once per 10 minutes; test `goodbye names the member without pinging; the count channel is renamed at most once per 10 minutes`. | Done (Section C) |
+| Starboard | WORKING | ⭐ threshold (default 3), author/bot stars ignored, once per message, never from the starboard channel: `src/features/community.js`; test `starboard: 3 stars from other humans, once per message, never for bots or from its own channel`. | Done (Section C) |
+| Suggestions | WORKING | `/suggest` with vote buttons (one vote per member, atomic `mutate`) and staff (Manage Messages) approve/deny; tests `/suggest: one vote per member, staff-only decisions, closed suggestions stay closed`, `suggestion votes are not lost when many members vote at once`. | Done (Section C) |
+| Polls | WORKING | `/community poll` uses Discord native polls (one vote per member enforced by Discord), staff-only; test `polls, announcements and reminders are staff-only and never ping`. | Done (Section C) |
+| Announcements | WORKING | `/community announce` staff-only, no pings; same test. Scheduled greetings unchanged. | Done (Section C) |
+| Community reminders | WORKING | `/community remind` on the shared persistent scheduler (`src/features/scheduler.js`: claimed once, survives restarts, 3 bounded retries); tests `reminder: stored, posted when due (also after a restart), and dropped if the feature was switched off`, `scheduler: a job runs once when due, survives a restart, and repeats when asked`. | Done (Section C) |
 
 ## D. AI Chatbot
 

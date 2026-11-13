@@ -9,6 +9,7 @@
  */
 
 const { defaultGifSettings } = require('./gifs');
+const { defaultFeatureSettings } = require('./features');
 
 function defaultGuildConfig({ guildId, legacy = false, legacySettings = null } = {}) {
     const s = legacySettings || {};
@@ -75,6 +76,8 @@ function defaultGuildConfig({ guildId, legacy = false, legacySettings = null } =
         ticket_staff_role_ids: [],
         ticket_senior_role_id: null,
         ticket_log_channel_id: null,
+        // Optional features, all off by default (lib/shared/features.js).
+        feature_settings: defaultFeatureSettings(),
         version: 1
     };
 }

@@ -345,7 +345,8 @@ test('buildDefinitions returns plain JSON payloads ready for the Discord API', (
     // + 13 music commands (/search … /leave)
     // + 7 YouTube commands (/watch, /unwatch, /ytstatus, /ytgreet, /ytmod, /ytroast, /ytretry)
     // + /summarychannels (admin summary-channel list)
-    assert.equal(definitions.length, 33);
+    // + Section C community: /roles, /suggest, /community
+    assert.equal(definitions.length, 36);
     for (const definition of definitions) {
         assert.equal(typeof definition.toJSON, 'undefined');
         assert.equal(typeof definition.name, 'string');
@@ -353,7 +354,7 @@ test('buildDefinitions returns plain JSON payloads ready for the Discord API', (
     }
     assert.deepEqual(
         definitions.map(({ name }) => name),
-        ['play', 'search', 'pause', 'resume', 'skip', 'stop', 'queue', 'nowplaying', 'volume', 'shuffle', 'loop', 'remove', 'clearqueue', 'leave', 'join', 'kick', 'ban', 'memory', 'appeal', 'moderation', 'reputation', 'security', 'summarychannels', 'ticket', 'help', 'setup', 'watch', 'unwatch', 'ytstatus', 'ytgreet', 'ytmod', 'ytroast', 'ytretry']
+        ['play', 'search', 'pause', 'resume', 'skip', 'stop', 'queue', 'nowplaying', 'volume', 'shuffle', 'loop', 'remove', 'clearqueue', 'leave', 'join', 'kick', 'ban', 'memory', 'appeal', 'moderation', 'reputation', 'security', 'summarychannels', 'ticket', 'help', 'setup', 'watch', 'unwatch', 'ytstatus', 'ytgreet', 'ytmod', 'ytroast', 'ytretry', 'roles', 'suggest', 'community']
     );
 });
 

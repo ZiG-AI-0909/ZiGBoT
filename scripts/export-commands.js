@@ -25,7 +25,7 @@ const CATEGORIES = [
     { id: 'memory', name: 'Memory', commands: ['memory', 'summarychannels'] },
     { id: 'music', name: 'Music & voice', commands: ['play', 'search', 'pause', 'resume', 'skip', 'stop', 'queue', 'nowplaying', 'volume', 'shuffle', 'loop', 'remove', 'clearqueue', 'join', 'leave'] },
     { id: 'moderation', name: 'Moderation', commands: ['kick', 'ban', 'appeal', 'moderation', 'reputation', 'security', 'ticket'] },
-    { id: 'setup', name: 'Server setup', commands: ['setup'] },
+    { id: 'setup', name: 'Server setup', commands: ['setup', 'roles', 'suggest', 'community'] },
     { id: 'help', name: 'Help', commands: ['help'] }
 ];
 
@@ -56,6 +56,9 @@ const ABOUT = {
     appeal: 'Submit a private appeal for a moderation case when appeals are enabled by this server.',
     moderation: 'Privately inspect moderation cases and review submitted appeals. Requires the Discord Moderate Members permission.',
     security: 'View this server’s security-monitoring status, incident counts, and deterministic evidence. AI explanations are advisory only. Administrator or the configured security role is required.',
+    roles: 'Posts a panel where members give themselves roles with buttons, a dropdown or reactions. Off until an admin enables role panels in the dashboard. Roles with staff permissions can never be put on a panel.',
+    suggest: 'Sends your idea to the suggestions channel of the server, where members vote and staff approve or deny it. Off until an admin enables suggestions in the dashboard.',
+    community: 'Community tools, each off until an admin enables it in the dashboard: save your birthday (day and month only), polls, staff announcements and reminders, and quick server stats.',
     ticket: 'Private support tickets with transcripts, staff controls, priorities, escalation and optional advisory AI. Administrators enable tickets and configure categories and staff roles in the dashboard.'
 };
 

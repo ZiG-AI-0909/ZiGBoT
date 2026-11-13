@@ -8,6 +8,7 @@ const {
     SlashCommandBuilder,
     PermissionFlagsBits
 } = require('discord.js');
+const { featureCommandBuilders } = require('./features/slash');
 const { isOwner } = require('./security/authorization');
 const { isHomeGuild } = require('./guildConfig/store');
 const { SUPPORTED_LANGUAGES } = require('../dashboard/lib/shared');
@@ -281,7 +282,9 @@ function buildDefinitions({ identity = false } = {}) {
             .addSubcommand((sub) => sub.setName('show').setDescription('Show ZiGBoT’s identity in this server'))
             .addSubcommand((sub) => sub.setName('reset').setDescription('Put back the default ZiGBoT name, picture and bio')
                 .addBooleanOption((option) => option.setName('confirm').setDescription('True = reset and delete the saved identity').setRequired(true)))
-            .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)] : [])
+            .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)] : []),
+        // Optional features (sections C-M): src/features/slash.js.
+        ...featureCommandBuilders()
     ].map((command) => command.toJSON());
 }
 
