@@ -76,6 +76,7 @@ const { createIdentityCommands } = require('./identity/commands');
 const { createAfkStore } = require('./afk/store');
 const { createAfkHandler } = require('./afk/handler');
 const { createAvatarHandler } = require('./avatar/handler');
+const { createCustomUtilityCommandHandler } = require('./utilities/customCommands');
 const { createSecurityIntegration, createSecurityEventHandlers } = require('./security');
 const { createSecurityCommands } = require('./security/commands');
 const { createModerationFilterEngine } = require('./moderation/messageFilters');
@@ -242,6 +243,7 @@ const afkStore = createAfkStore({ getCollection: () => brain.getAfkCollection() 
 const afkHandler = createAfkHandler({ store: afkStore, botId: () => client.user?.id });
 // Avatar viewer (src/avatar): "av @user", "@ZiGBoT show pfp @user", ...
 const avatarHandler = createAvatarHandler({ botId: () => client.user?.id, fetchUser: (id) => client.users.fetch(id) });
+const utilityCommandHandler = createCustomUtilityCommandHandler();
 
 // Anti-Nuke (free, always on): audit-log monitoring, alerts, optional containment.
 const antiNuke = createAntiNuke({
@@ -672,6 +674,7 @@ client.on(Events.MessageCreate, async (message) => {
     if ((await afkHandler.handle(message)).handled) return;
     // Avatar viewer: an avatar request is answered here, never by the AI.
     if (await avatarHandler.handle(message)) return;
+    if (await utilityCommandHandler.handle(message, guildCtx?.config?.utility_commands || [])) return;
     const memoryAllowed = !guildCtx || (guildCtx.config.memory_enabled !== false && hasFeature(behavior, 'memory'));
     const reputationAllowed = !guildCtx || guildCtx.config.reputation_enabled !== false;
 

@@ -40,7 +40,7 @@ const SETUP_FIELDS = [
     'warning_escalation_enabled', 'temporary_bans_enabled', 'moderation_spam_filter_enabled',
     'moderation_caps_filter_enabled', 'moderation_mentions_filter_enabled',
     'moderation_invites_filter_enabled', 'moderation_word_filter_enabled',
-    'moderation_filtered_words', 'moderation_appeals_enabled'
+    'moderation_filtered_words', 'moderation_appeals_enabled', 'utility_commands'
 ];
 const GIF_FREQUENCY_NAMES = ['rare', 'normal', 'often'];
 const SETUP_PRONOUNS = ['she/her', 'he/him', 'they/them'];

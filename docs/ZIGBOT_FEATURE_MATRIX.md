@@ -166,21 +166,21 @@ context:
 
 | Feature | Status | Proof | Action |
 |---|---|---|---|
-| AFK detection | WORKING | Message pipeline invokes AFK handler before AI: `src/index.js:645-650`; test `workflow: afk -> mentioned -> returns, fully automatic` (`test/afk.test.js`). | Reuse |
+| AFK detection | WORKING | Message pipeline invokes AFK handler before AI: `src/index.js:674`; test `workflow: afk -> mentioned -> returns, fully automatic` (`test/afk.test.js`). | Reuse |
 | AFK reason | WORKING | Reason parser/cleaner and announcement card: `src/afk/afk.js:22-52`; tests `cleanReason: no pings, no slurs, short, never empty`, `workflow: afk -> mentioned -> returns, fully automatic`. | Reuse |
 | AFK duration | WORKING | Stored start time and duration formatting: `src/afk/afk.js:51-64,95-114`; test `welcome back card: tags once, report with left/returned/total`. | Reuse |
 | AFK mention notifications | WORKING | Mention cards with cooldown and per-message cap: `src/afk/handler.js:94-111`; test `mentions: no spam from repeated pings, at most 3 cards per message, never for bots or yourself`. | Reuse |
 | Automatic AFK removal | WORKING | Returning message clears status and restores unchanged original nickname: `src/afk/handler.js:87-92`; tests `workflow: afk -> mentioned -> returns, fully automatic`, `return: restores a custom original nickname, but never overwrites one the user changed meanwhile`. | Reuse |
 | Avatar command | WORKING | Message-triggered avatar viewer: `src/avatar/avatar.js:21-34`, `src/avatar/handler.js`; test `handler: "av @user" replies with the avatar card` (`test/avatar.test.js`). | Reuse |
 | Profile picture command | WORKING | Same avatar feature handles `pfp`, `profile pic`, and `profile picture`: `src/avatar/avatar.js:21-34`; test `every keyword works, in any case`. | Reuse |
-| User information | WORKING (UNTESTED) | `get_member_info` returns display name, ID and join date: `src/tools/router.js:340-344`; no focused output test found. | Add tests |
-| Server information | WORKING | `get_server_info` returns member/channel counts and creation time: `src/tools/router.js:336-339`; test `read-only info action works without owner authorization`. | Reuse |
-| Banner information | MISSING | Search `bannerURL|user\.banner|banner information|show banner` in `src/`, `dashboard/`, `test/`: no banner lookup command found. | Implement |
-| Bot information | PARTIAL | `/help` lists supported commands/actions: `src/slash.js:219-220`, `src/tools/router.js:328-334`; no dedicated bot profile/status information command. | Improve |
-| Member join date | WORKING (UNTESTED) | `get_member_info` renders `member.joinedTimestamp`: `src/tools/router.js:340-344`; no focused output test found. | Add tests |
-| Account creation date | MISSING | Search `createdTimestamp|createdAt` in `src/tools/router.js`, `src/slash.js`, `test/router.test.js`: no member account-age information command found. | Implement |
-| Permissions information | PARTIAL | Permission gates are enforced internally: `src/tools/router.js:180-218`; no read-only command reports a member's permissions. | Improve |
-| Custom utility commands | MISSING | Search `custom command|command builder|user-defined command` in `src/`, `dashboard/`, `supabase/`, `test/`: no configurable custom command schema/route found. | Implement |
+| User information | WORKING | `get_member_info` returns display name, ID and join date: `src/tools/router.js:394-398`; test `member information returns display name, ID, and join date` (`test/utilities.test.js:54`). | Reuse |
+| Server information | WORKING | `get_server_info` returns member/channel counts and creation time: `src/tools/router.js:391-393`; test `read-only info action works without owner authorization` (`test/router.test.js`). | Reuse |
+| Banner information | WORKING | `get_member_profile` fetches the member's banner URL and reports absent/failed lookups: `src/tools/router.js:400-423`; tests `member profile includes account creation date and fetched banner URL`, `member profile reports when no banner is set`, and `member profile reports banner lookup failures explicitly` (`test/utilities.test.js:74,97,106`). | Reuse |
+| Bot information | WORKING | `get_bot_info` reports bot identity, uptime, guild count, and gateway ping: `src/tools/router.js:433-442`; tests `bot information reports identity, uptime, server count, and gateway ping` and `intent schema exposes the new utility actions` (`test/utilities.test.js:127,137`). | Reuse |
+| Member join date | WORKING | `get_member_info` renders the exact Discord `joinedTimestamp`: `src/tools/router.js:394-398`; test `member join date uses the exact Discord joined timestamp` (`test/utilities.test.js:65`). | Reuse |
+| Account creation date | WORKING | `get_member_profile` renders the Discord account creation timestamp: `src/tools/router.js:404-423`; test `member profile includes account creation date and fetched banner URL` (`test/utilities.test.js:74`). | Reuse |
+| Permissions information | WORKING | `get_member_permissions` reports effective guild permissions without granting actions: `src/tools/router.js:424-432`; test `member permissions reports effective server permissions` (`test/utilities.test.js:117`). | Reuse |
+| Custom utility commands | WORKING | Optional per-guild `utility_commands` config defaults empty, is validated/persisted, and runs on the existing message listener: `dashboard/lib/shared/defaults.js:72`, `dashboard/lib/shared/validate.js:132-180,241,350`, `src/utilities/customCommands.js`, `src/index.js:677`; tests `custom utility commands default to none and validate unique safe names and bounded replies`, `configured custom utility commands respond only to exact prefix invocations without pinging`, and `custom utility commands use the existing message listener after AFK and avatar handling` (`test/utilityCommandConfig.test.js:7`, `test/utilities.test.js:167,186`). | Reuse |
 
 ## F. Tickets and Support
 

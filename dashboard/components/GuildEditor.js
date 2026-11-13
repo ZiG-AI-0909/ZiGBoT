@@ -11,6 +11,7 @@ const TABS = [
     { id: 'behaviour', label: 'AI behaviour' },
     { id: 'roles', label: 'Roles' },
     { id: 'channels', label: 'Channels' },
+    { id: 'utilities', label: 'Utilities' },
     { id: 'features', label: 'Features' },
     { id: 'moderation', label: 'Moderation' },
     { id: 'antinuke', label: '🛡️ Anti-Nuke' },
@@ -200,7 +201,7 @@ export default function GuildEditor({ initial, meta }) {
                 setTab('roles');
             } else if (error.data?.fieldErrors) {
                 const first = Object.keys(error.data.fieldErrors)[0] || '';
-                setTab(/^music_/.test(first) ? 'music' : /^voice_/.test(first) ? 'voice' : /_role_ids$|owner_pronouns/.test(first) ? 'roles' : /channel|respond|cooldown|keyword/.test(first) ? 'channels' : /moderation_|warning_escalation|temporary_bans/.test(first) ? 'moderation' : /memory|reputation|music|voice|legacy/.test(first) ? 'features' : 'behaviour');
+                setTab(/^music_/.test(first) ? 'music' : /^voice_/.test(first) ? 'voice' : /_role_ids$|owner_pronouns/.test(first) ? 'roles' : /utility_commands/.test(first) ? 'utilities' : /channel|respond|cooldown|keyword/.test(first) ? 'channels' : /moderation_|warning_escalation|temporary_bans/.test(first) ? 'moderation' : /memory|reputation|music|voice|legacy/.test(first) ? 'features' : 'behaviour');
             }
             toast(error.status === 401 ? 'Your session expired. Sign in again.' : error.message, 'err');
         } finally {
@@ -273,6 +274,7 @@ export default function GuildEditor({ initial, meta }) {
                 {tab === 'roles' ? <div style={{ marginTop: 16 }}><GreetingsCard guildId={initial.guild.id} toast={toast} /></div> : null}
                 {tab === 'voice' ? <VoiceTab draft={draft} set={set} errors={fieldErrors} meta={meta} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'channels' ? <ChannelsTab draft={draft} set={set} errors={fieldErrors} channels={channels} /> : null}
+                {tab === 'utilities' ? <UtilitiesTab draft={draft} set={set} errors={fieldErrors} /> : null}
                 {tab === 'features' ? <FeaturesTab draft={draft} set={set} isHome={initial.guild.isHome} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'moderation' ? <ModerationTab draft={draft} set={set} errors={fieldErrors} /> : null}
                 {tab === 'music' ? <MusicTab guildId={initial.guild.id} draft={draft} set={set} errors={fieldErrors} roles={roles} channels={channels} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
@@ -618,6 +620,39 @@ function ChannelsTab({ draft, set, errors, channels }) {
                     {errors.log_channel_id ? <span className="error">{errors.log_channel_id}</span> : null}
                 </div>
             </div>
+        </div>
+    );
+}
+
+function UtilitiesTab({ draft, set, errors }) {
+    const commands = Array.isArray(draft.utility_commands) ? draft.utility_commands : [];
+    const update = (index, patch) => set('utility_commands')(commands.map((command, i) => i === index ? { ...command, ...patch } : command));
+    const remove = (index) => set('utility_commands')(commands.filter((_, i) => i !== index));
+    return (
+        <div className="card stack">
+            <h2>Custom utility commands</h2>
+            <p className="help">Optional server-specific replies. Add a command name and response, then members can use <code>!name</code>. Only exact commands match; replies never ping roles or everyone. No commands are configured by default.</p>
+            {commands.map((command, index) => (
+                <div className="card stack" key={`utility-${index}`}>
+                    <div className="grid-2">
+                        <div className="field">
+                            <label htmlFor={`utility-name-${index}`}>Command name</label>
+                            <input id={`utility-name-${index}`} type="text" value={command.name || ''} maxLength={32} placeholder="rules" onChange={(e) => update(index, { name: e.target.value })} aria-invalid={Boolean(errors.utility_commands) || undefined} />
+                            <span className="help">Letters, numbers, dashes, and underscores. Use without the ! prefix.</span>
+                        </div>
+                        <div className="field">
+                            <label htmlFor={`utility-response-${index}`}>Response</label>
+                            <textarea id={`utility-response-${index}`} rows={3} value={command.response || ''} maxLength={1900} placeholder="Please read #rules." onChange={(e) => update(index, { response: e.target.value })} aria-invalid={Boolean(errors.utility_commands) || undefined} />
+                            <span className="help">{(command.response || '').length}/1900 characters</span>
+                        </div>
+                    </div>
+                    <button className="btn btn-danger" type="button" onClick={() => remove(index)}>Remove command</button>
+                </div>
+            ))}
+            <button className="btn" type="button" disabled={commands.length >= 20} onClick={() => set('utility_commands')([...commands, { name: '', response: '' }])}>
+                Add command ({commands.length}/20)
+            </button>
+            {errors.utility_commands ? <span className="error" role="alert">{errors.utility_commands}</span> : null}
         </div>
     );
 }

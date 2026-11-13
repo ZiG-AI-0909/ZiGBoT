@@ -69,6 +69,9 @@ const actionAliases = new Map([
     ['serverinfo', 'get_server_info'],
     ['memberinfo', 'get_member_info'],
     ['channelinfo', 'get_channel_info'],
+    ['botinfo', 'get_bot_info'],
+    ['memberprofile', 'get_member_profile'],
+    ['memberpermissions', 'get_member_permissions'],
     ['join', 'join_voice'],
     ['leave', 'leave_voice']
 ]);
@@ -99,7 +102,10 @@ const actionCatalog = new Map([
     ['stop_voice_listening', { permission: PermissionFlagsBits.Connect, description: 'Stop voice listening.' }],
     ['get_server_info', { permission: null, description: 'Show server info.' }],
     ['get_member_info', { permission: null, description: 'Show info about a member.' }],
+    ['get_member_profile', { permission: null, description: 'Show a member account creation date and banner.' }],
+    ['get_member_permissions', { permission: null, description: 'Show a member’s effective server permissions.' }],
     ['get_channel_info', { permission: null, description: 'Show info about a channel.' }],
+    ['get_bot_info', { permission: null, description: 'Show ZiGBoT identity, uptime, server count, and gateway ping.' }],
     ['join_voice', { permission: null, description: 'Join your current voice channel.' }],
     ['leave_voice', { permission: null, description: 'Leave the voice channel.' }],
     ['voice_status', { permission: null, description: 'Show voice connection status.' }],
@@ -169,6 +175,19 @@ function findChannel(guild, name) {
     if (!name) return null;
     const id = name.match(/^<#(\d+)>$/)?.[1] || name;
     return guild.channels.cache.get(id) || guild.channels.cache.find((channel) => channel.name.toLowerCase() === name.replace(/^#/, '').toLowerCase());
+}
+
+function formatUptime(milliseconds) {
+    if (!Number.isFinite(milliseconds) || milliseconds < 0) return 'unavailable';
+    const totalMinutes = Math.floor(milliseconds / 60_000);
+    const days = Math.floor(totalMinutes / 1440);
+    const hours = Math.floor((totalMinutes % 1440) / 60);
+    const minutes = totalMinutes % 60;
+    const parts = [];
+    if (days) parts.push(`${days} day${days === 1 ? '' : 's'}`);
+    if (hours) parts.push(`${hours} hour${hours === 1 ? '' : 's'}`);
+    if (minutes || parts.length === 0) parts.push(`${minutes} minute${minutes === 1 ? '' : 's'}`);
+    return parts.join(' ');
 }
 
 // Discord's own rule, applied to the PERSON ASKING: anyone but the server
@@ -370,13 +389,56 @@ async function executeTool(message, settings, intent, context = {}) {
                 break;
             }
             case 'get_server_info':
-            case 'get_server_info':
                 result = `**${guild.name}**\nMembers: ${guild.memberCount}\nChannels: ${guild.channels.cache.size}\nCreated: <t:${Math.floor(guild.createdTimestamp / 1000)}:D>`;
                 break;
             case 'get_member_info': {
                 const member = findMember(guild, text(intent.target, 'Member'));
                 if (!member) return '❌ I could not find that member.';
                 result = `**${member.displayName}**\nID: ${member.id}\nJoined: <t:${Math.floor(member.joinedTimestamp / 1000)}:D>`;
+                break;
+            }
+            case 'get_member_profile': {
+                const member = findMember(guild, text(intent.target, 'Member'));
+                if (!member) return '❌ I could not find that member.';
+                const createdAt = Number(member.user?.createdTimestamp);
+                let banner = 'Banner: No banner is set.';
+                let user = member.user;
+                if (!user?.banner && message.client?.users?.fetch) {
+                    try {
+                        user = await message.client.users.fetch(member.id, { force: true });
+                    } catch (error) {
+                        console.error(`[ZiGBoT UTILITIES] Banner lookup failed for ${member.id}: ${error?.message || error}`);
+                        banner = 'Banner: Banner lookup failed; try again later.';
+                        user = null;
+                    }
+                } else if (!message.client?.users?.fetch && !user?.banner) {
+                    banner = 'Banner: Lookup unavailable.';
+                }
+                if (user?.banner) {
+                    const url = user.bannerURL?.({ size: 1024 });
+                    banner = url ? `Banner: ${url}` : 'Banner: Set, but its URL is unavailable.';
+                }
+                result = `**${member.displayName}**\nID: ${member.id}\nAccount created: ${Number.isFinite(createdAt) && createdAt > 0 ? `<t:${Math.floor(createdAt / 1000)}:D>` : 'Unavailable'}\n${banner}`;
+                break;
+            }
+            case 'get_member_permissions': {
+                const member = findMember(guild, text(intent.target, 'Member'));
+                if (!member) return '❌ I could not find that member.';
+                const permissions = member.permissions?.toArray?.();
+                result = Array.isArray(permissions)
+                    ? `**${member.displayName}** server permissions:\n${permissions.length ? permissions.join(', ') : 'None'}`
+                    : `❌ I could not read ${member.displayName}'s server permissions.`;
+                break;
+            }
+            case 'get_bot_info': {
+                const client = message.client;
+                if (!client?.user) {
+                    result = '❌ ZiGBoT information is unavailable in this context.';
+                    break;
+                }
+                const serverCount = client.guilds?.cache?.size;
+                const ping = client.ws?.ping;
+                result = `**${client.user.tag || client.user.username || 'ZiGBoT'}**\nID: ${client.user.id}\nServers: ${Number.isInteger(serverCount) ? serverCount : 'unavailable'}\nUptime: ${formatUptime(client.uptime)}\nGateway ping: ${Number.isFinite(ping) ? `${Math.round(ping)} ms` : 'unavailable'}`;
                 break;
             }
             case 'get_channel_info': {

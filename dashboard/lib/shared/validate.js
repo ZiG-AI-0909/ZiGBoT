@@ -23,6 +23,9 @@ const TEXT_LIMITS = Object.freeze({
     response_style: LIMITS.responseStyle,
     moderation_filtered_words: 500
 });
+const UTILITY_COMMAND_MAX = 20;
+const UTILITY_COMMAND_NAME = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+const UTILITY_COMMAND_RESPONSE_MAX = 1900;
 
 // Attempts to switch off the platform safety layer are rejected outright.
 // (The safety layer is also enforced in code, so this is defence in depth.)
@@ -126,6 +129,58 @@ function checkIdList(errors, field, raw, knownIds) {
     return out;
 }
 
+function sanitizeUtilityCommands(raw) {
+    if (!Array.isArray(raw)) return [];
+    const commands = [];
+    const names = new Set();
+    for (const item of raw.slice(0, UTILITY_COMMAND_MAX)) {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+        const name = cleanText(item.name).toLowerCase();
+        const response = cleanText(item.response);
+        if (!UTILITY_COMMAND_NAME.test(name) || !response || response.length > UTILITY_COMMAND_RESPONSE_MAX || names.has(name)) continue;
+        names.add(name);
+        commands.push({ name, response });
+    }
+    return commands;
+}
+
+function checkUtilityCommands(errors, raw, fallback) {
+    if (raw === undefined) return fallback;
+    if (!Array.isArray(raw)) {
+        errors.utility_commands = 'Must be a list of custom commands.';
+        return [];
+    }
+    if (raw.length > UTILITY_COMMAND_MAX) {
+        errors.utility_commands = `At most ${UTILITY_COMMAND_MAX} custom commands.`;
+        return [];
+    }
+    const commands = [];
+    const names = new Set();
+    for (const [index, item] of raw.entries()) {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+            errors.utility_commands = `Command ${index + 1} must have a name and response.`;
+            return [];
+        }
+        const name = cleanText(item.name).toLowerCase();
+        const response = checkText(errors, 'utility_commands', item.response, UTILITY_COMMAND_RESPONSE_MAX);
+        if (!UTILITY_COMMAND_NAME.test(name)) {
+            errors.utility_commands = `Command ${index + 1} name must be 1-32 lowercase letters, numbers, dashes, or underscores, and start with a letter or number.`;
+            return [];
+        }
+        if (!response) {
+            errors.utility_commands = `Command "${name}" needs a response.`;
+            return [];
+        }
+        if (names.has(name)) {
+            errors.utility_commands = `Command "${name}" is listed more than once.`;
+            return [];
+        }
+        names.add(name);
+        commands.push({ name, response });
+    }
+    return commands;
+}
+
 /**
  * Validate a full guild config submitted by an admin.
  * @param {object} input raw request body
@@ -183,6 +238,7 @@ function validateGuildConfig(input, ctx = {}) {
         moderation_word_filter_enabled: checkBool(errors, 'moderation_word_filter_enabled', input.moderation_word_filter_enabled, base.moderation_word_filter_enabled),
         moderation_filtered_words: checkText(errors, 'moderation_filtered_words', input.moderation_filtered_words, TEXT_LIMITS.moderation_filtered_words),
         moderation_appeals_enabled: checkBool(errors, 'moderation_appeals_enabled', input.moderation_appeals_enabled, base.moderation_appeals_enabled),
+        utility_commands: checkUtilityCommands(errors, input.utility_commands, base.utility_commands),
         // Server setup (also set by the bot's /setup command).
         owner_pronouns: input.owner_pronouns === undefined || input.owner_pronouns === null || input.owner_pronouns === '' ? null : checkEnum(errors, 'owner_pronouns', input.owner_pronouns, PRONOUNS, null),
         male_role_ids: checkIdList(errors, 'male_role_ids', input.male_role_ids, ctx.roleIds || null).slice(0, 10),
@@ -291,7 +347,8 @@ function sanitizeStoredConfig(row, { guildId } = {}) {
         if (row[key] === undefined || row[key] === null) continue;
         const expected = typeof defaults[key];
         if (Array.isArray(defaults[key])) {
-            if (Array.isArray(row[key])) out[key] = row[key].map(String).filter((id) => SNOWFLAKE.test(id));
+            if (key === 'utility_commands') out[key] = sanitizeUtilityCommands(row[key]);
+            else if (Array.isArray(row[key])) out[key] = row[key].map(String).filter((id) => SNOWFLAKE.test(id));
         } else if (key === 'log_channel_id' || key === 'music_channel_id') {
             out[key] = SNOWFLAKE.test(String(row[key])) ? String(row[key]) : null;
         } else if (key === 'gif_settings') {
@@ -340,5 +397,6 @@ module.exports = {
     validateGuildConfig,
     validateRoleMappings,
     sanitizeStoredConfig,
-    sanitizeStoredMappings
+    sanitizeStoredMappings,
+    sanitizeUtilityCommands
 };

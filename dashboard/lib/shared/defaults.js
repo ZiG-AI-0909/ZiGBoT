@@ -69,6 +69,7 @@ function defaultGuildConfig({ guildId, legacy = false, legacySettings = null } =
         moderation_word_filter_enabled: false,
         moderation_filtered_words: '',
         moderation_appeals_enabled: false,
+        utility_commands: [],
         version: 1
     };
 }

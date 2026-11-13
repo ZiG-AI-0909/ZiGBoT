@@ -333,7 +333,10 @@ Respond with the exact JSON schema requested by the API, including all keys. Use
 Actions and their fields:
 - get_server_info: {}
 - get_member_info: {target}
+- get_member_profile: {target} (account creation date and banner)
+- get_member_permissions: {target} (effective server permissions)
 - get_channel_info: {channel}
+- get_bot_info: {}
 - join_voice, leave_voice, voice_status: {}
 - start_voice_listening, stop_voice_listening: {}
 - play: {target} (target = the song name, artist, YouTube link, or direct https:// audio URL the user wants played; use action "chat" if they did not name anything to play)
