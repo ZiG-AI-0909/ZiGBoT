@@ -26,12 +26,14 @@ const PURGE_INTERVAL_MS = 24 * 60 * 60_000;
 const ALERTS_PER_WINDOW = 10;
 const ALERT_WINDOW_MS = 10 * 60_000;
 const LAST_EVENT_WRITE_MS = 60_000;
+const SEEN_AUDIT_ENTRY_MAX = 5000;
 const code = (error) => String(error?.code || error?.status || error?.name || 'Error').slice(0, 40);
 
 function createAntiNuke({ client, store, engine = createEngine(), logger = console, now = () => Date.now(), dashboardUrl = () => '', version = '', queueMax = QUEUE_MAX }) {
     const queues = new Map();
     const alertTimes = new Map();
     const lastEventWrite = new Map();
+    const seenAuditEntries = new Map();
     let dropped = 0;
     const log = (message) => logger.log?.(`[ZiGBoT ANTINUKE] ${message}`);
     const warn = (message) => logger.error?.(`[ZiGBoT ANTINUKE] ${message}`);
@@ -221,6 +223,14 @@ function createAntiNuke({ client, store, engine = createEngine(), logger = conso
 
     function onAuditLogEntry(entry, guild) {
         if (!guild?.id) return false;
+        if (entry?.id) {
+            const key = `${guild.id}:${entry.id}`;
+            if (seenAuditEntries.has(key)) return false;
+            seenAuditEntries.set(key, true);
+            if (seenAuditEntries.size > SEEN_AUDIT_ENTRY_MAX) {
+                seenAuditEntries.delete(seenAuditEntries.keys().next().value);
+            }
+        }
         return enqueue(guild.id, () => processAuditEntry(entry, guild));
     }
 
@@ -233,6 +243,9 @@ function createAntiNuke({ client, store, engine = createEngine(), logger = conso
         engine.forget(guildId);
         queues.delete(String(guildId));
         alertTimes.delete(String(guildId));
+        for (const key of seenAuditEntries.keys()) {
+            if (key.startsWith(`${guildId}:`)) seenAuditEntries.delete(key);
+        }
     }
 
     let timers = [];

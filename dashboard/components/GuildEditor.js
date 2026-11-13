@@ -12,6 +12,7 @@ const TABS = [
     { id: 'roles', label: 'Roles' },
     { id: 'channels', label: 'Channels' },
     { id: 'features', label: 'Features' },
+    { id: 'moderation', label: 'Moderation' },
     { id: 'antinuke', label: '🛡️ Anti-Nuke' },
     { id: 'music', label: '🎵 Music' },
     { id: 'voice', label: '🎙️ Voice' },
@@ -199,7 +200,7 @@ export default function GuildEditor({ initial, meta }) {
                 setTab('roles');
             } else if (error.data?.fieldErrors) {
                 const first = Object.keys(error.data.fieldErrors)[0] || '';
-                setTab(/^music_/.test(first) ? 'music' : /^voice_/.test(first) ? 'voice' : /_role_ids$|owner_pronouns/.test(first) ? 'roles' : /channel|respond|cooldown|keyword/.test(first) ? 'channels' : /memory|reputation|music|voice|legacy/.test(first) ? 'features' : 'behaviour');
+                setTab(/^music_/.test(first) ? 'music' : /^voice_/.test(first) ? 'voice' : /_role_ids$|owner_pronouns/.test(first) ? 'roles' : /channel|respond|cooldown|keyword/.test(first) ? 'channels' : /moderation_|warning_escalation|temporary_bans/.test(first) ? 'moderation' : /memory|reputation|music|voice|legacy/.test(first) ? 'features' : 'behaviour');
             }
             toast(error.status === 401 ? 'Your session expired. Sign in again.' : error.message, 'err');
         } finally {
@@ -273,6 +274,7 @@ export default function GuildEditor({ initial, meta }) {
                 {tab === 'voice' ? <VoiceTab draft={draft} set={set} errors={fieldErrors} meta={meta} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'channels' ? <ChannelsTab draft={draft} set={set} errors={fieldErrors} channels={channels} /> : null}
                 {tab === 'features' ? <FeaturesTab draft={draft} set={set} isHome={initial.guild.isHome} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
+                {tab === 'moderation' ? <ModerationTab draft={draft} set={set} errors={fieldErrors} /> : null}
                 {tab === 'music' ? <MusicTab guildId={initial.guild.id} draft={draft} set={set} errors={fieldErrors} roles={roles} channels={channels} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'premium' ? <PremiumTab guildId={initial.guild.id} plan={plan} setPlan={setPlan} perks={meta.perks} contactUrl={meta.contactUrl} toast={toast} /> : null}
                 {tab === 'identity' && meta.identityEnabled ? <IdentityTab guildId={initial.guild.id} guildName={initial.guild.name} premium={premium} onUpgrade={() => setTab('premium')} toast={toast} /> : null}
@@ -632,6 +634,26 @@ function FeaturesTab({ draft, set, isHome, premium, onUpgrade }) {
             {isHome || draft.legacy_role_rules ? (
                 <Switch id="legacy" checked={draft.legacy_role_rules} onChange={set('legacy_role_rules')} label="Legacy role rules (env-configured)" help="Keeps the original gentle/savage and pronoun role-name rules from the bot’s environment. Role mappings above still take priority." />
             ) : null}
+        </div>
+    );
+}
+
+function ModerationTab({ draft, set, errors }) {
+    return (
+        <div className="stack">
+            <div className="card stack">
+                <h2>Opt-in moderation</h2>
+                <p className="help">These settings are off by default. When enabled, matching messages are deleted and reported to moderators; ZiGBoT never automatically bans or kicks members.</p>
+                <Switch id="warning-escalation" checked={draft.warning_escalation_enabled} onChange={set('warning_escalation_enabled')} label="Warning escalation" help="At each third warning, apply a 10-minute timeout. Requires the bot's Moderate Members permission." />
+                <Switch id="temporary-bans" checked={draft.temporary_bans_enabled} onChange={set('temporary_bans_enabled')} label="Allow temporary bans" help="Enables the separate temporary-ban action. Existing /ban behavior is unchanged." />
+                <Switch id="moderation-spam" checked={draft.moderation_spam_filter_enabled} onChange={set('moderation_spam_filter_enabled')} label="Repeated-message spam filter" help="Delete repeated rapid messages from the same member." />
+                <Switch id="moderation-caps" checked={draft.moderation_caps_filter_enabled} onChange={set('moderation_caps_filter_enabled')} label="Anti-caps filter" help="Delete long messages made mostly of uppercase letters." />
+                <Switch id="moderation-mentions" checked={draft.moderation_mentions_filter_enabled} onChange={set('moderation_mentions_filter_enabled')} label="Mention-spam filter" help="Delete messages that mention five or more members or roles." />
+                <Switch id="moderation-invites" checked={draft.moderation_invites_filter_enabled} onChange={set('moderation_invites_filter_enabled')} label="Discord invite filter" help="Delete Discord invite links." />
+                <Switch id="moderation-word-filter" checked={draft.moderation_word_filter_enabled} onChange={set('moderation_word_filter_enabled')} label="Custom word filter" help="Delete messages containing a listed word or phrase." />
+                <TextArea id="moderation-filtered-words" label="Filtered words and phrases" help="One entry per line; 500 characters maximum. These terms apply only to this server." value={draft.moderation_filtered_words} onChange={set('moderation_filtered_words')} max={500} error={errors.moderation_filtered_words} rows={4} />
+                <Switch id="moderation-appeals" checked={draft.moderation_appeals_enabled} onChange={set('moderation_appeals_enabled')} label="Accept moderation appeals" help="Allows members to submit /appeal. Moderators review submissions with /moderation review." />
+            </div>
         </div>
     );
 }

@@ -405,6 +405,51 @@ test('14. joining a server starts protection: settings, private alert channel, s
     assert.match(read('dashboard/lib/discord.js'), /const INVITE_PERMISSIONS = \[10n, 11n, 14n, 16n, 6n, 20n, 21n, 13n, 1n, 2n, 4n, 28n, 40n, 7n, 27n\]/, 'the invite asks for View Audit Log');
 });
 
+test('duplicate audit entry IDs are processed once across correlated and gateway events', async () => {
+    let settingsReads = 0;
+    const monitor = createAntiNuke({
+        client: { user: { id: BOT } },
+        store: {
+            getSettings: async () => {
+                settingsReads += 1;
+                return settings(G);
+            },
+            upsertStatus: async () => {}
+        },
+        logger: { log() {}, error() {} }
+    });
+    const guild = { id: G, ownerId: OWNER, roles: { cache: new Map() } };
+    const auditEntry = {
+        id: 'audit-duplicate',
+        action: AuditLogEvent.ChannelDelete,
+        executorId: ROGUE,
+        targetId: 'deleted-channel',
+        createdTimestamp: Date.now(),
+        changes: []
+    };
+
+    const first = monitor.onAuditLogEntry(auditEntry, guild);
+    const duplicate = monitor.onAuditLogEntry({ ...auditEntry }, guild);
+    assert.notEqual(first, false);
+    assert.equal(duplicate, false);
+    await first;
+    assert.equal(settingsReads, 1);
+});
+
+test('SECURITY_ENABLED=false leaves legacy Anti-Nuke mass-delete detection active', () => {
+    const index = read('src/index.js');
+    assert.match(index, /client\.on\(Events\.GuildAuditLogEntryCreate, \(entry, guild\) => \{\s+antiNuke\.onAuditLogEntry\(entry, guild\);/);
+    assert.doesNotMatch(index, /if \(settings\.securityEnabled\) \{\s+client\.on\(Events\.GuildAuditLogEntryCreate/);
+
+    const { engine } = engineAt();
+    const antiNukeSettings = settings({ securityEnabled: false });
+    for (let i = 0; i < 4; i += 1) {
+        const incidents = run(engine, entry(AuditLogEvent.ChannelDelete, ROGUE), antiNukeSettings);
+        if (i < 3) assert.deepEqual(incidents, []);
+        else assert.equal(incidents[0].rule, 'mass_delete');
+    }
+});
+
 test('an incident is recorded, alerted, and falls back to an owner DM when no channel works', async () => {
     const fake = fakeSupabase();
     const store = createAntiNukeStore({ guildStore: fake.guildStore });

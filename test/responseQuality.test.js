@@ -59,6 +59,8 @@ test('context keeps order, puts the current message last, and does not repeat it
     ];
     const messages = buildReplyMessages({ systemPrompt: 'SYS', contextMessages, authorName: 'asha', userMessage: 'double it?' });
     assert.deepEqual(messages.map((m) => m.role), ['system', 'user', 'assistant', 'user']);
-    assert.equal(messages.at(-1).content, '[asha]: double it?');
+    assert.match(messages.at(-1).content, /UNTRUSTED_USER_DATA_JSON/);
+    assert.match(messages.at(-1).content, /"speaker":"asha","message":"double it\?"/);
     assert.equal(messages.filter((m) => m.content.includes('double it?')).length, 1);
+    assert.match(messages[1].content, /UNTRUSTED_USER_DATA_JSON/);
 });

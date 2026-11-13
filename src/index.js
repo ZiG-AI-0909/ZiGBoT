@@ -24,6 +24,7 @@ const { getOwnerRoastTarget, getOwnerMemoryTarget } = require('./security/ownerC
 const { requestConfirmation } = require('./security/confirmation');
 const { executeTool, destructiveActions, isAuthorizedActor, memberToDescribe } = require('./tools/router');
 const { auditLog } = require('./logging/auditLog');
+const { auditSecurityEvent } = require('./security/audit/logger');
 const { buildVoiceTranscriptRoute } = require('./routing/voiceRoute');
 const { speak, isListening } = require('./voice/voiceConversation');
 const {
@@ -75,6 +76,11 @@ const { createIdentityCommands } = require('./identity/commands');
 const { createAfkStore } = require('./afk/store');
 const { createAfkHandler } = require('./afk/handler');
 const { createAvatarHandler } = require('./avatar/handler');
+const { createSecurityIntegration, createSecurityEventHandlers } = require('./security');
+const { createSecurityCommands } = require('./security/commands');
+const { createModerationFilterEngine } = require('./moderation/messageFilters');
+const { createPunishmentExpiryService } = require('./moderation/expiry');
+const { createModerationCommands } = require('./moderation/commands');
 const { version: BOT_VERSION } = require('../package.json');
 
 function logAiError(error) {
@@ -244,6 +250,26 @@ const antiNuke = createAntiNuke({
     dashboardUrl: (guildId) => `${settings.dashboardUrl}/dashboard/${guildId}`,
     version: BOT_VERSION
 });
+const securityIntegration = createSecurityIntegration({
+    settings,
+    antiNuke,
+    auditLog,
+    aiClient: ai.client,
+    aiModel: ai.model,
+    logger: console
+});
+const securityEventHandlers = createSecurityEventHandlers(securityIntegration);
+const getGuildConfig = async (guild) => (await guildStore.getGuildContext(guild))?.config || {};
+const moderationFilters = createModerationFilterEngine({ getGuildConfig, logger: console });
+const moderationCommands = createModerationCommands({ store: brain, getGuildConfig, auditLog });
+const punishmentExpiry = createPunishmentExpiryService({ store: brain, client, logger: console });
+const securityAuditLog = (entry) => auditSecurityEvent(entry, { auditLog });
+const securityCommands = createSecurityCommands({
+    settings,
+    integration: securityIntegration,
+    auditLog: securityAuditLog,
+    logger: console
+});
 // Scheduled greetings (dashboard Roles tab): sent by this worker from Supabase.
 const greetingScheduler = createGreetingScheduler({ client, guildStore });
 client.on(Events.GuildAuditLogEntryCreate, (entry, guild) => {
@@ -251,7 +277,12 @@ client.on(Events.GuildAuditLogEntryCreate, (entry, guild) => {
 });
 client.on(Events.GuildMemberAdd, (member) => {
     antiNuke.onMemberAdd(member);
+    void securityEventHandlers.guildMemberAdd(member);
 });
+client.on(Events.ChannelDelete, securityEventHandlers.channelDelete);
+client.on(Events.GuildRoleDelete, securityEventHandlers.roleDelete);
+client.on(Events.GuildBanAdd, securityEventHandlers.guildBanAdd);
+client.on(Events.WebhooksUpdate, securityEventHandlers.webhookUpdate);
 
 // Custom bot identity (Premium; CUSTOM_IDENTITY_ENABLED=true). While off, a
 // revert-only sync puts any applied identity back to default ZiGBoT.
@@ -266,6 +297,7 @@ console.log(`[ZiGBoT IDENTITY] Custom bot identity: ${identitySync.mode === 'ful
 
 client.once(Events.ClientReady, async (c) => {
     console.log(`✅ ${c.user.tag} is online and ready in ${c.guilds.cache.size} server(s)! (Mention-driven mode with role-based personas active)`);
+    punishmentExpiry.start();
     // Make sure every server the bot is in has a config row (safe defaults
     // for new servers). Failures are logged; the bot keeps running.
     if (guildStore.enabled) {
@@ -383,6 +415,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return;
     }
     if (!interaction.isChatInputCommand()) return;
+    if (interaction.commandName === 'appeal') {
+        await moderationCommands.handleAppeal(interaction)
+            .catch((error) => console.error(`[ZiGBoT MODERATION] /appeal failed: ${error?.code || error?.name || 'Error'}`));
+        return;
+    }
+    if (interaction.commandName === 'moderation') {
+        await moderationCommands.handleModeration(interaction)
+            .catch((error) => console.error(`[ZiGBoT MODERATION] /moderation failed: ${error?.code || error?.name || 'Error'}`));
+        return;
+    }
+    if (interaction.commandName === 'security') {
+        await securityCommands.handleSlash(interaction)
+            .catch((error) => console.error(`[ZiGBoT SECURITY] /security failed: ${error?.code || error?.name || 'Error'}`));
+        return;
+    }
     // /memory replies are private, so it branches off before the public deferral.
     if (interaction.commandName === 'memory') {
         await memoryCommands.handleSlash(interaction, {
@@ -461,7 +508,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         // YouTube live chat commands, before the general intent router.
         // A YouTube failure is handled inside runYouTubeInteraction (returns a
         // friendly error line) and never bubbles up as a Discord crash.
-        const ytReply = await runYouTubeInteraction(interaction, settings, client);
+        const ytReply = await runYouTubeInteraction(interaction, settings);
         if (ytReply !== null) {
             await interaction.editReply(ytReply);
             return;
@@ -608,12 +655,15 @@ async function runIntent(message, settings, intent, { onVoiceTranscript, isVoice
 }
 
 client.on(Events.MessageCreate, async (message) => {
+    void securityEventHandlers.messageCreate(message);
     // Ignore all bots
     if (message.author.bot || !client.user) return;
 
     // Per-server context: config is loaded for THIS message's guild only.
     const { ctx: guildCtx, gSettings, behavior } = await guildRuntime(message.guild, message.member);
     if (guildCtx && guildCtx.config.enabled === false) return;
+    const moderationResult = await moderationFilters.processMessage(message, guildCtx?.config || null);
+    if (moderationResult.deleted) return;
     if (guildCtx && !channelAllowed(guildCtx.config, message.channel)) return;
 
     // AFK (automatic): "afk <reason>" sets it (and stops here); any other

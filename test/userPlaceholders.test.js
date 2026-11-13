@@ -157,7 +157,9 @@ test('a mentioned member is named to the model and {mention:N} mentions them', a
     const system = calls[0].messages[0].content;
     assert.match(system, /1\. "₊˚⊹ Star" - to mention them, write \{mention:1\}/);
     assert.match(system, /speak to that member/);
-    assert.equal(calls[0].messages.at(-1).content, 'greet @₊˚⊹ Star', 'the model reads names, never ids');
+    const userTurn = calls[0].messages.at(-1).content;
+    assert.match(userTurn, /UNTRUSTED_USER_DATA_JSON/);
+    assert.equal(JSON.parse(userTurn.split('\n').at(-1)).message, 'greet @₊˚⊹ Star', 'the model reads names, never ids');
 
     // A plain "@Name" of a mentioned member also becomes a real mention; an unknown index is dropped.
     assert.equal(await ai.reply({ userMessage: 'greet them', tone: 'gentle', user, guildPrompt: guildPrompt() }), `Hi <@${STAR.id}>!`);

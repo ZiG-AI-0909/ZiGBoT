@@ -8,12 +8,10 @@ const {
     SlashCommandBuilder,
     PermissionFlagsBits
 } = require('discord.js');
-const { destructiveActions } = require('./tools/router');
 const { isOwner } = require('./security/authorization');
 const { isHomeGuild } = require('./guildConfig/store');
 const { SUPPORTED_LANGUAGES } = require('../dashboard/lib/shared');
 const {
-    isYouTubeReady,
     getYouTubeStatus,
     handleWatchCommand,
     handleUnwatchCommand,
@@ -141,12 +139,37 @@ function buildDefinitions({ identity = false } = {}) {
             .addSubcommand((sub) => sub.setName('diagnostics').setDescription('Owner/admin: memory system diagnostics')
                 .addUserOption((option) => option.setName('member').setDescription('Optional: check this member'))),
         new SlashCommandBuilder()
+            .setName('appeal')
+            .setDescription('Submit an appeal for a moderation case (private)')
+            .addSubcommand((sub) => sub.setName('submit').setDescription('Ask moderators to review your case')
+                .addStringOption((option) => option.setName('case').setDescription('Moderation case number').setMaxLength(12).setRequired(true))
+                .addStringOption((option) => option.setName('reason').setDescription('Why you are appealing').setMaxLength(1000).setRequired(true))),
+        new SlashCommandBuilder()
+            .setName('moderation')
+            .setDescription('Review moderation cases and appeals (private)')
+            .addSubcommand((sub) => sub.setName('logs').setDescription('List recent moderation cases'))
+            .addSubcommand((sub) => sub.setName('case').setDescription('View a moderation case')
+                .addStringOption((option) => option.setName('case').setDescription('Moderation case number').setMaxLength(12).setRequired(true)))
+            .addSubcommand((sub) => sub.setName('review').setDescription('Approve or reject a pending appeal')
+                .addStringOption((option) => option.setName('appeal').setDescription('Appeal number').setMaxLength(12).setRequired(true))
+                .addStringOption((option) => option.setName('decision').setDescription('Review decision').setRequired(true)
+                    .addChoices({ name: 'Approve', value: 'approve' }, { name: 'Reject', value: 'reject' }))
+                .addStringOption((option) => option.setName('note').setDescription('Optional moderator note').setMaxLength(500)))
+            .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
+        new SlashCommandBuilder()
             .setName('reputation')
             .setDescription('Owner/admin: view a member\'s behavior record and standing')
             .addUserOption((option) => option
                 .setName('member')
                 .setDescription('Optional: defaults to yourself'))
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+        new SlashCommandBuilder()
+            .setName('security')
+            .setDescription('View security monitoring and incident findings')
+            .addSubcommand((sub) => sub.setName('status').setDescription('Show security monitoring status'))
+            .addSubcommand((sub) => sub.setName('report').setDescription("Show this server's security incident report"))
+            .addSubcommand((sub) => sub.setName('why').setDescription('Explain the latest security finding for a member')
+                .addUserOption((option) => option.setName('user').setDescription('Member to inspect').setRequired(true))),
         // Admins: channels where opted-in members' own messages may be
         // summarised. Also checked server-side (src/memory/summaryChannels.js).
         new SlashCommandBuilder()
@@ -317,11 +340,8 @@ async function interactionToIntent(interaction) {
     return { action };
 }
 
-// FakeMessage shape so handleWatchCommand can reuse the existing gating.
-const ytMessageShape = (authorId) => ({ author: { id: authorId } });
-
 /** YouTube slash commands. YouTube failures never crash the Discord path. */
-async function runYouTubeInteraction(interaction, settings, client) {
+async function runYouTubeInteraction(interaction, settings) {
     const isDiscordOwner = isOwner(interaction.user.id, settings)
         || interaction.user.id === settings.serverOwnerId;
     if (!isDiscordOwner) return null; // silent non-owner ignore

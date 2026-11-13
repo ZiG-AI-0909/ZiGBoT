@@ -14,6 +14,9 @@ let client = null;
 let users = null;
 let warnings = null;
 let counters = null;
+let moderationCases = null;
+let moderationAppeals = null;
+let temporaryPunishments = null;
 let memories = null;
 let memoryPrefs = null;
 let behaviors = null;
@@ -176,6 +179,9 @@ async function connectBrain(uri, { client: injectedClient = null, dbName = 'zigb
     const nextUsers = db.collection('users');
     const nextWarnings = db.collection('warnings');
     const nextCounters = db.collection('counters');
+    const nextModerationCases = db.collection('moderation_cases');
+    const nextModerationAppeals = db.collection('moderation_appeals');
+    const nextTemporaryPunishments = db.collection('temporary_punishments');
     const nextMemories = db.collection('memories');
     const nextMemoryPrefs = db.collection('memory_prefs');
     const nextBehaviors = db.collection('behaviors');
@@ -195,6 +201,11 @@ async function connectBrain(uri, { client: injectedClient = null, dbName = 'zigb
     await nextUsers.createIndex({ userId: 1 }, { unique: true });
     // Same lookup pattern as the old idx_warnings_guild_user SQLite index.
     await nextWarnings.createIndex({ guildId: 1, userId: 1, created_at: 1 });
+    await nextModerationCases.createIndex({ guildId: 1, created_at: -1 });
+    await nextModerationAppeals.createIndex({ guildId: 1, caseId: 1, userId: 1 }, { unique: true });
+    await nextModerationAppeals.createIndex({ guildId: 1, status: 1, created_at: -1 });
+    await nextTemporaryPunishments.createIndex({ guildId: 1, userId: 1, type: 1 }, { unique: true });
+    await nextTemporaryPunishments.createIndex({ active: 1, expiresAt: 1 });
     // Memory recall always filters by guild+user and sorts newest-first.
     await nextMemories.createIndex({ guildId: 1, userId: 1, created_at: -1 });
     // Guild-wide recent-context lookups (cross-user, time-windowed).
@@ -224,6 +235,9 @@ async function connectBrain(uri, { client: injectedClient = null, dbName = 'zigb
     users = nextUsers;
     warnings = nextWarnings;
     counters = nextCounters;
+    moderationCases = nextModerationCases;
+    moderationAppeals = nextModerationAppeals;
+    temporaryPunishments = nextTemporaryPunishments;
     memories = nextMemories;
     memoryPrefs = nextMemoryPrefs;
     behaviors = nextBehaviors;
@@ -284,6 +298,148 @@ async function listWarnings(guildId, userId) {
 async function countWarnings(guildId, userId) {
     requireBrain();
     return warnings.countDocuments({ guildId, userId });
+}
+
+async function createModerationCase(guildId, record = {}) {
+    requireBrain();
+    if (!moderationCases) throw new Error('Moderation case storage is not connected.');
+    const doc = {
+        id: await nextSequence('moderation_case_id'),
+        guildId: String(guildId),
+        action: String(record.action || 'unknown').slice(0, 60),
+        target: String(record.target || 'server').slice(0, 100),
+        targetId: record.targetId ? String(record.targetId).slice(0, 32) : null,
+        actorId: String(record.actorId || 'unknown').slice(0, 32),
+        reason: typeof record.reason === 'string' ? record.reason.slice(0, 500) : null,
+        result: String(record.result || 'SUCCESS').slice(0, 40),
+        details: record.details && typeof record.details === 'object' ? record.details : {},
+        created_at: Date.now()
+    };
+    await moderationCases.insertOne(doc);
+    return { ...doc };
+}
+
+async function getModerationCase(guildId, caseId) {
+    requireBrain();
+    if (!moderationCases) throw new Error('Moderation case storage is not connected.');
+    return moderationCases.findOne({ guildId: String(guildId), id: Number(caseId) });
+}
+
+async function listModerationCases(guildId, limit = 20) {
+    requireBrain();
+    if (!moderationCases) throw new Error('Moderation case storage is not connected.');
+    const safeLimit = Math.min(100, Math.max(1, Math.trunc(Number(limit) || 20)));
+    return moderationCases.find({ guildId: String(guildId) }).sort({ created_at: -1, id: -1 }).limit(safeLimit).toArray();
+}
+
+async function createModerationAppeal(guildId, caseId, userId, reason) {
+    requireBrain();
+    if (!moderationAppeals || !moderationCases) throw new Error('Moderation appeal storage is not connected.');
+    const caseRecord = await getModerationCase(guildId, caseId);
+    if (!caseRecord || String(caseRecord.targetId || '') !== String(userId)) {
+        throw new Error('That moderation case cannot be appealed by this member.');
+    }
+    const existing = await moderationAppeals.findOne({
+        guildId: String(guildId),
+        caseId: Number(caseId),
+        userId: String(userId)
+    });
+    if (existing) {
+        if (existing.status === 'pending') return existing;
+        throw new Error('An appeal for this case has already been reviewed.');
+    }
+    const doc = {
+        id: await nextSequence('moderation_appeal_id'),
+        guildId: String(guildId),
+        caseId: Number(caseId),
+        userId: String(userId),
+        reason: String(reason || '').slice(0, 1000),
+        status: 'pending',
+        created_at: Date.now(),
+        reviewed_at: null,
+        reviewerId: null,
+        reviewNote: null
+    };
+    await moderationAppeals.insertOne(doc);
+    return { ...doc };
+}
+
+async function listModerationAppeals(guildId, limit = 20) {
+    requireBrain();
+    if (!moderationAppeals) throw new Error('Moderation appeal storage is not connected.');
+    const safeLimit = Math.min(100, Math.max(1, Math.trunc(Number(limit) || 20)));
+    return moderationAppeals.find({ guildId: String(guildId), status: 'pending' })
+        .sort({ created_at: 1, id: 1 }).limit(safeLimit).toArray();
+}
+
+async function reviewModerationAppeal(guildId, appealId, reviewerId, decision, note = '') {
+    requireBrain();
+    if (!moderationAppeals) throw new Error('Moderation appeal storage is not connected.');
+    if (!['approved', 'rejected'].includes(decision)) throw new Error('Appeal decision must be approved or rejected.');
+    const reviewed = await moderationAppeals.findOneAndUpdate(
+        { guildId: String(guildId), id: Number(appealId), status: 'pending' },
+        { $set: { status: decision, reviewerId: String(reviewerId), reviewNote: String(note).slice(0, 500), reviewed_at: Date.now() } },
+        { returnDocument: 'after', includeResultMetadata: false }
+    );
+    return reviewed || null;
+}
+
+async function addTemporaryPunishment(record = {}) {
+    requireBrain();
+    if (!temporaryPunishments) throw new Error('Temporary punishment storage is not connected.');
+    const guildId = String(record.guildId || '');
+    const userId = String(record.userId || '');
+    const type = String(record.type || '');
+    const expiresAt = Number(record.expiresAt);
+    if (!guildId || !userId || !['timeout', 'ban'].includes(type) || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+        throw new Error('Temporary punishment record is invalid.');
+    }
+    const filter = { guildId, userId, type };
+    const update = {
+        $set: {
+            expiresAt,
+            actorId: String(record.actorId || 'unknown'),
+            reason: String(record.reason || '').slice(0, 500),
+            active: true,
+            updated_at: Date.now()
+        },
+        $setOnInsert: { id: await nextSequence('temporary_punishment_id'), created_at: Date.now() }
+    };
+    await temporaryPunishments.updateOne(filter, update, { upsert: true });
+    return temporaryPunishments.findOne(filter);
+}
+
+async function listDueTemporaryPunishments(now = Date.now()) {
+    requireBrain();
+    if (!temporaryPunishments) throw new Error('Temporary punishment storage is not connected.');
+    return temporaryPunishments.find({ active: true, expiresAt: { $lte: Number(now) } })
+        .sort({ expiresAt: 1, id: 1 }).toArray();
+}
+
+async function completeTemporaryPunishment(guildId, id) {
+    requireBrain();
+    if (!temporaryPunishments) throw new Error('Temporary punishment storage is not connected.');
+    const result = await temporaryPunishments.deleteOne({ guildId: String(guildId), id: Number(id) });
+    return result.deletedCount || 0;
+}
+
+async function deleteTemporaryPunishment(guildId, id) {
+    return completeTemporaryPunishment(guildId, id);
+}
+
+async function cancelTemporaryPunishments(guildId, userId, type) {
+    requireBrain();
+    if (!temporaryPunishments) throw new Error('Temporary punishment storage is not connected.');
+    const result = await temporaryPunishments.deleteMany({
+        guildId: String(guildId),
+        userId: String(userId),
+        type: String(type)
+    });
+    return result.deletedCount || 0;
+}
+
+function isModerationAvailable() {
+    return Boolean(moderationCases && moderationAppeals && temporaryPunishments);
 }
 
 // ---- Long-term memory store (persistent conversational memory) ----
@@ -1319,6 +1475,9 @@ function _disconnectForTests() {
     users = null;
     warnings = null;
     counters = null;
+    moderationCases = null;
+    moderationAppeals = null;
+    temporaryPunishments = null;
     memories = null;
     memoryPrefs = null;
     behaviors = null;
@@ -1347,6 +1506,18 @@ module.exports = {
     addWarning,
     listWarnings,
     countWarnings,
+    createModerationCase,
+    getModerationCase,
+    listModerationCases,
+    createModerationAppeal,
+    listModerationAppeals,
+    reviewModerationAppeal,
+    addTemporaryPunishment,
+    listDueTemporaryPunishments,
+    completeTemporaryPunishment,
+    deleteTemporaryPunishment,
+    cancelTemporaryPunishments,
+    isModerationAvailable,
     remember,
     getMemory,
     updateMemory,

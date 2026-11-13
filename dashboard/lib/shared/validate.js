@@ -20,7 +20,8 @@ const TEXT_LIMITS = Object.freeze({
     response_instructions: LIMITS.responseInstructions,
     server_rules: LIMITS.serverRules,
     language: LIMITS.language,
-    response_style: LIMITS.responseStyle
+    response_style: LIMITS.responseStyle,
+    moderation_filtered_words: 500
 });
 
 // Attempts to switch off the platform safety layer are rejected outright.
@@ -173,6 +174,15 @@ function validateGuildConfig(input, ctx = {}) {
         owner_roast: checkBool(errors, 'owner_roast', input.owner_roast, base.owner_roast),
         adults_only: checkBool(errors, 'adults_only', input.adults_only, base.adults_only),
         roast_intensity: checkEnum(errors, 'roast_intensity', input.roast_intensity, ROAST_INTENSITIES, base.roast_intensity),
+        warning_escalation_enabled: checkBool(errors, 'warning_escalation_enabled', input.warning_escalation_enabled, base.warning_escalation_enabled),
+        temporary_bans_enabled: checkBool(errors, 'temporary_bans_enabled', input.temporary_bans_enabled, base.temporary_bans_enabled),
+        moderation_spam_filter_enabled: checkBool(errors, 'moderation_spam_filter_enabled', input.moderation_spam_filter_enabled, base.moderation_spam_filter_enabled),
+        moderation_caps_filter_enabled: checkBool(errors, 'moderation_caps_filter_enabled', input.moderation_caps_filter_enabled, base.moderation_caps_filter_enabled),
+        moderation_mentions_filter_enabled: checkBool(errors, 'moderation_mentions_filter_enabled', input.moderation_mentions_filter_enabled, base.moderation_mentions_filter_enabled),
+        moderation_invites_filter_enabled: checkBool(errors, 'moderation_invites_filter_enabled', input.moderation_invites_filter_enabled, base.moderation_invites_filter_enabled),
+        moderation_word_filter_enabled: checkBool(errors, 'moderation_word_filter_enabled', input.moderation_word_filter_enabled, base.moderation_word_filter_enabled),
+        moderation_filtered_words: checkText(errors, 'moderation_filtered_words', input.moderation_filtered_words, TEXT_LIMITS.moderation_filtered_words),
+        moderation_appeals_enabled: checkBool(errors, 'moderation_appeals_enabled', input.moderation_appeals_enabled, base.moderation_appeals_enabled),
         // Server setup (also set by the bot's /setup command).
         owner_pronouns: input.owner_pronouns === undefined || input.owner_pronouns === null || input.owner_pronouns === '' ? null : checkEnum(errors, 'owner_pronouns', input.owner_pronouns, PRONOUNS, null),
         male_role_ids: checkIdList(errors, 'male_role_ids', input.male_role_ids, ctx.roleIds || null).slice(0, 10),

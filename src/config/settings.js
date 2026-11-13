@@ -111,6 +111,9 @@ function loadSettings() {
         // Per-user AI limit in ZiGBoT Premium servers (same window).
         aiRateLimitPremiumMax: Number(process.env.AI_RATE_LIMIT_PREMIUM_MAX || 30),
         aiRateLimitWindowSeconds: Number(process.env.AI_RATE_LIMIT_WINDOW_SECONDS || 60),
+        securityAdminRoleId: process.env.SECURITY_ADMIN_ROLE_ID || '',
+        securityAiRateLimitMax: Number(process.env.SECURITY_AI_RATE_LIMIT_MAX || 8),
+        securityAiRateLimitWindowSeconds: Number(process.env.SECURITY_AI_RATE_LIMIT_WINDOW_SECONDS || 60),
         slashCommandGuildIds: parseList(process.env.SLASH_COMMAND_GUILD_IDS),
         serverOwnerRoleName: process.env.SERVER_OWNER_ROLE_NAME || '꧁༺ ZiG ༻꧂',
         aiModel: process.env.AI_MODEL || 'openai/gpt-oss-20b',
@@ -157,6 +160,8 @@ function loadSettings() {
         customIdentityEnabled: process.env.CUSTOM_IDENTITY_ENABLED === 'true',
         // Public dashboard address, for links in Anti-Nuke alerts.
         dashboardUrl: String(process.env.DASHBOARD_URL || 'https://www.zigbot.in').replace(/\/+$/, ''),
+        // Emergency off switch for the security intelligence layer.
+        securityEnabled: process.env.SECURITY_ENABLED !== 'false',
         // Reaction GIFs (src/gifs/): GIPHY search key. Empty = no GIFs at all.
         // Never logged; only ever sent to api.giphy.com.
         giphyApiKey: (process.env.GIPHY_API_KEY || '').trim(),

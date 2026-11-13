@@ -10,7 +10,11 @@ const { spawnSync } = require('node:child_process');
 const { loadSettings } = require('../src/config/settings');
 const { buildProviders } = require('../src/ai/providers');
 
-const KEYS = ['DISCORD_TOKEN', 'GROQ_API_KEY', 'NVIDIA_API_KEY'];
+const KEYS = [
+    'DISCORD_TOKEN', 'GROQ_API_KEY', 'NVIDIA_API_KEY',
+    'SECURITY_ENABLED', 'SECURITY_ADMIN_ROLE_ID',
+    'SECURITY_AI_RATE_LIMIT_MAX', 'SECURITY_AI_RATE_LIMIT_WINDOW_SECONDS'
+];
 
 function withEnv(values, fn) {
     const saved = Object.fromEntries(KEYS.map((name) => [name, process.env[name]]));
@@ -59,6 +63,21 @@ test('DISCORD_TOKEN is still required', () => {
         () => withEnv({ GROQ_API_KEY: 'groq-key' }, () => loadSettings()),
         /Missing required environment variables: DISCORD_TOKEN$/
     );
+});
+
+test('security settings load the emergency switch, command role and AI rate window', () => {
+    const settings = withEnv({
+        DISCORD_TOKEN: 'token',
+        GROQ_API_KEY: 'groq-key',
+        SECURITY_ENABLED: 'false',
+        SECURITY_ADMIN_ROLE_ID: '123456789012345678',
+        SECURITY_AI_RATE_LIMIT_MAX: '4',
+        SECURITY_AI_RATE_LIMIT_WINDOW_SECONDS: '45'
+    }, () => loadSettings());
+    assert.equal(settings.securityEnabled, false);
+    assert.equal(settings.securityAdminRoleId, '123456789012345678');
+    assert.equal(settings.securityAiRateLimitMax, 4);
+    assert.equal(settings.securityAiRateLimitWindowSeconds, 45);
 });
 
 test('bot startup with neither chat key exits non-zero with the clear message', () => {

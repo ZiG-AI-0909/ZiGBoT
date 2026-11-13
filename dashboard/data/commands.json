@@ -497,6 +497,102 @@
           "example": "/ban member:@member"
         },
         {
+          "name": "appeal",
+          "description": "Submit an appeal for a moderation case (private)",
+          "audience": "everyone",
+          "permission": null,
+          "about": "Submit a private appeal for a moderation case when appeals are enabled by this server.",
+          "privacyLink": true,
+          "subcommands": [
+            {
+              "name": "submit",
+              "description": "Ask moderators to review your case",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "case",
+                  "type": "text",
+                  "required": true,
+                  "description": "Moderation case number",
+                  "maxLength": 12
+                },
+                {
+                  "name": "reason",
+                  "type": "text",
+                  "required": true,
+                  "description": "Why you are appealing",
+                  "maxLength": 1000
+                }
+              ],
+              "example": "/appeal submit case:<case> reason:<reason>"
+            }
+          ]
+        },
+        {
+          "name": "moderation",
+          "description": "Review moderation cases and appeals (private)",
+          "audience": "admin",
+          "permission": "Moderate Members",
+          "about": "Privately inspect moderation cases and review submitted appeals. Requires the Discord Moderate Members permission.",
+          "privacyLink": true,
+          "subcommands": [
+            {
+              "name": "logs",
+              "description": "List recent moderation cases",
+              "audience": "admin",
+              "options": [],
+              "example": "/moderation logs"
+            },
+            {
+              "name": "case",
+              "description": "View a moderation case",
+              "audience": "admin",
+              "options": [
+                {
+                  "name": "case",
+                  "type": "text",
+                  "required": true,
+                  "description": "Moderation case number",
+                  "maxLength": 12
+                }
+              ],
+              "example": "/moderation case case:<case>"
+            },
+            {
+              "name": "review",
+              "description": "Approve or reject a pending appeal",
+              "audience": "admin",
+              "options": [
+                {
+                  "name": "appeal",
+                  "type": "text",
+                  "required": true,
+                  "description": "Appeal number",
+                  "maxLength": 12
+                },
+                {
+                  "name": "decision",
+                  "type": "text",
+                  "required": true,
+                  "description": "Review decision",
+                  "choices": [
+                    "Approve",
+                    "Reject"
+                  ]
+                },
+                {
+                  "name": "note",
+                  "type": "text",
+                  "required": false,
+                  "description": "Optional moderator note",
+                  "maxLength": 500
+                }
+              ],
+              "example": "/moderation review appeal:<appeal> decision:Approve"
+            }
+          ]
+        },
+        {
           "name": "reputation",
           "description": "Owner/admin: view a member's behavior record and standing",
           "audience": "admin",
@@ -510,6 +606,47 @@
             }
           ],
           "example": "/reputation"
+        },
+        {
+          "name": "security",
+          "description": "View security monitoring and incident findings",
+          "audience": "everyone",
+          "permission": null,
+          "about": "View this server’s security-monitoring status, incident counts, and deterministic evidence. AI explanations are advisory only. Administrator or the configured security role is required.",
+          "privacyLink": true,
+          "subcommands": [
+            {
+              "name": "status",
+              "description": "Show security monitoring status",
+              "audience": "admin",
+              "note": "The command is available to members, but this subcommand is refused unless you have Administrator or the configured security role.",
+              "options": [],
+              "example": "/security status"
+            },
+            {
+              "name": "report",
+              "description": "Show this server's security incident report",
+              "audience": "admin",
+              "note": "The command is available to members, but this subcommand is refused unless you have Administrator or the configured security role.",
+              "options": [],
+              "example": "/security report"
+            },
+            {
+              "name": "why",
+              "description": "Explain the latest security finding for a member",
+              "audience": "admin",
+              "note": "The command is available to members, but this subcommand is refused unless you have Administrator or the configured security role.",
+              "options": [
+                {
+                  "name": "user",
+                  "type": "member",
+                  "required": true,
+                  "description": "Member to inspect"
+                }
+              ],
+              "example": "/security why user:@member"
+            }
+          ]
         }
       ]
     },

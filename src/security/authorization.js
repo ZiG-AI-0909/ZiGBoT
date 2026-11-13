@@ -28,8 +28,14 @@ function ownerAuthorization(message, settings) {
 }
 
 function botPermission(guild, permission) {
-    const member = guild.members.me;
-    if (!member || !member.permissions.has(permission)) {
+    let hasPermission = false;
+    try {
+        const member = guild?.members?.me || guild?.me;
+        hasPermission = Boolean(member?.permissions?.has?.(permission));
+    } catch {
+        hasPermission = false;
+    }
+    if (!hasPermission) {
         return { allowed: false, reason: `ZiGBoT needs the ${permission} permission.` };
     }
     return { allowed: true };

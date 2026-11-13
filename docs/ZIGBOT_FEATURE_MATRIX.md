@@ -1,0 +1,333 @@
+# ZiGBoT Feature Matrix
+
+## Scope and method
+
+Read-only audit of the current workspace against `ZIGBOT_FEATURE_EXPANSION.md`,
+limited to Phases 1–3: project discovery, the Phase 2 A–M inventory, and this
+implementation matrix. No application code was changed. A feature is marked
+`WORKING` only when a named test directly exercises it; implemented features
+without that proof are `WORKING (UNTESTED)`. `PARTIAL` means some but not all
+requested behavior exists. Missing-feature proof identifies the repository
+search and scope used.
+
+## Project snapshot
+
+| Area | Finding | Evidence |
+|---|---|---|
+| Discord.js / Node | discord.js `^14.27.0`; Node `24.x` | `package.json:24-32` |
+| Bot/backend | Node.js CommonJS Discord client; no separate backend web framework | `src/index.js:1-40`; `package.json:7-9` |
+| Dashboard | Next.js `15.5.28`, React `19.3.1`, App Router | `dashboard/package.json:7-20`; pages under `dashboard/app/` |
+| Databases | MongoDB native driver for bot collections; Supabase/PostgreSQL for dashboard/server configuration and SaaS data | `src/db/brain.js:11,172-190`; `dashboard/lib/supabase/server.js`; `supabase/migrations/` |
+| Authentication | Supabase Auth session using Discord OAuth; privileged guild requests re-fetch guild/member through Discord and verify owner/Admin/Manage Server | `dashboard/lib/auth.js:12-53`; tests `Discord id comes only from Supabase identities, never editable user_metadata`, `access decision: managers allowed, helpers and strangers denied, bot-missing reported` in `test/dashboardAccess.test.js` |
+| AI providers | NVIDIA and Groq through the OpenAI-compatible SDK; Google YouTube Data API for YouTube features; voice speech backends include NVIDIA, Groq, Sarvam and local | `src/ai/providers.js:1-40`; `src/youtube/apiClient.js`; `src/voice/` |
+| Test framework | Node built-in `node:test`; `npm test` runs `node --test` | `package.json:9`; 52 test files under `test/` |
+| Background work | In-process Anti-Nuke per-guild bounded queue (`500`); scheduled greetings tick every 30s; YouTube polling and memory-summary queue are in-process | `src/antinuke/monitor.js:17-24`; `src/greetings/scheduler.js:2,126-132`; `src/youtube/liveDetector.js`; `src/memory/summaries.js` |
+| Existing dashboard surface | Public landing/commands/privacy/terms; guild dashboard/config, Anti-Nuke, music, greetings and identity; admin analytics, servers, users, security, audit, premium and feedback | `dashboard/app/` pages; 30 API route files under `dashboard/app/api/` |
+| Existing security/moderation | Discord owner/admin-gated tool actions (role/channel management, timeout/kick/ban/unban, purge, warnings), deterministic security processor, Anti-Nuke audit-log monitoring and optional containment | `src/tools/router.js:16-40,520-780`; `src/security/integration.js`; `src/antinuke/monitor.js`; tests `kick_member: still works on a member below the requester`, `end-to-end phishing link is quarantined`, `2. a rapid destructive burst is CRITICAL, and needs the burst (window-based)` |
+
+### Existing commands
+
+**Slash commands (base set, 30):** `/play`, `/search`, `/pause`, `/resume`,
+`/skip`, `/stop`, `/queue`, `/nowplaying`, `/volume`, `/shuffle`, `/loop`,
+`/remove`, `/clearqueue`, `/leave`, `/join`, `/kick`, `/ban`, `/memory`,
+`/reputation`, `/security`, `/summarychannels`, `/help`, `/setup`, `/watch`,
+`/unwatch`, `/ytstatus`, `/ytgreet`, `/ytmod`, `/ytroast`, `/ytretry`.
+`/identity` is additionally registered when `CUSTOM_IDENTITY_ENABLED=true`.
+Definitions and conditional identity registration: `src/slash.js:47-247`;
+YouTube commands are home-guild scoped at `src/slash.js:250-280`.
+
+**Prefix commands:** there is no general `!` prefix for the Discord bot; its
+normal interface is mentions, configured channels and slash commands
+(`src/index.js:636-702`). YouTube live chat has a configurable prefix
+(`YOUTUBE_COMMAND_PREFIX`, default `!`) and owner-only commands:
+`timeout`, `ban`, `unban`, `delete`, `confirm`, `cancel`, `roast`,
+`roastmode`, `noroast`, `yesroast` (`src/youtube/config.js:63`;
+`src/youtube/commands.js:70-90`). AFK uses `afk [reason]` and the avatar
+viewer uses phrases such as `av @user`; these are message triggers, not a
+general prefix (`src/afk/afk.js:22-28`; `src/avatar/avatar.js:21-34`).
+
+### Duplicate Discord event listeners
+
+| Event | Registrations | Finding |
+|---|---|---|
+| `messageCreate` | `src/index.js:636`; `src/security/integration.js:252` | Two listeners: normal bot/AFK/avatar/chat pipeline and security processing. |
+| `guildMemberAdd` | `src/index.js:272`; `src/security/integration.js:255` | Two listeners: legacy Anti-Nuke join processing and security raid processing. |
+
+Other `client.on`/`client.once` registrations found in `src/index.js` and
+`src/security/integration.js` are single registrations by event name. The
+gateway audit-log stream and the resource-event hooks can see the same
+underlying destructive action; `src/antinuke/monitor.js:221-233` deduplicates
+audit entry IDs. The two rows above are duplicate listener registrations,
+though they serve distinct subsystems.
+
+### TODO, FIXME and placeholder scan
+
+The case-insensitive search for `TODO|FIXME|placeholder function|not
+implemented|stub|coming soon` across `src/`, `dashboard/` and `test/` found no
+production TODO/FIXME marker or unfinished function. Matches requiring
+context:
+
+- `src/voice/nvidiaSpeech.js:335`: explicitly test-only injectable fake client.
+- `src/reply/delivery.js:240` and `src/memory/commands.js:156`: optional no-op
+  callback defaults, not empty feature handlers.
+- `src/ai/userContext.js:23-27`: intentional model-output name/mention
+  placeholders that are replaced or removed.
+- UI input placeholder attributes and test-only stubs are not implementations.
+- A duplicate `case 'get_server_info'` appears at `src/tools/router.js:336-337`;
+  it does not add behavior.
+
+## A. Moderation
+
+| Feature | Status | Proof | Action |
+|---|---|---|---|
+| Ban and unban | WORKING | `src/tools/router.js:915-932`; `existing ban, unban, and purge actions still call Discord with their original arguments` (`test/moderation-actions.test.js:101`) verifies both existing actions and audit/case writes. | Reuse |
+| Kick | WORKING | `src/tools/router.js:904-914`; tests `kick_member: still works on a member below the requester`, `kick_member: refuses a target at or above the requester's highest role` (`test/router.test.js`). | Reuse |
+| Timeout and untimeout | WORKING | `src/tools/router.js:802-863`; tests `untimeout checks hierarchy and clears the Discord timeout` and `existing timeout keeps its response and persists its expiry before calling Discord` (`test/moderation-actions.test.js:126,133`). | Reuse |
+| Warnings | WORKING | Per-guild/member warning storage and list action: `src/tools/router.js:618-679`; tests `brain warns store adds, counts, and lists per guild+user` (`test/p3.test.js`), `warn_member records a negative accountability signal automatically` (`test/behavior.test.js`). | Reuse |
+| Warning escalation | WORKING | Opt-in third-warning timeout and disabled behavior are verified by `warning escalation is opt-in and applies the configured third-warning timeout` (`test/moderation-actions.test.js:163`); per-guild default is false (`dashboard/lib/shared/defaults.js:63`). | Reuse |
+| Message purge | WORKING | `delete_messages` validates count and calls `bulkDelete`: `src/tools/router.js:933-940`; original args and logging are checked in `existing ban, unban, and purge actions still call Discord with their original arguments` (`test/moderation-actions.test.js:101`). | Reuse |
+| Slowmode | WORKING | `src/tools/router.js:942-951`; `slowmode and channel lock actions update only the requested channel controls` (`test/moderation-actions.test.js:146`) verifies `setRateLimitPerUser`. | Reuse |
+| Channel lock and unlock | WORKING | `src/tools/router.js:953-969`; `slowmode and channel lock actions update only the requested channel controls` (`test/moderation-actions.test.js:146`) verifies lock and unlock overwrites. | Reuse |
+| Role management | WORKING | Create/delete/add/remove with bot and requester hierarchy checks: `src/tools/router.js:571-598`; tests `add_role: cannot hand out a role at or above the requester's highest role`, `remove_role and delete_role respect the requester's hierarchy`. | Reuse |
+| Nickname management | WORKING | Moderator nickname route checks permission and target hierarchy: `src/tools/router.js:970-985`; `nickname management checks manageable target and sets the requested nickname` (`test/moderation-actions.test.js:156`). Existing AFK behavior remains covered by `test/afk.test.js`. | Reuse |
+| Auto moderation | WORKING | Opt-in incoming-message quarantine and alerts: `src/moderation/messageFilters.js:37-90`; `opt-in auto moderation quarantines violating messages and audits/alerts moderators` (`test/moderation-filters.test.js:54`) and `end-to-end phishing link is quarantined` (`test/security-intelligence.test.js:48`). | Reuse |
+| Word filters | WORKING | Per-guild configured word rules: `src/moderation/messageFilters.js:37-49`; `opt-in word, caps, and mention filters are per-guild and independent` (`test/moderation-filters.test.js:95`). | Reuse |
+| Anti-Spam | WORKING | Opt-in repeated-message rate filter: `src/moderation/messageFilters.js:18-35`; `opt-in anti-spam flags repeated rapid messages from the same member` (`test/moderation-filters.test.js:117`). | Reuse |
+| Anti-Caps | WORKING | Opt-in caps filter: `src/moderation/messageFilters.js:50-52`; `opt-in word, caps, and mention filters are per-guild and independent` (`test/moderation-filters.test.js:95`). | Reuse |
+| Anti-Mention Spam | WORKING | Opt-in mention-count filter: `src/moderation/messageFilters.js:53-55`; `opt-in word, caps, and mention filters are per-guild and independent` (`test/moderation-filters.test.js:95`). | Reuse |
+| Anti-Invite | WORKING | Opt-in invite filter: `src/moderation/messageFilters.js:56-57`; `opt-in auto moderation quarantines violating messages and audits/alerts moderators` (`test/moderation-filters.test.js:54`). | Reuse |
+| Moderation logs | WORKING | Actions write to `auditLog` and create moderation cases (`src/tools/router.js:991-1010`); tested in `existing ban, unban, and purge actions still call Discord with their original arguments` (`test/moderation-actions.test.js:101`) and `/moderation case review is permission-gated, guild-scoped, and audited` (`test/moderation-commands.test.js:62`). | Reuse |
+| Case management | WORKING | Guild-scoped case storage and `/moderation` review workflow: `src/db/brain.js:303-384`, `src/moderation/commands.js:51-98`; tested in `moderation cases and temporary punishments survive a brain reconnect and stay guild-scoped` and `/moderation case review is permission-gated, guild-scoped, and audited` (`test/moderation-store.test.js:89`, `test/moderation-commands.test.js:62`). | Reuse |
+| Appeals | WORKING | Guild-scoped appeal intake and review: `src/moderation/commands.js:29-98`; tests `/appeal is disabled by default and creates a guild-scoped appeal when enabled` and `appeals are limited to the punished member and cannot cross guild boundaries` (`test/moderation-commands.test.js:36`, `test/moderation-store.test.js:119`). | Reuse |
+| Temporary punishments | WORKING | Timeouts and opt-in temporary bans are persisted (`src/tools/router.js:802-925`, `src/db/brain.js:387-460`) and resumed by `src/moderation/expiry.js`; tests `existing timeout keeps its response and persists its expiry before calling Discord`, `temporary ban is off unless enabled and persists its expiry before banning`, and both restart expiry tests (`test/moderation-actions.test.js:133,183`, `test/moderation-expiry.test.js:5,37`). | Reuse |
+
+## B. AI Security
+
+| Feature | Status | Proof | Action |
+|---|---|---|---|
+| AI ScamShield | PARTIAL | Deterministic scam processing plus a structured assistant exists (`src/security/core/processor.js`, `src/security/intelligence/assistant.js`); `evaluateMessage` runs deterministic processing (`src/security/integration.js:125-177`) but does not invoke assistant analysis per message. Test `end-to-end phishing link is quarantined`. | Improve |
+| Phishing detection | WORKING | `src/security/detectors/scamDetector.js`; test `end-to-end phishing link is quarantined` and `classifyUrl flags obvious phishing and safe URLs` (`test/security-intelligence.test.js`). | Reuse |
+| Malicious URL detection | PARTIAL | Safe URL classification includes homoglyph and shortened-link checks: `src/security/detectors/scamDetector.js`; tests `adversarial homoglyph URLs are treated as phishing`, `adversarial short URLs are treated as suspicious`. No safe redirect-chain/reputation service. | Improve |
+| AI BehaviourGuard | PARTIAL | `src/security/detectors/behaviorDetector.js` and event integration; test `BehaviorTracker flags structural spam only after repeated identical content`; no configurable baselines or observable private-DM signals. | Improve |
+| Anti-Raid | WORKING | Join-rate and cross-member repeated-message signals: `src/security/integration.js:50-73,181-205`; test `end-to-end raid joins with identical messages are escalated`. No temporary verification mode. | Reuse |
+| Anti-Nuke | WORKING | Audit-log event engine, bounded processing, alerts, optional containment: `src/antinuke/engine.js`, `src/antinuke/monitor.js:31-46,119-205`; tests `2. a rapid destructive burst is CRITICAL, and needs the burst (window-based)`, `role hierarchy, managed roles and missing permissions are respected`. | Reuse |
+| Impersonation detection | PARTIAL | Scam URL/brand signals are present in `src/security/detectors/scamDetector.js`; no general Discord display-name/identity impersonation detector found. `test/security-intelligence.test.js`: `classifyUrl flags obvious phishing and safe URLs`. | Improve |
+| Suspicious account detection | PARTIAL | Account age is supplied as a risk signal in `src/security/integration.js:137-148`; no standalone suspicious-account profile/rule or test. | Improve |
+| Coordinated attack detection | WORKING | Repeated text across users plus join bursts: `src/security/integration.js:50-73,181-205`; test `end-to-end raid joins with identical messages are escalated`. | Reuse |
+| Threat scoring | WORKING | Multi-signal scoring and correlated-signal penalty: `src/security/scoring/threatScoring.js`, `src/security/core/processor.js:21-47`; test `scoreThreatAssessment explains each risk signal without double counting`. | Reuse |
+| Security incident management | WORKING | Guild-scoped incidents: `src/security/core/incidentManager.js`; tests `end-to-end phishing link is quarantined`, `adversarial cross-guild access is isolated`, and `duplicate audit entry IDs are processed once across correlated and gateway events`. | Reuse |
+| AI Security Copilot | PARTIAL | `/security status`, `/security report`, `/security why` use external authorization and private responses: `src/security/commands.js`, `src/slash.js:148-155`; tests `end-to-end unauthorized security command is denied`, `configured security role can run scoped reports even when the AI provider fails`. Requested suspicious-user/admin-action views and security recommendations are not exposed. | Improve |
+| Security reports | WORKING | Guild-scoped incident report and `why` retrieval: `src/security/commands.js`; tests `configured security role can run scoped reports even when the AI provider fails`, `/security status and /security why are private and guild-scoped`. | Reuse |
+| Cross-server threat intelligence | MISSING | Search `cross.?server.*threat|threat intelligence|shared.*threat` in `src/`, `dashboard/`, `supabase/`, `test/`: no shared threat-intelligence store/API found; incidents are guild-scoped. | Implement |
+| Prompt injection protection | WORKING | User-role data is marked untrusted in `src/ai/client.js:148-190`; tests `end-to-end prompt injection is flagged without emergency lockdown`, `chat messages and intent inputs stay separate from the system prompt as untrusted data`, `prompt injection in the conversation cannot plant facts or privileges`. | Reuse |
+| AI output validation | PARTIAL | Strict schemas are enforced for security assistant, intent and summary outputs (`src/security/intelligence/assistant.js`, `src/ai/client.js`, `src/memory/summaries.js`); tests `security AI rejects malformed or extra-field responses`, `invalid summariser output is discarded whole`. Normal conversational replies remain free text. | Improve |
+
+## C. Community Management
+
+| Feature | Status | Proof | Action |
+|---|---|---|---|
+| Welcome messages | PARTIAL | A setup/invite welcome is sent when the bot joins, not for each new member: `src/index.js:345-350`; tests `AI welcome line: one safe line, or nothing`, `welcome falls back to the fixed message when the AI fails or is slow` (`test/serverSetup.test.js`). | Improve |
+| Goodbye messages | MISSING | Search `goodbye|member.*leave|guildMemberRemove` in `src/`, `dashboard/`, `supabase/`, `test/`: no member departure message workflow found. | Implement |
+| Welcome images | MISSING | Search `welcome.?image|welcome.?card|member.*image` in `src/`, `dashboard/`, `supabase/`, `test/`: no member welcome image renderer or send hook found. | Implement |
+| Auto-role | MISSING | Search `auto.?role|guildMemberAdd.*roles|member.roles.add` in `src/`, `dashboard/`, `supabase/`, `test/`: no join-based role assignment rule found. | Implement |
+| Reaction roles | MISSING | Search `reaction.?role|messageReactionAdd|reaction role` in `src/`, `dashboard/`, `supabase/`, `test/`: no self-assign role flow found. | Implement |
+| Button roles | MISSING | Search `button.?role|role button|role select menu` in `src/`, `dashboard/`, `supabase/`, `test/`: no self-assign component workflow found. | Implement |
+| Dropdown roles | MISSING | Search `dropdown.?role|role select menu|StringSelectMenu` in `src/`, `dashboard/`, `supabase/`, `test/`: no role-selection menu found. | Implement |
+| Member milestones | MISSING | Search `member.?milestone|milestone` in `src/`, `dashboard/`, `supabase/`, `test/`: no milestone trigger/store found. | Implement |
+| Birthday announcements | MISSING | Search `birthday|birth.?date` in `src/`, `dashboard/`, `supabase/`, `test/`: no birthday profile/scheduler found. | Implement |
+| Server statistics | PARTIAL | Read-only server info reports member/channel counts: `src/tools/router.js:336-339`; test `read-only info action works without owner authorization` (`test/router.test.js`). No historical server analytics. | Improve |
+| Member count | WORKING | `get_server_info` includes `guild.memberCount`: `src/tools/router.js:336-339`; test `read-only info action works without owner authorization`. | Reuse |
+| Starboard | MISSING | Search `starboard|star board|starboard message` in `src/`, `dashboard/`, `supabase/`, `test/`: no reaction-based curation workflow found. | Implement |
+| Suggestions | PARTIAL | SaaS premium feedback collection exists, not server suggestion submission/voting: `dashboard/app/admin/feedback/page.js`; test `feedback statistics reflect exactly the stored responses` (`test/superAdmin.test.js`). | Improve |
+| Polls | MISSING | Search `poll|polls|createPoll` in `src/`, `dashboard/`, `supabase/`, `test/`: no Discord poll creation/voting workflow found. | Implement |
+| Announcements | PARTIAL | Scheduled greetings can send configured text and pings: `src/greetings/scheduler.js`; test `the greeting is sent at its time, once a day, with only the bot running` (`test/scheduledGreetings.test.js`). No generic announcement manager. | Improve |
+| Community reminders | MISSING | Search `community reminder|reminder|remind at` in `src/`, `dashboard/`, `supabase/`, `test/`: no reminder scheduler/command found. | Implement |
+
+## D. AI Chatbot
+
+| Feature | Status | Proof | Action |
+|---|---|---|---|
+| AI conversations | WORKING (UNTESTED) | Message handler builds provider-backed replies in `src/index.js:636-702,790-900`; no full live Discord/provider end-to-end test. | Add tests |
+| AI personalities | WORKING | Persona/role routing in `src/ai/client.js`, `src/ai/roleDetector.js`; tests `every persona path carries the answer rules` (`test/responseQuality.test.js`), `configured pronoun roles select gender while other roles and names do not` (`test/autoReply.test.js`). | Reuse |
+| Custom server personas | WORKING | Guild editor exposes prompt/instructions/rules: `dashboard/components/GuildEditor.js:436-438`; runtime config is guild-scoped; tests `reply prompt: legacy path unchanged, multi path layered and identity-safe` (`test/multiServerBot.test.js`), `the editor shows the cards in the custom persona card, accessible and reduced-motion aware` (`test/personaTemplates.test.js`). | Reuse |
+| User-specific preferences | WORKING | Per-guild/member memory preferences and role-based response settings: `src/db/brain.js:180-184`; test `off persists across a restart and blocks retrieval; on re-enables it` (`test/memoryCommands.test.js`). | Reuse |
+| Conversation context | WORKING | Bounded per-channel conversation history: `src/ai/memory.js`; test `ConversationMemory buffers and limits sliding history window` (`test/autoReply.test.js`). | Reuse |
+| Optional long-term memory | WORKING | Opt-in memory store and `/memory` controls: `src/db/brain.js`, `src/memory/commands.js`; tests `remember stores content with guild, user, type, and created_at`, `off persists across a restart and blocks retrieval; on re-enables it`. | Reuse |
+| AI FAQ assistant | PARTIAL | Per-server response instructions and rules can ground replies (`dashboard/components/GuildEditor.js:436-438`); no structured FAQ/knowledge-base ingestion or retrieval found. | Improve |
+| AI translation | MISSING | Search `translate|translation|language detection.*translate` in `src/`, `dashboard/`, `supabase/`, `test/`: English/Hinglish persona modes exist, but no translation action/workflow found. | Implement |
+| AI summarization | WORKING | Opt-in conversation/channel summarization: `src/memory/summaries.js`; tests `batches run after 12 messages, or after 10 idle minutes with at least 4`, `invalid summariser output is discarded whole`, `prompt injection in the conversation cannot plant facts or privileges`. | Reuse |
+| AI image understanding | MISSING | Search `image_url|input_image|vision|image understanding` in `src/ai/`, `src/index.js`, `test/`: no image input is sent through the chat model. | Implement |
+| AI moderation assistant | PARTIAL | Security Copilot can retrieve scoped status/report/why (`src/security/commands.js`); no general moderation-case assistant/suggested decisions. Tests `configured security role can run scoped reports even when the AI provider fails`. | Improve |
+| AI command assistance | WORKING | Structured intent classification maps messages to an allowlisted action catalog: `src/ai/client.js:401-430`, `src/tools/router.js:68-110`; tests `slash commands map to canonical router actions` (`test/p3.test.js`), `normalizeAction canonicalizes aliases and rejects unknown actions`. | Reuse |
+| Per-channel configuration | PARTIAL | Guild config gates chat channels and summary channels: `src/index.js:641-644`; tests `channel gating: blocked never, allow-list restricts, threads inherit parent` (`test/multiServerBot.test.js`), `only channels on the admin list AND in the member's consent snapshot are read` (`test/memorySummaryChannels.test.js`). No per-channel persona config. | Improve |
+| Usage limits | WORKING | Per-user AI rate limiting and per-member/guild/global summary caps: `src/ai/rateLimiter.js`, `src/memory/summaries.js`; tests `rate limiter allows up to max then blocks within the window` (`test/p3.test.js`), `per-member call cap holds, and survives a restart`. | Reuse |
+
+## E. AFK and Utilities
+
+| Feature | Status | Proof | Action |
+|---|---|---|---|
+| AFK detection | WORKING | Message pipeline invokes AFK handler before AI: `src/index.js:645-650`; test `workflow: afk -> mentioned -> returns, fully automatic` (`test/afk.test.js`). | Reuse |
+| AFK reason | WORKING | Reason parser/cleaner and announcement card: `src/afk/afk.js:22-52`; tests `cleanReason: no pings, no slurs, short, never empty`, `workflow: afk -> mentioned -> returns, fully automatic`. | Reuse |
+| AFK duration | WORKING | Stored start time and duration formatting: `src/afk/afk.js:51-64,95-114`; test `welcome back card: tags once, report with left/returned/total`. | Reuse |
+| AFK mention notifications | WORKING | Mention cards with cooldown and per-message cap: `src/afk/handler.js:94-111`; test `mentions: no spam from repeated pings, at most 3 cards per message, never for bots or yourself`. | Reuse |
+| Automatic AFK removal | WORKING | Returning message clears status and restores unchanged original nickname: `src/afk/handler.js:87-92`; tests `workflow: afk -> mentioned -> returns, fully automatic`, `return: restores a custom original nickname, but never overwrites one the user changed meanwhile`. | Reuse |
+| Avatar command | WORKING | Message-triggered avatar viewer: `src/avatar/avatar.js:21-34`, `src/avatar/handler.js`; test `handler: "av @user" replies with the avatar card` (`test/avatar.test.js`). | Reuse |
+| Profile picture command | WORKING | Same avatar feature handles `pfp`, `profile pic`, and `profile picture`: `src/avatar/avatar.js:21-34`; test `every keyword works, in any case`. | Reuse |
+| User information | WORKING (UNTESTED) | `get_member_info` returns display name, ID and join date: `src/tools/router.js:340-344`; no focused output test found. | Add tests |
+| Server information | WORKING | `get_server_info` returns member/channel counts and creation time: `src/tools/router.js:336-339`; test `read-only info action works without owner authorization`. | Reuse |
+| Banner information | MISSING | Search `bannerURL|user\.banner|banner information|show banner` in `src/`, `dashboard/`, `test/`: no banner lookup command found. | Implement |
+| Bot information | PARTIAL | `/help` lists supported commands/actions: `src/slash.js:219-220`, `src/tools/router.js:328-334`; no dedicated bot profile/status information command. | Improve |
+| Member join date | WORKING (UNTESTED) | `get_member_info` renders `member.joinedTimestamp`: `src/tools/router.js:340-344`; no focused output test found. | Add tests |
+| Account creation date | MISSING | Search `createdTimestamp|createdAt` in `src/tools/router.js`, `src/slash.js`, `test/router.test.js`: no member account-age information command found. | Implement |
+| Permissions information | PARTIAL | Permission gates are enforced internally: `src/tools/router.js:180-218`; no read-only command reports a member's permissions. | Improve |
+| Custom utility commands | MISSING | Search `custom command|command builder|user-defined command` in `src/`, `dashboard/`, `supabase/`, `test/`: no configurable custom command schema/route found. | Implement |
+
+## F. Tickets and Support
+
+| Feature | Status | Proof | Action |
+|---|---|---|---|
+| Ticket creation | MISSING | Search `ticket|support ticket|ticket.?create` across `src/`, `dashboard/`, `supabase/`, `test/`; no ticket command, channel workflow or test found. | Implement |
+| Ticket categories | MISSING | Same ticket search; no category model/config found. | Implement |
+| Ticket claiming | MISSING | Same ticket search; no claim/unclaim action found. | Implement |
+| Ticket closing | MISSING | Same ticket search; no ticket close workflow found. | Implement |
+| Ticket transcripts | MISSING | `transcript` hits are voice transcription (`src/voice/`, `src/routing/voiceRoute.js`); no ticket transcript workflow found by ticket search. | Implement |
+| Ticket ratings | MISSING | Same ticket search; no ticket rating form/schema found. | Implement |
+| Staff permissions | MISSING | Existing dashboard guild access verifies owner/Admin/Manage Server (`dashboard/lib/auth.js:33-53`), but ticket-scoped staff roles do not exist; same ticket search found no ticket permission model. | Implement |
+| Ticket priority | MISSING | Same ticket search; no priority field or workflow found. | Implement |
+| Ticket escalation | MISSING | Same ticket search; no ticket escalation workflow found. | Implement |
+| AI ticket classification | MISSING | Same ticket search; no ticket classification input/schema/model found. | Implement |
+| AI summaries | MISSING | Same ticket search; existing summaries are opt-in memory/chat summaries (`src/memory/summaries.js`), not ticket summaries. | Implement |
+| AI suggested replies | MISSING | Same ticket search; no support-ticket reply suggestion workflow found. | Implement |
+
+## G. Community Engagement
+
+| Feature | Status | Proof | Action |
+|---|---|---|---|
+| XP system | MISSING | Search `XP|experience points|leveling` across `src/`, `dashboard/`, `supabase/`, `test/`: no XP accrual model/command found. | Implement |
+| Leveling | MISSING | Same engagement search; no levels or level progression found. | Implement |
+| Rank cards | MISSING | Search `rank.?card|leaderboard` across `src/`, `dashboard/`, `supabase/`, `test/`: no rank card renderer found. | Implement |
+| Leaderboards | MISSING | Same engagement search; no leaderboard query/command found. | Implement |
+| Daily rewards | MISSING | Search `daily.?reward|claim reward` across `src/`, `dashboard/`, `supabase/`, `test/`: no reward economy found. | Implement |
+| Achievements | MISSING | Search `achievement|badge unlock` across `src/`, `dashboard/`, `supabase/`, `test/`: no achievement system found. | Implement |
+| Virtual currency | MISSING | Search `virtual.?currency|coins|wallet|balance` across `src/`, `dashboard/`, `supabase/`, `test/`: no server economy found. | Implement |
+| Inventory | MISSING | Search `inventory|items owned` across `src/`, `dashboard/`, `supabase/`, `test/`: no member inventory found. | Implement |
+| Collectibles | MISSING | Search `collectible|collectibles` across `src/`, `dashboard/`, `supabase/`, `test/`: no collectible system found. | Implement |
+| Trading | MISSING | Search `trade|trading|exchange items` across `src/`, `dashboard/`, `supabase/`, `test/`: no member-to-member trading found. | Implement |
+| Games | MISSING | Search `game|mini.?game` across `src/`, `dashboard/`, `supabase/`, `test/`: no community game workflow found. | Implement |
+| Trivia | MISSING | Search `trivia|quiz question` across `src/`, `dashboard/`, `supabase/`, `test/`: no trivia workflow found. | Implement |
+| Polls | MISSING | Same poll search as section C; no poll workflow exists. Implement once if added, not once per matrix category. | Implement |
+| Giveaways | MISSING | Search `giveaway|winner selection` across `src/`, `dashboard/`, `supabase/`, `test/`: no giveaway workflow found. | Implement |
+| Events | MISSING | Search `scheduled event|event participation|event RSVP` across `src/`, `dashboard/`, `supabase/`, `test/`: no community event/attendance feature found. | Implement |
+| Tournaments | MISSING | Search `tournament|bracket` across `src/`, `dashboard/`, `supabase/`, `test/`: no tournament system found. | Implement |
+
+## H. Music and Voice
+
+| Feature | Status | Proof | Action |
+|---|---|---|---|
+| Music playback | WORKING (UNTESTED) | `src/music/player.js`, `src/music/sources.js`, `src/voice/voiceManager.js`; unit tests cover source validation/fallback, not a live Discord voice session (`test/music.test.js`: `music queue accepts HTTPS sources and rejects other protocols`). | Add tests |
+| Play and pause | WORKING (UNTESTED) | `/play` and `/pause` definitions (`src/slash.js:59-71`) route to `src/tools/router.js:424-455`; tests exercise routing (`voice path allows playback and info commands`) but not a live player session. | Add tests |
+| Skip | WORKING (UNTESTED) | `/skip` and `skip_music` route: `src/slash.js:72`, `src/tools/router.js:443-455`; same routing test, no live playback verification. | Add tests |
+| Queue | WORKING | Queue operations: `src/music/player.js`; test `queues are isolated per server; shuffle, remove and clear work` (`test/music.test.js`). | Reuse |
+| Shuffle | WORKING | Queue shuffle: `src/music/player.js`; test `queues are isolated per server; shuffle, remove and clear work`. | Reuse |
+| Loop | WORKING | Track/queue/off modes: `src/music/player.js`; test `loop cycles off -> song -> queue -> off and rejects bad modes`. | Reuse |
+| Volume | WORKING | Bounded volume and per-server defaults: `src/music/player.js`; tests `music volume is bounded`, `per-server default volume applies only at the start of a session`. | Reuse |
+| Now playing | WORKING (UNTESTED) | `/nowplaying` route and player state: `src/slash.js:75`, `src/tools/router.js:471-486`; no focused current-track command test found. | Add tests |
+| Temporary voice channels | MISSING | Search `temporary voice channel|voice channel create|temp.?voice` across `src/`, `dashboard/`, `supabase/`, `test/`: no temporary channel lifecycle found. | Implement |
+| Voice permissions | PARTIAL | Music requires connect/speak and has DJ role/request-channel rules: `src/music/access.js`; test `DJ role and request channel rules` (`test/music.test.js`). No voice permission editor/temporary channel ACLs. | Improve |
+| Voice activity features | PARTIAL | `VoiceStateUpdate` pauses/resumes music when the bot channel empties: `src/index.js:357-365`; voice listening/transcription code exists in `src/voice/`; tests `voice path allows playback and info commands`, speech conversion unit tests. No production voice activity analytics. | Improve |
+
+## I. Social Media Integration
+
+| Feature | Status | Proof | Action |
+|---|---|---|---|
+| YouTube notifications | PARTIAL | YouTube live-stream discovery/chat monitoring exists (`src/youtube/liveDetector.js`, `src/youtube/index.js`); tests `pollForLiveStream finds live videos within the uploads playlist`, `watch resolves activeLiveChatId and starts the monitor`. No general new-upload notification delivery. | Improve |
+| Twitch notifications | MISSING | Search `Twitch|twitch.tv|helix` across `src/`, `dashboard/`, `supabase/`, `test/`: no Twitch API integration found. | Implement |
+| Kick notifications | MISSING | Search `Kick|kick.com` across `src/`, `dashboard/`, `supabase/`, `test/`: no Kick integration found (case-insensitive search; no ticket-related context counted). | Implement |
+| RSS feeds | MISSING | Search `RSS|feed parser|feed URL` across `src/`, `dashboard/`, `supabase/`, `test/`: no RSS polling/subscription integration found. | Implement |
+| Reddit feeds | MISSING | Search `Reddit|reddit.com` across `src/`, `dashboard/`, `supabase/`, `test/`: no Reddit feed integration found. | Implement |
+| Supported X integrations | MISSING | Search `Twitter API|X API|twitter.com` across `src/`, `dashboard/`, `supabase/`, `test/`: no X/Twitter integration found. | Implement |
+| Supported Instagram integrations | MISSING | Search `Instagram|instagram.com` across `src/`, `dashboard/`, `supabase/`, `test/`: no Instagram integration found. | Implement |
+| Creator notifications | PARTIAL | YouTube live stream detection can identify a watched creator's live stream (`src/youtube/liveDetector.js`); no multi-creator upload/stream notification subscriptions in Discord. | Improve |
+| Scheduled announcements | PARTIAL | Scheduled greeting text can be posted on schedules (`src/greetings/scheduler.js`; tests in `test/scheduledGreetings.test.js`); no generic creator/announcement feed scheduler. | Improve |
+
+## J. Automation
+
+| Feature | Status | Proof | Action |
+|---|---|---|---|
+| Scheduled messages | PARTIAL | Scheduled greetings are persisted and sent by bot scheduler: `src/greetings/scheduler.js`, `dashboard/app/api/guilds/[guildId]/greetings/route.js`; tests `after a restart the schedule resumes from storage and never resends`, `two workers and overlapping ticks never send the same greeting twice`. Not a generic scheduled message system. | Improve |
+| Custom commands | MISSING | Search `custom command|user-defined command|command builder` across `src/`, `dashboard/`, `supabase/`, `test/`: no per-server custom command model or execution route found. | Implement |
+| Auto-purge | MISSING | Search `auto.?purge|purge.*schedule|delete.*after` across `src/`, `dashboard/`, `supabase/`, `test/`: no timed channel-cleanup rule found. | Implement |
+| Auto-role rules | MISSING | Search `auto.?role|member.roles.add` across `src/`, `dashboard/`, `supabase/`, `test/`: no member join role rule found. | Implement |
+| Scheduled events | MISSING | Search `scheduled event|GuildScheduledEvent|event RSVP` across `src/`, `dashboard/`, `supabase/`, `test/`: no Discord scheduled event manager found. | Implement |
+| Reminders | MISSING | Search `reminder|remind at|remind me` across `src/`, `dashboard/`, `supabase/`, `test/`: no user reminder scheduler found. | Implement |
+| Automatic announcements | PARTIAL | Scheduled greetings provide one automatic post path; `src/greetings/scheduler.js`; no announcement trigger/rules beyond that. | Improve |
+| Workflow builder | MISSING | Search `workflow builder|automation workflow|workflow step` across `src/`, `dashboard/`, `supabase/`, `test/`: no workflow editor/executor found. | Implement |
+| Trigger-based automation | PARTIAL | Auto-reply keyword triggers and Anti-Nuke event triggers exist: `src/ai/triggerDetector.js`, `src/antinuke/monitor.js`; tests `detectTrigger identifies stress keywords correctly in English and Hinglish`, `2. a rapid destructive burst is CRITICAL, and needs the burst (window-based)`. No general configurable event automation. | Improve |
+| Conditional automation | MISSING | Search `conditional automation|if.?then|workflow condition` across `src/`, `dashboard/`, `supabase/`, `test/`: no general conditional workflow engine found. | Implement |
+
+## K. Dashboard and SaaS
+
+| Feature | Status | Proof | Action |
+|---|---|---|---|
+| Discord OAuth2 | WORKING | Supabase Auth Discord identity and session verification: `dashboard/lib/auth.js:12-28`; test `Discord id comes only from Supabase identities, never editable user_metadata` (`test/dashboardAccess.test.js`). | Reuse |
+| Server selection | WORKING | Authenticated user guild list and access decision: `dashboard/lib/discord.js` (`getUserGuilds`), `dashboard/lib/auth.js:33-53`; test `access decision: managers allowed, helpers and strangers denied, bot-missing reported`. | Reuse |
+| Multi-server management | WORKING | Guild-scoped config and context: `src/guildConfig/store.js`, `dashboard/app/dashboard/[guildId]/page.js`; tests `store: each server gets its own config; changing A never affects B`, `authorization: a context for another guild is never honoured (no cross-server leakage)`. | Reuse |
+| Moderation configuration | PARTIAL | Anti-Nuke settings UI/route exists (`dashboard/components/AntiNukeTab.js`, `dashboard/app/api/guilds/[guildId]/antinuke/route.js`); no general Discord AutoMod/word-filter configuration. Test `dashboard validation: real ids only, sane thresholds, no switch that stops monitoring` (`test/antinuke.test.js`). | Improve |
+| Security configuration | WORKING | Per-guild Anti-Nuke settings, statuses and events: `dashboard/components/AntiNukeTab.js:62-86`, `dashboard/app/api/guilds/[guildId]/antinuke/route.js:46-103`; tests `settings persist, survive a restart, and bad stored values fall back safely`, `dashboard validation: real ids only, sane thresholds, no switch that stops monitoring`. | Reuse |
+| AI configuration | WORKING | Guild editor configures custom prompts, instructions and rules: `dashboard/components/GuildEditor.js:436-438`; test `reply prompt: legacy path unchanged, multi path layered and identity-safe` (`test/multiServerBot.test.js`). | Reuse |
+| Role management | PARTIAL | Dashboard fetches assignable roles and configures role mappings (`dashboard/lib/discord.js:59-68`, `dashboard/components/GuildEditor.js`); does not create/delete Discord roles. Test `bad voice and setup values are rejected` is unrelated; no direct role-editor integration test found. | Improve |
+| Ticket management | MISSING | Ticket-term repository search found no ticket workflow, dashboard page/API or schema. | Implement |
+| Giveaway management | MISSING | Search `giveaway|winner selection` across `src/`, `dashboard/`, `supabase/`, `test/`: no giveaway page/API/schema found. | Implement |
+| Analytics | PARTIAL | Admin SaaS analytics are available (`dashboard/app/admin/analytics/page.js`, `dashboard/lib/adminData.js:53-99`); no guild member/message analytics suite. | Improve |
+| Audit logs | WORKING | Anti-Nuke event history and guild configuration audit routes: `dashboard/app/api/guilds/[guildId]/audit/route.js`, `dashboard/lib/adminData.js:318-351`; tests `an incident is recorded, alerted, and falls back to an owner DM when no channel works`, `the admin audit log is append-only, even for the service role; browsers get nothing`. | Reuse |
+| Subscription management | WORKING | Per-guild Razorpay checkout/sync/cancel/verify routes and UI: `dashboard/app/api/guilds/[guildId]/billing/`, `dashboard/components/GuildEditor.js`; tests in `test/premium.test.js`, `test/purchaseThanks.test.js`. | Reuse |
+| Premium feature management | WORKING | Shared plan/feature gates: `dashboard/lib/shared/premium.js`, `dashboard/lib/shared/resolve.js`; tests `free plan: custom persona is ignored and only the top role mappings apply`, `free plan: voice and music are off even if a role mapping allows them` (`test/premium.test.js`). | Reuse |
+| Staff permissions | PARTIAL | Guild admin requests verify Discord owner/Admin/Manage Server (`dashboard/lib/auth.js:33-53`); no configurable staff permission matrix. Test `access decision: managers allowed, helpers and strangers denied`. | Improve |
+| Health monitoring | PARTIAL | Dashboard API health route and Anti-Nuke permission/status reporting exist (`dashboard/app/api/health/route.js`, `src/antinuke/monitor.js:167-178`); not a complete service/dependency monitor. | Improve |
+
+## L. Analytics
+
+| Feature | Status | Proof | Action |
+|---|---|---|---|
+| Member growth | MISSING | Search `member growth|member join statistics|guildMemberAdd.*analytics` across `src/`, `dashboard/`, `supabase/`, `test/`: no per-guild member history/series found. | Implement |
+| Active members | MISSING | Search `active members|active users|message activity` across `src/`, `dashboard/`, `supabase/`, `test/`: no guild engagement counting system found. | Implement |
+| Message activity | MISSING | Search `message activity|message count analytics|channel activity` across `src/`, `dashboard/`, `supabase/`, `test/`: no general message telemetry found; consented summary buffering is not analytics. | Implement |
+| Channel activity | MISSING | Same activity search; no channel activity metrics pipeline found. | Implement |
+| Retention | MISSING | Search `retention|cohort|returning members` across `src/`, `dashboard/`, `supabase/`, `test/`: no community retention analysis found. | Implement |
+| Join and leave statistics | MISSING | Search `member join|member leave|guildMemberRemove` across `src/`, `dashboard/`, `supabase/`, `test/`: bot install/removal logs exist but no member join/leave analytics. | Implement |
+| Moderation statistics | PARTIAL | Anti-Nuke incident counts/severity are queryable by guild: `dashboard/app/api/guilds/[guildId]/antinuke/route.js:46-59`; test `settings persist, survive a restart, and bad stored values fall back safely`. No aggregate warnings/kicks/bans dashboard. | Improve |
+| Security statistics | WORKING (UNTESTED) | Per-guild recent/open-critical counts and status: `dashboard/app/api/guilds/[guildId]/antinuke/route.js:46-59`; no focused API-statistics assertion found. | Add tests |
+| Ticket statistics | MISSING | Ticket search across `src/`, `dashboard/`, `supabase/`, `test/` found no ticket schema or statistics query. | Implement |
+| Event participation | MISSING | Search `event participation|event RSVP|attendee count` across `src/`, `dashboard/`, `supabase/`, `test/`: no event participation records found. | Implement |
+| AI-generated reports | PARTIAL | Security reports use scoped incident data (`src/security/commands.js`); no general AI analytics report generator or report schedule. Tests `/security status and /security why are private and guild-scoped`. | Improve |
+| CSV export | PARTIAL | Admin feedback/business CSV export exists (`dashboard/app/api/admin/export/route.js`); test `CSV export escapes text and defuses spreadsheet formulas` (`test/superAdmin.test.js`). No community analytics export. | Improve |
+
+## M. Developer Tools
+
+| Feature | Status | Proof | Action |
+|---|---|---|---|
+| Bot health | WORKING (UNTESTED) | `src/health.js:3-9` exposes a plain liveness response; it does not probe Discord/database dependencies. No direct health test found. | Add tests |
+| API health | WORKING (UNTESTED) | Dashboard has `dashboard/app/api/health/route.js`; no focused endpoint health test found. | Add tests |
+| Database health | PARTIAL | Mongo memory status is exposed in `src/tools/router.js:615-650`; dashboard admin overview reports data-source errors (`dashboard/lib/adminData.js:53-99`). No unified readiness endpoint. | Improve |
+| Worker health | MISSING | Search `worker health|worker status|scheduler health|queue health` across `src/`, `dashboard/`, `supabase/`, `test/`: no health registry for background workers found. | Implement |
+| Shard monitoring where applicable | BLOCKED | No `ShardingManager`/cluster integration found; current `src/index.js` creates one Discord client. Shard state is not applicable until deployment is sharded. | Skip (blocked) |
+| Error reporting | PARTIAL | Runtime errors are written to `console` and audit logs, e.g. `src/index.js`, `src/antinuke/monitor.js`; no external error reporting/aggregation service found. | Improve |
+| Debug logging | PARTIAL | Prefixed `console.log/error` calls exist; no configurable structured debug logger. `src/antinuke/monitor.js:33-35`. | Improve |
+| Feature flags | WORKING | Environment/config flags include `SECURITY_ENABLED`, memory summaries, custom identity, and guild feature gates: `src/config/settings.js:149-164`; test `security settings load the emergency switch, command role and AI rate window` (`test/settingsProviders.test.js`). | Reuse |
+| Configuration import/export | MISSING | Search `config(uration)?.*(import|export)|settings export|settings import` across `src/`, `dashboard/`, `supabase/`, `test/`: memory and admin-data exports exist, but no guild configuration import/export. | Implement |
+| Backup and recovery | MISSING | Search `backup|restore database|recovery snapshot` across `src/`, `dashboard/`, `supabase/`, `test/`: no database backup/recovery workflow found. | Implement |
+| Maintenance mode | MISSING | Search `maintenance mode|maintenanceMode|read.only mode` across `src/`, `dashboard/`, `supabase/`, `test/`: no operational maintenance switch found. | Implement |
+| Emergency shutdown | MISSING | Search `emergency shutdown|graceful shutdown|SIGTERM|client.destroy` across `src/`, `dashboard/`, `test/`: no controlled operator shutdown command/workflow found. | Implement |
+
+## Verification notes
+
+- `WORKING` labels above name the direct tests in their proof cells. `WORKING
+  (UNTESTED)` identifies implemented code for which repository tests do not
+  exercise the advertised operation end-to-end.
+- OAuth, Discord gateway behavior, provider availability, YouTube API quota,
+  actual voice streaming, and deployed Supabase migrations were not exercised
+  against production credentials/services by this audit.
+- Feature references intentionally describe the current workspace, including
+  its pre-existing uncommitted changes. This audit added only this matrix file.
+- `npm test` was run once after matrix creation: 848 tests, 847 passed, 0
+  failed, 1 skipped; process exit code 0.

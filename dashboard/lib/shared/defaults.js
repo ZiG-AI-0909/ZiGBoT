@@ -59,6 +59,16 @@ function defaultGuildConfig({ guildId, legacy = false, legacySettings = null } =
         roast_intensity: 'spicy',
         // Reaction GIFs per persona mode (lib/shared/gifs.js).
         gif_settings: defaultGifSettings(),
+        // New moderation behavior is opt-in per server.
+        warning_escalation_enabled: false,
+        temporary_bans_enabled: false,
+        moderation_spam_filter_enabled: false,
+        moderation_caps_filter_enabled: false,
+        moderation_mentions_filter_enabled: false,
+        moderation_invites_filter_enabled: false,
+        moderation_word_filter_enabled: false,
+        moderation_filtered_words: '',
+        moderation_appeals_enabled: false,
         version: 1
     };
 }

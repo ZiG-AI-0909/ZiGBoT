@@ -21,18 +21,27 @@ const BEHAVIOR_SIGNALS = {
 
 const adminActions = new Set([
     'send_message', 'create_role', 'delete_role', 'add_role', 'remove_role',
-    'create_channel', 'delete_channel', 'rename_channel', 'timeout_member',
+    'create_channel', 'delete_channel', 'rename_channel', 'timeout_member', 'untimeout_member',
     'kick_member', 'ban_member', 'unban_member', 'delete_messages',
     'start_voice_listening', 'stop_voice_listening', 'warn_member',
-    'memory_status', 'behavior_status'
+    'memory_status', 'behavior_status', 'set_slowmode', 'lock_channel',
+    'unlock_channel', 'set_nickname', 'temp_ban_member'
 ]);
 
 // Destructive actions require interactive Confirm/Cancel before execution.
 // timeout_member is punitive, so it belongs here alongside kick/ban/delete.
 const destructiveActions = new Set([
-    'delete_role', 'remove_role', 'delete_channel', 'timeout_member',
+    'delete_role', 'remove_role', 'delete_channel', 'timeout_member', 'untimeout_member',
     'kick_member', 'ban_member', 'unban_member', 'delete_messages',
-    'warn_member'
+    'warn_member', 'temp_ban_member', 'set_slowmode', 'lock_channel',
+    'unlock_channel', 'set_nickname'
+]);
+const caseActions = new Set([
+    'create_role', 'delete_role', 'add_role', 'remove_role',
+    'create_channel', 'delete_channel', 'rename_channel',
+    'timeout_member', 'untimeout_member', 'kick_member', 'ban_member',
+    'temp_ban_member', 'unban_member', 'delete_messages', 'warn_member',
+    'set_slowmode', 'lock_channel', 'unlock_channel', 'set_nickname'
 ]);
 
 // Aliases accept common phrasings and canonicalize to the action above.
@@ -76,10 +85,16 @@ const actionCatalog = new Map([
     ['delete_channel', { permission: PermissionFlagsBits.ManageChannels, description: 'Delete a text channel.' }],
     ['rename_channel', { permission: PermissionFlagsBits.ManageChannels, description: 'Rename a text channel (channel = existing name, message = new name).' }],
     ['timeout_member', { permission: PermissionFlagsBits.ModerateMembers, description: 'Timeout a member for a number of minutes.' }],
+    ['untimeout_member', { permission: PermissionFlagsBits.ModerateMembers, description: 'Remove a member timeout.' }],
     ['kick_member', { permission: PermissionFlagsBits.KickMembers, description: 'Kick a member.' }],
     ['ban_member', { permission: PermissionFlagsBits.BanMembers, description: 'Ban a member.' }],
     ['unban_member', { permission: PermissionFlagsBits.BanMembers, description: 'Unban a user by ID.' }],
     ['delete_messages', { permission: PermissionFlagsBits.ManageMessages, description: 'Bulk delete 1-100 recent messages in this channel.' }],
+    ['set_slowmode', { permission: PermissionFlagsBits.ManageChannels, description: 'Set channel slowmode from 0 to 21600 seconds.' }],
+    ['lock_channel', { permission: PermissionFlagsBits.ManageChannels, description: 'Prevent @everyone from sending messages in a channel.' }],
+    ['unlock_channel', { permission: PermissionFlagsBits.ManageChannels, description: 'Restore the channel @everyone send-message override.' }],
+    ['set_nickname', { permission: PermissionFlagsBits.ManageNicknames, description: 'Set or reset a member nickname.' }],
+    ['temp_ban_member', { permission: PermissionFlagsBits.BanMembers, description: 'Temporarily ban a member for 1-40320 minutes (server opt-in required).' }],
     ['start_voice_listening', { permission: PermissionFlagsBits.Connect, description: 'Start temporary push-to-talk voice listening.' }],
     ['stop_voice_listening', { permission: PermissionFlagsBits.Connect, description: 'Stop voice listening.' }],
     ['get_server_info', { permission: null, description: 'Show server info.' }],
@@ -172,6 +187,25 @@ function requesterHierarchyProblem(message, { member = null, role = null } = {})
         if (!Number.isFinite(theirs) || theirs >= own) return `❌ ${member.displayName}'s highest role is the same as or higher than yours (role hierarchy), so I will not do that for you.`;
     }
     if (role && role.position >= own) return `❌ The ${role.name} role is the same as or higher than your highest role (role hierarchy), so I will not do that for you.`;
+    return null;
+}
+
+function botHierarchyProblem(message, member) {
+    if (member?.id && member.id === message.guild?.ownerId) {
+        return '❌ ZiGBoT cannot moderate the server owner.';
+    }
+    if (member?.manageable === false || member?.moderatable === false) {
+        return '❌ ZiGBoT cannot manage that member because of role hierarchy or permissions.';
+    }
+    const botHighest = (message.guild?.members?.me || message.guild?.me)?.roles?.highest;
+    const targetHighest = member?.roles?.highest;
+    if (!botHighest || !targetHighest) return '❌ I could not verify ZiGBoT role hierarchy, so I will not do that.';
+    const comparison = typeof botHighest.comparePositionTo === 'function'
+        ? botHighest.comparePositionTo(targetHighest)
+        : Number(botHighest.position) - Number(targetHighest.position);
+    if (!Number.isFinite(comparison) || comparison <= 0) {
+        return '❌ ZiGBoT’s highest role must be above the target member’s role.';
+    }
     return null;
 }
 
@@ -284,6 +318,7 @@ async function channelSummariesDiagnostic(settings, guildId) {
 async function executeTool(message, settings, intent, context = {}) {
     if (!message.guild) return '❌ These tools only work inside a server.';
     let target = intent.target || intent.channel || intent.role || 'server';
+    let caseTargetId = null;
 
     if (adminActions.has(intent.action)) {
         const failure = await authorize(message, settings, intent, actionCatalog.get(intent.action).permission);
@@ -319,6 +354,7 @@ async function executeTool(message, settings, intent, context = {}) {
 
     // Warn storage is optional: warns are no-ops until the database is wired.
     const warnStore = context.warnStore || null;
+    const moderationStore = context.moderationStore || (brain.isModerationAvailable?.() ? brain : null);
 
     try {
         const { guild } = message;
@@ -583,6 +619,9 @@ async function executeTool(message, settings, intent, context = {}) {
                 if (!warnStore) return '❌ Warning storage is not configured.';
                 const member = findMember(guild, text(intent.target, 'Member'));
                 if (!member) return '❌ I could not find that member.';
+                caseTargetId = member.id;
+                const outranked = requesterHierarchyProblem(message, { member });
+                if (outranked) return outranked;
                 const reason = text(intent.reason || intent.message || 'No reason provided', 'Reason', 500);
                 const warning = await warnStore.addWarning(guild.id, member.id, reason, message.author.id);
                 const warningCount = await warnStore.countWarnings(guild.id, member.id);
@@ -593,7 +632,45 @@ async function executeTool(message, settings, intent, context = {}) {
                 } catch (behaviorError) {
                     console.error(`[ZiGBoT BEHAVIOR] Failed to record warning signal: ${behaviorError.message}`);
                 }
-                result = `⚠️ Warned ${member.displayName} (warning #${warning.id}): ${reason}. They now have ${warningCount} warning(s).`;
+                let escalation = '';
+                if (settings.guildContext?.config?.warning_escalation_enabled && warningCount >= 3 && warningCount % 3 === 0) {
+                    if (!moderationStore?.addTemporaryPunishment) {
+                        escalation = ' Warning escalation was not applied because persistent punishment storage is unavailable.';
+                    } else {
+                        const botProblem = botHierarchyProblem(message, member);
+                        if (botProblem) {
+                            escalation = ' Warning escalation was not applied because ZiGBoT cannot safely moderate this member.';
+                        } else {
+                            const expiresAt = Date.now() + 10 * 60 * 1000;
+                            try {
+                                const punishment = await moderationStore.addTemporaryPunishment({
+                                    guildId: guild.id,
+                                    userId: member.id,
+                                    type: 'timeout',
+                                    expiresAt,
+                                    actorId: message.author.id,
+                                    reason: `Warning escalation: ${reason}`
+                                });
+                                try {
+                                    await member.timeout(10 * 60 * 1000, 'Warning escalation: 3 warnings');
+                                    escalation = ' Reached the warning threshold and received a 10-minute timeout.';
+                                } catch (error) {
+                                    try {
+                                        await moderationStore.deleteTemporaryPunishment?.(guild.id, punishment.id);
+                                    } catch (cleanupError) {
+                                        console.error(`[ZiGBoT MODERATION] Escalation cleanup failed: ${cleanupError?.message || cleanupError}`);
+                                    }
+                                    console.error(`[ZiGBoT MODERATION] Warning escalation failed: ${error?.message || error}`);
+                                    escalation = ` The warning was recorded, but the automatic timeout failed: ${error?.message || error}.`;
+                                }
+                            } catch (error) {
+                                console.error(`[ZiGBoT MODERATION] Warning escalation persistence failed: ${error?.message || error}`);
+                                escalation = ` The warning was recorded, but escalation could not be persisted: ${error?.message || error}.`;
+                            }
+                        }
+                    }
+                }
+                result = `⚠️ Warned ${member.displayName} (warning #${warning.id}): ${reason}. They now have ${warningCount} warning(s).${escalation}`;
                 target = member.displayName;
                 break;
             }
@@ -601,6 +678,7 @@ async function executeTool(message, settings, intent, context = {}) {
                 if (!warnStore) return '❌ Warning storage is not configured.';
                 const member = findMember(guild, text(intent.target, 'Member'));
                 if (!member) return '❌ I could not find that member.';
+                caseTargetId = member.id;
                 const warnings = await warnStore.listWarnings(guild.id, member.id);
                 if (warnings.length === 0) {
                     result = `ℹ️ ${member.displayName} has no warnings.`;
@@ -725,10 +803,36 @@ async function executeTool(message, settings, intent, context = {}) {
                 const member = findMember(guild, text(intent.target, 'Member'));
                 const minutes = Number(intent.durationMinutes);
                 if (!member) return '❌ I could not find that member.';
+                caseTargetId = member.id;
                 if (!Number.isInteger(minutes) || minutes < 1 || minutes > 40320) return '❌ Timeout duration must be between 1 minute and 28 days.';
                 const outranked = requesterHierarchyProblem(message, { member });
                 if (outranked) return outranked;
-                await member.timeout(minutes * 60 * 1000, intent.reason || 'Requested by server owner through ZiGBoT');
+                const botHierarchy = botHierarchyProblem(message, member);
+                if (botHierarchy) return botHierarchy;
+                const reason = intent.reason || 'Requested by server owner through ZiGBoT';
+                let punishment = null;
+                if (moderationStore?.addTemporaryPunishment) {
+                    punishment = await moderationStore.addTemporaryPunishment({
+                        guildId: guild.id,
+                        userId: member.id,
+                        type: 'timeout',
+                        expiresAt: Date.now() + minutes * 60 * 1000,
+                        actorId: message.author.id,
+                        reason
+                    });
+                }
+                try {
+                    await member.timeout(minutes * 60 * 1000, reason);
+                } catch (error) {
+                    if (punishment) {
+                        try {
+                            await moderationStore.deleteTemporaryPunishment?.(guild.id, punishment.id);
+                        } catch (cleanupError) {
+                            console.error(`[ZiGBoT MODERATION] Timeout persistence cleanup failed: ${cleanupError?.message || cleanupError}`);
+                        }
+                    }
+                    throw error;
+                }
                 // Accountability: timeouts count against the member's record too.
                 try {
                     await brain.recordBehavior(guild.id, member.id, 'warning', { source: 'timeout_member', note: intent.reason ? String(intent.reason).slice(0, 200) : null });
@@ -738,9 +842,69 @@ async function executeTool(message, settings, intent, context = {}) {
                 result = `✅ Timed out ${member.displayName} for ${minutes} minutes.`;
                 break;
             }
+            case 'untimeout_member': {
+                const member = findMember(guild, text(intent.target, 'Member'));
+                if (!member) return '❌ I could not find that member.';
+                caseTargetId = member.id;
+                const outranked = requesterHierarchyProblem(message, { member });
+                if (outranked) return outranked;
+                const botHierarchy = botHierarchyProblem(message, member);
+                if (botHierarchy) return botHierarchy;
+                await member.timeout(null, intent.reason || 'Timeout removed by ZiGBoT moderator action');
+                result = `✅ Removed ${member.displayName}'s timeout.`;
+                try {
+                    await moderationStore?.cancelTemporaryPunishments?.(guild.id, member.id, 'timeout');
+                } catch (error) {
+                    console.error(`[ZiGBoT MODERATION] Could not clear timeout expiry record: ${error?.message || error}`);
+                    result += ' ⚠️ The Discord timeout was removed, but its expiry record could not be cleared.';
+                }
+                target = member.displayName;
+                break;
+            }
+            case 'temp_ban_member': {
+                if (!settings.guildContext?.config?.temporary_bans_enabled) {
+                    return denied(message, settings, intent, 'Temporary bans are disabled for this server. Enable them in the dashboard moderation settings.');
+                }
+                const member = findMember(guild, text(intent.target, 'Member'));
+                const minutes = Number(intent.durationMinutes);
+                if (!member) return '❌ I could not find that member.';
+                caseTargetId = member.id;
+                if (!Number.isInteger(minutes) || minutes < 1 || minutes > 40320) return '❌ Temporary ban duration must be between 1 minute and 28 days.';
+                if (!member.bannable) return '❌ I cannot ban that member because of role hierarchy or permissions.';
+                const outranked = requesterHierarchyProblem(message, { member });
+                if (outranked) return outranked;
+                const botHierarchy = botHierarchyProblem(message, member);
+                if (botHierarchy) return botHierarchy;
+                if (!moderationStore?.addTemporaryPunishment) {
+                    return denied(message, settings, intent, 'Persistent temporary punishment storage is unavailable; no ban was applied.');
+                }
+                const reason = intent.reason || 'Requested temporary ban through ZiGBoT';
+                const punishment = await moderationStore.addTemporaryPunishment({
+                    guildId: guild.id,
+                    userId: member.id,
+                    type: 'ban',
+                    expiresAt: Date.now() + minutes * 60 * 1000,
+                    actorId: message.author.id,
+                    reason
+                });
+                try {
+                    await member.ban({ reason });
+                } catch (error) {
+                    try {
+                        await moderationStore.deleteTemporaryPunishment?.(guild.id, punishment.id);
+                    } catch (cleanupError) {
+                        console.error(`[ZiGBoT MODERATION] Temporary ban persistence cleanup failed: ${cleanupError?.message || cleanupError}`);
+                    }
+                    throw error;
+                }
+                result = `✅ Temporarily banned ${member.displayName} for ${minutes} minutes.`;
+                target = member.displayName;
+                break;
+            }
             case 'kick_member': {
                 const member = findMember(guild, text(intent.target, 'Member'));
                 if (!member) return '❌ I could not find that member.';
+                caseTargetId = member.id;
                 if (!member.kickable) return '❌ I cannot kick that member because of role hierarchy or permissions.';
                 const outranked = requesterHierarchyProblem(message, { member });
                 if (outranked) return outranked;
@@ -751,6 +915,7 @@ async function executeTool(message, settings, intent, context = {}) {
             case 'ban_member': {
                 const member = findMember(guild, text(intent.target, 'Member'));
                 if (!member) return '❌ I could not find that member.';
+                caseTargetId = member.id;
                 if (!member.bannable) return '❌ I cannot ban that member because of role hierarchy or permissions.';
                 const outranked = requesterHierarchyProblem(message, { member });
                 if (outranked) return outranked;
@@ -761,6 +926,7 @@ async function executeTool(message, settings, intent, context = {}) {
             case 'unban_member': {
                 const targetId = text(intent.target, 'User ID');
                 await guild.members.unban(targetId, intent.reason || 'Requested by server owner through ZiGBoT');
+                caseTargetId = targetId;
                 result = `✅ Unbanned ${targetId}.`;
                 break;
             }
@@ -770,12 +936,74 @@ async function executeTool(message, settings, intent, context = {}) {
                 const deleted = await message.channel.bulkDelete(count, true);
                 result = `✅ Deleted ${deleted.size} messages.`;
                 target = `#${message.channel.name}`;
+                caseTargetId = message.channel.id;
+                break;
+            }
+            case 'set_slowmode': {
+                const channel = findChannel(guild, text(intent.channel || intent.target, 'Channel'));
+                const seconds = Number(intent.durationSeconds);
+                if (!channel || !channel.isTextBased?.() || !channel.setRateLimitPerUser) return '❌ I could not find a text channel that supports slowmode.';
+                if (!Number.isInteger(seconds) || seconds < 0 || seconds > 21600) return '❌ Slowmode must be a whole number from 0 to 21600 seconds.';
+                await channel.setRateLimitPerUser(seconds, intent.reason || 'Requested by server owner through ZiGBoT');
+                result = seconds === 0 ? `✅ Slowmode disabled in #${channel.name}.` : `✅ Set #${channel.name} slowmode to ${seconds} seconds.`;
+                target = `#${channel.name}`;
+                caseTargetId = channel.id;
+                break;
+            }
+            case 'lock_channel':
+            case 'unlock_channel': {
+                const channel = findChannel(guild, text(intent.channel || intent.target, 'Channel'));
+                if (!channel || !channel.isTextBased?.() || !channel.permissionOverwrites?.edit || !guild.roles?.everyone) {
+                    return '❌ I could not find a text channel that can be locked.';
+                }
+                const locked = intent.action === 'lock_channel';
+                await channel.permissionOverwrites.edit(
+                    guild.roles.everyone,
+                    { SendMessages: locked ? false : null, SendMessagesInThreads: locked ? false : null },
+                    intent.reason || `Requested ${locked ? 'lock' : 'unlock'} through ZiGBoT`
+                );
+                result = `✅ #${channel.name} ${locked ? 'locked' : 'unlocked'}.`;
+                target = `#${channel.name}`;
+                caseTargetId = channel.id;
+                break;
+            }
+            case 'set_nickname': {
+                const member = findMember(guild, text(intent.target, 'Member'));
+                if (!member) return '❌ I could not find that member.';
+                caseTargetId = member.id;
+                const outranked = requesterHierarchyProblem(message, { member });
+                if (outranked) return outranked;
+                const botHierarchy = botHierarchyProblem(message, member);
+                if (botHierarchy) return botHierarchy;
+                const rawNickname = intent.nickname ?? intent.message;
+                const nickname = typeof rawNickname === 'string' && rawNickname.trim().toLowerCase() !== 'reset'
+                    ? text(rawNickname, 'Nickname', 32)
+                    : null;
+                await member.setNickname(nickname, intent.reason || 'Requested by server owner through ZiGBoT');
+                result = nickname ? `✅ Set ${member.displayName}'s nickname to ${nickname}.` : `✅ Reset ${member.displayName}'s nickname.`;
+                target = member.displayName;
                 break;
             }
             default:
                 return '❌ I could not map that request to a supported tool.';
         }
 
+        if (caseActions.has(intent.action) && moderationStore?.createModerationCase) {
+            try {
+                await moderationStore.createModerationCase(guild.id, {
+                    action: intent.action,
+                    target: String(target),
+                    targetId: caseTargetId,
+                    actorId: message.author.id,
+                    reason: typeof intent.reason === 'string' ? intent.reason.slice(0, 500) : null,
+                    result: 'SUCCESS',
+                    details: intent.action === 'delete_messages' ? { count: Number(intent.count) } : {}
+                });
+            } catch (error) {
+                console.error(`[ZiGBoT MODERATION] Case persistence failed for ${intent.action}: ${error?.message || error}`);
+                result += ' ⚠️ The action completed, but its moderation case could not be saved.';
+            }
+        }
         await auditLog({ message, settings, event: 'ADMIN ACTION', action: intent.action, target, result: 'SUCCESS', details: { reason: intent.reason } });
         return result;
     } catch (error) {
