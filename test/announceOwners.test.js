@@ -1,6 +1,7 @@
 // One-time DM to server owners about AFK + the avatar viewer.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const { buildOwnerMessage, groupByOwner } = require('../scripts/announce-owners');
 
 test('message: lists the owner\'s servers, explains both features, fits in one DM', () => {
@@ -33,4 +34,16 @@ test('owners: one entry per owner, bots and ZiGBoT skipped', () => {
         { id: '4', name: 'D', owner_id: 'not-an-id' }
     ], { skipIds: ['900000000000000002'] });
     assert.deepEqual(owners, [{ ownerId: '900000000000000001', servers: ['A', 'B'] }]);
+});
+
+test('platform update DM: under Discord\'s 2000-char limit, signed by the team, no pings, only real features', () => {
+    const { buildPlatformMessage } = require('../scripts/announce-platform');
+    const text = buildPlatformMessage({ servers: ['A', 'B', 'C', 'D', 'E', 'F', 'G'] });
+    assert.ok(text.length <= 2000, `${text.length} chars`);
+    assert.match(text, /ZiGBoT Team/);
+    assert.match(text, /one-time message/);
+    assert.doesNotMatch(text, /@everyone|@here|<@\d/);
+    assert.doesNotMatch(text, /\b(first|best|#1)\b/i, 'no unprovable claims');
+    assert.ok(!buildPlatformMessage({ servers: ['@everyone <@123456789012345678>'] }).includes('<@123456789012345678>'));
+    assert.match(fs.readFileSync(require.resolve('../scripts/announce-platform'), 'utf8'), /announce-platform-2026-11\.json/, 'own sent-log, never twice');
 });
