@@ -60,3 +60,12 @@ test('server settings sections live in the sidebar (old tab bar hidden, same tab
     assert.match(shell, /item\.sectionsHere && sections && pathname === item\.href/);
     assert.match(shell, /sections\.onSelect\(s\.id\); setOpen\(false\);/, 'picking a section closes the mobile drawer');
 });
+
+test('final audit: friendly error and not-found pages that leak no internals', () => {
+    const err = read('app', 'error.js');
+    assert.match(err, /^'use client';/);
+    assert.match(err, /onClick=\{\(\) => reset\(\)\}/, 'retry');
+    assert.doesNotMatch(err, /error\.(message|stack)/, 'no error details shown to visitors');
+    const nf = read('app', 'not-found.js');
+    assert.match(nf, /robots: \{ index: false, follow: false \}/);
+});
