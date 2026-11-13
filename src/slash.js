@@ -170,7 +170,13 @@ function buildDefinitions({ identity = false } = {}) {
             .addSubcommand((sub) => sub.setName('status').setDescription('Show security monitoring status'))
             .addSubcommand((sub) => sub.setName('report').setDescription("Show this server's security incident report"))
             .addSubcommand((sub) => sub.setName('why').setDescription('Explain the latest security finding for a member')
-                .addUserOption((option) => option.setName('user').setDescription('Member to inspect').setRequired(true))),
+                .addUserOption((option) => option.setName('user').setDescription('Member to inspect').setRequired(true)))
+            // Security+ (src/features/securityPlus.js), opt-in per server.
+            .addSubcommand((sub) => sub.setName('suspicious').setDescription('Members flagged for review in the last 30 days'))
+            .addSubcommand((sub) => sub.setName('admins').setDescription('Recent sensitive admin actions from the audit log'))
+            .addSubcommand((sub) => sub.setName('recommend').setDescription('Security improvements for this server'))
+            .addSubcommand((sub) => sub.setName('reporturl').setDescription('Report a confirmed scam link (only a hash is stored)')
+                .addStringOption((option) => option.setName('url').setDescription('The scam link (never opened)').setRequired(true).setMaxLength(500))),
         // Admins: channels where opted-in members' own messages may be
         // summarised. Also checked server-side (src/memory/summaryChannels.js).
         new SlashCommandBuilder()

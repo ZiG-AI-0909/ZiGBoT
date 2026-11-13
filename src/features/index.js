@@ -9,6 +9,7 @@ const { createCommunity } = require('./community');
 const { createAutomation } = require('./automation');
 const { createEngagement } = require('./engagement');
 const { createAiTools } = require('./aiTools');
+const { createSecurityPlus } = require('./securityPlus');
 
 function createFeatures({ settings = {}, resolveContext, auditLog, getClient, store = null, now = () => Date.now(), logger = console, renderWelcomeImage, renderRankCard, aiClient = null, aiModel = '', listWarnings = null }) {
     const supabase = new SupabaseFeatureStore({ supabaseUrl: settings.supabaseUrl, serviceRoleKey: settings.supabaseServiceRoleKey });
@@ -18,6 +19,8 @@ function createFeatures({ settings = {}, resolveContext, auditLog, getClient, st
     const shared = { store: featureStore, scheduler, resolveContext, auditLog, getClient, now, logger };
     const rankCard = renderRankCard === undefined ? (input) => require('./rankCard').renderRankCard(input) : renderRankCard;
     const modules = [
+        // First: a message with a confirmed scam link is removed before anything else sees it.
+        createSecurityPlus({ ...shared, aiClient, aiModel }),
         createCommunity({ ...shared, renderWelcomeImage: image }),
         createAutomation(shared),
         createEngagement({ ...shared, renderRankCard: rankCard })
@@ -36,6 +39,7 @@ function createFeatures({ settings = {}, resolveContext, auditLog, getClient, st
         stop: () => scheduler.stop(),
         onMemberAdd: (member) => each('onMemberAdd', member),
         onMemberRemove: (member) => each('onMemberRemove', member),
+        onMemberUpdate: (oldMember, newMember) => each('onMemberUpdate', oldMember, newMember),
         onReaction: (reaction, user, added) => each('onReaction', reaction, user, added),
         onVoiceState: (oldState, newState) => each('onVoiceState', oldState, newState),
         /** Per-channel / per-server AI limits (Section D). true = the AI may reply. */

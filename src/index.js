@@ -322,6 +322,7 @@ client.on(Events.GuildMemberAdd, (member) => {
 });
 // Optional features (src/features): goodbye messages, starboard, reaction roles.
 client.on(Events.GuildMemberRemove, (member) => { void features.onMemberRemove(member); });
+client.on(Events.GuildMemberUpdate, (oldMember, newMember) => { void features.onMemberUpdate(oldMember, newMember); });
 client.on(Events.MessageReactionAdd, (reaction, user) => { void features.onReaction(reaction, user, true); });
 client.on(Events.MessageReactionRemove, (reaction, user) => { void features.onReaction(reaction, user, false); });
 client.on(Events.ChannelDelete, securityEventHandlers.channelDelete);

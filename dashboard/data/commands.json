@@ -645,6 +645,42 @@
                 }
               ],
               "example": "/security why user:@member"
+            },
+            {
+              "name": "suspicious",
+              "description": "Members flagged for review in the last 30 days",
+              "audience": "everyone",
+              "options": [],
+              "example": "/security suspicious"
+            },
+            {
+              "name": "admins",
+              "description": "Recent sensitive admin actions from the audit log",
+              "audience": "everyone",
+              "options": [],
+              "example": "/security admins"
+            },
+            {
+              "name": "recommend",
+              "description": "Security improvements for this server",
+              "audience": "everyone",
+              "options": [],
+              "example": "/security recommend"
+            },
+            {
+              "name": "reporturl",
+              "description": "Report a confirmed scam link (only a hash is stored)",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "url",
+                  "type": "text",
+                  "required": true,
+                  "description": "The scam link (never opened)",
+                  "maxLength": 500
+                }
+              ],
+              "example": "/security reporturl url:<url>"
             }
           ]
         },

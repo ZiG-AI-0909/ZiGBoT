@@ -137,6 +137,23 @@ const FEATURE_SECTIONS = {
             int('daily_limit', 'AI replies per day for the whole server (0 = no limit)', 0, 0, 100000),
             int('channel_daily_limit', 'AI replies per day in each channel (0 = no limit)', 0, 0, 100000)
         ]
+    },
+    security: {
+        label: 'Security+',
+        fields: [
+            channel('alert_channel_id', 'Security alert channel (staff only)', { help: 'Alerts below go here. They never punish anyone automatically.' }),
+            bool('ai_scamshield_enabled', 'AI second opinion on links the rule scanner calls safe (alerts only)'),
+            bool('threat_intel_use', 'Use the shared list of confirmed scam links'),
+            bool('threat_intel_share', 'Share scam links your staff confirm (/security reporturl): only a hash of the link'),
+            bool('known_scam_quarantine', 'Delete messages with a confirmed scam link'),
+            bool('impersonation_enabled', 'Flag members whose name imitates staff or ZiGBoT'),
+            bool('suspicious_accounts_enabled', 'Flag new accounts for review'),
+            int('new_account_days', 'Account younger than (days) counts as new', 7, 1, 365),
+            int('suspicious_threshold', 'Flag at risk score (0-100)', 50, 10, 100),
+            bool('behaviour_enabled', 'BehaviourGuard: flag unusual message bursts'),
+            int('burst_messages', 'Messages from one member in 10 seconds', 8, 3, 50),
+            int('duplicate_messages', 'Same message from one member within a minute', 4, 2, 20)
+        ]
     }
 };
 
@@ -279,6 +296,11 @@ FEATURE_SECTIONS.engagement.checks = [
 ];
 FEATURE_SECTIONS.ai.checks = [
     needs('faq_enabled', 'faq', 'Add at least one FAQ entry.')
+];
+FEATURE_SECTIONS.security.checks = [
+    (s) => ((s.ai_scamshield_enabled || s.impersonation_enabled || s.suspicious_accounts_enabled || s.behaviour_enabled || s.threat_intel_use) && !s.alert_channel_id
+        ? { key: 'alert_channel_id', error: 'Pick the channel where security alerts go.' } : null),
+    (s) => (s.known_scam_quarantine && !s.threat_intel_use ? { key: 'known_scam_quarantine', error: 'Switch on the shared scam list first.' } : null)
 ];
 FEATURE_SECTIONS.automation.checks = [
     needs('scheduled_messages_enabled', 'scheduled_messages', 'Add at least one scheduled message.'),
