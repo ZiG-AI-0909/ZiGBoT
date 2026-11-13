@@ -28,6 +28,9 @@ export const POST = handler(async (request, { params }) => {
     const { projectId } = await params;
     const { supabase, ownerId } = await requireStudioUser();
     const project = await getOwnedProject(supabase, ownerId, projectId);
+    // Owner's decision (2026-11-14): prompts use the user's own API key
+    // (…/agent). ZiGBoT's built-in model only answers when explicitly enabled.
+    if (process.env.STUDIO_BUILTIN_AI !== 'on') throw new HttpError(422, 'Connect your own Claude or OpenAI API key to use AI prompts (Build with AI Coding Agent).', { code: 'no_key' });
     const body = await readJson(request, 8192);
     const text = String(body?.request ?? '').trim();
     if (!text || text.length > ai.LIMITS.requestChars) throw new HttpError(422, `Describe the change in 1-${ai.LIMITS.requestChars} characters.`, { fieldErrors: { request: 'Invalid request.' } });

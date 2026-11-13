@@ -17,7 +17,9 @@ function Diff({ lines }) {
     );
 }
 
-export default function AiCreator({ projectId }) {
+// showPrompt: the built-in (ZiGBoT model) prompt box; off by default because
+// prompts use the owner's own API key (AgentBuilder). The list below stays.
+export default function AiCreator({ projectId, showPrompt = false }) {
     const base = `/api/studio/projects/${projectId}/ai`;
     const [state, setState] = useState(null);
     const [text, setText] = useState('');
@@ -48,7 +50,7 @@ export default function AiCreator({ projectId }) {
         <div className="stack">
             {message?.error ? <div className="error" role="alert">{message.error}{message.rejected?.length ? <ul>{message.rejected.map((r, i) => <li key={i}><code>{r.path || '(no path)'}</code>: {r.reason}</li>)}</ul> : null}</div> : null}
             {message?.ok ? <p className="help" role="status">{message.ok}</p> : null}
-            <form className="card stack" onSubmit={ask}>
+            {showPrompt ? (<form className="card stack" onSubmit={ask}>
                 <label htmlFor="ai-request"><strong>What should change?</strong></label>
                 <textarea id="ai-request" rows={4} maxLength={2000} value={text} onChange={(e) => setText(e.target.value)} placeholder="For example: add a /ping command that replies with the latency" />
                 <div className="row" style={{ gap: 8, alignItems: 'center' }}>
@@ -56,7 +58,7 @@ export default function AiCreator({ projectId }) {
                     {state ? <span className="help">{state.remaining} of {state.limit} AI requests left today.</span> : null}
                 </div>
                 <p className="help">The AI only sees this project&apos;s files. It proposes a plan and diffs; nothing is written until you approve, and nothing is ever deployed automatically.</p>
-            </form>
+            </form>) : null}
             {(state?.proposals || []).length === 0 ? <p className="help">No proposals yet.</p> : state.proposals.map((p) => (
                 <article key={p.id} className="card stack">
                     <div className="row" style={{ justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>

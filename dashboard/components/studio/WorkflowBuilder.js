@@ -307,15 +307,20 @@ function Canvas({ base, workflow, catalog, onSaved }) {
  * AI for a workflow in the builder's schema, validates it and saves it as a
  * draft; it opens on the canvas for editing. Nothing runs or activates.
  */
-function AiWorkflowGenerator({ base, onCreated }) {
+function AiWorkflowGenerator({ base, projectId, onCreated }) {
     const [text, setText] = useState('');
-    const [engine, setEngine] = useState('zigbot');
-    const [engines, setEngines] = useState([{ id: 'zigbot', label: 'ZiGBoT AI' }]);
+    const [engine, setEngine] = useState('');
+    const [engines, setEngines] = useState(null); // null = loading; [] = no key connected
     const [busy, setBusy] = useState(false);
     const [note, setNote] = useState(null);
     const abortRef = useRef(null);
     useEffect(() => {
-        call('/api/studio/agents/keys').then((b) => setEngines([{ id: 'zigbot', label: 'ZiGBoT AI' }, ...b.providers.filter((p) => p.configured).map((p) => ({ id: p.id, label: `${p.label} (your key)` }))])).catch(() => {});
+        // Prompt generation always uses the user's own key (owner's decision).
+        call('/api/studio/agents/keys').then((b) => {
+            const mine = b.providers.filter((p) => p.configured).map((p) => ({ id: p.id, label: `${p.label} (your key …${p.last4})` }));
+            setEngines(mine);
+            if (mine[0]) setEngine(mine[0].id);
+        }).catch(() => setEngines([]));
     }, []);
     async function generate(e) {
         e.preventDefault();
@@ -331,6 +336,16 @@ function AiWorkflowGenerator({ base, onCreated }) {
         } catch (err) {
             setNote(err.name === 'AbortError' ? { ok: 'Cancelled.' } : { error: err.message });
         } finally { setBusy(false); abortRef.current = null; }
+    }
+    if (engines === null) return null;
+    if (engines.length === 0) {
+        return (
+            <div className="card stack" style={{ borderTop: '3px solid #fb923c' }}>
+                <strong>✨ Generate workflows from a prompt</strong>
+                <p className="help" style={{ margin: 0 }}>Connect your own Claude (Anthropic) or OpenAI API key to describe an automation and let the AI build it. Without a key, create workflows by name below and build them on the canvas.</p>
+                <a className="btn" href={`/studio/${projectId}/ai`} style={{ justifySelf: 'start' }}>Connect an API key</a>
+            </div>
+        );
     }
     return (
         <form className="card stack" onSubmit={generate} style={{ borderTop: '3px solid #fb923c' }}>
@@ -377,7 +392,7 @@ export default function WorkflowBuilder({ projectId }) {
     return (
         <div className="stack">
             {error ? <p className="error" role="alert">{error}</p> : null}
-            <AiWorkflowGenerator base={base} onCreated={async (id) => { await load(); open(id); }} />
+            <AiWorkflowGenerator base={base} projectId={projectId} onCreated={async (id) => { await load(); open(id); }} />
             <div className="card">
                 <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                     {(list || []).length === 0 ? <span className="help">No workflows yet.</span> : (list || []).map((w) => (

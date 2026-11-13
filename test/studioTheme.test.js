@@ -26,7 +26,7 @@ test('Code is an IDE: explorer, editor, AI assistant, console and a status bar',
     for (const area of ['ide-explorer', 'ide-editor', 'ide-assistant', 'ide-console', 'ide-status']) assert.ok(code.includes(area), area);
     assert.match(css, /grid-template-areas: "explorer editor assistant" "console console console"/);
     assert.match(css, /@media \(max-width: 720px\) \{ \.ide \{ grid-template-columns: 1fr;/, 'phones get one column');
-    assert.match(code, /await call\(`\$\{base\}\/ai`, \{ method: 'POST'/, 'assistant creates a proposal (approve elsewhere)');
+    assert.match(code, /await call\(`\$\{base\}\/agent`, \{ method: 'POST'/, 'assistant creates a proposal with the user\'s own key (approve elsewhere)');
     assert.doesNotMatch(code.slice(code.indexOf('function AssistantPane'), code.indexOf('export default')), /\/file`, \{ method: 'PUT'/, 'assistant never writes files');
 });
 

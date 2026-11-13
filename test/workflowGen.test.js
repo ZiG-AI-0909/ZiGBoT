@@ -79,7 +79,9 @@ test('cycles from the AI are caught by the same validator (and cannot run)', () 
 test('route: owner-checked, quota per engine, saved as a draft (never activated or executed)', () => {
     const route = read('app', 'api', 'studio', 'projects', '[projectId]', 'workflows', 'generate', 'route.js');
     assert.match(route, /getOwnedProject\(supabase, ownerId, projectId\)/);
-    assert.ok(route.indexOf('claimQuota') < route.indexOf('completeChat('), 'ZiGBoT AI quota first');
+    assert.doesNotMatch(route, /completeChat\(/, 'no built-in model: prompts need the user\'s own key');
+    assert.match(route, /if \(agents\.PROVIDERS\[engine\]\)/);
+    assert.match(route, /Connect your own Claude or OpenAI API key to generate workflows from a prompt\./);
     assert.ok(route.lastIndexOf('claimQuota') < route.indexOf('runAgent('), 'agent quota first');
     assert.match(route, /from\('studio_workflows'\)\.insert\(\{ project_id: project\.id, owner_id: ownerId, name: result\.name, graph: result\.graph \}\)/);
     assert.doesNotMatch(route, /active: true|activated_at|simulate\(|child_process|\beval\(/);
@@ -87,4 +89,18 @@ test('route: owner-checked, quota per engine, saved as a draft (never activated 
     const ui = read('components', 'studio', 'WorkflowBuilder.js');
     assert.match(ui, /Describe the automation you want to create\./);
     assert.match(ui, /\$\{base\}\/generate/);
+});
+
+test('prompts need the user\'s own API key; without one only manual creation is offered', () => {
+    const ui = read('components', 'studio', 'WorkflowBuilder.js');
+    assert.doesNotMatch(ui, /'zigbot'/, 'no built-in engine in the picker');
+    assert.match(ui, /if \(engines\.length === 0\) \{/);
+    assert.match(ui, /Connect an API key/);
+    assert.match(ui, /New workflow name/, 'manual creation stays');
+    const ai = read('app', 'api', 'studio', 'projects', '[projectId]', 'ai', 'route.js');
+    assert.match(ai, /if \(process\.env\.STUDIO_BUILTIN_AI !== 'on'\) throw new HttpError\(422/);
+    assert.ok(ai.indexOf("STUDIO_BUILTIN_AI") < ai.indexOf('claimQuota({'), 'refused before any quota or model call');
+    const code = read('components', 'studio', 'CodeStudio.js');
+    assert.match(code, /if \(provider === null\) \{/);
+    assert.match(read('components', 'studio', 'AiCreator.js'), /showPrompt = false/);
 });

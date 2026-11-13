@@ -29,15 +29,29 @@ function AssistantPane({ base, openPath, projectId }) {
     const [text, setText] = useState('');
     const [busy, setBusy] = useState(false);
     const [note, setNote] = useState(null);
+    const [provider, setProvider] = useState(undefined); // undefined = loading, null = no key
+    useEffect(() => {
+        // Prompts use the user's own Claude / OpenAI key (owner's decision).
+        call('/api/studio/agents/keys').then((b) => setProvider(b.providers.find((p) => p.configured)?.id || null)).catch(() => setProvider(null));
+    }, []);
     async function ask(e) {
         e.preventDefault();
         setBusy(true); setNote(null);
         try {
             const request = openPath ? `${text}\n(The owner is looking at ${openPath}.)` : text;
-            await call(`${base}/ai`, { method: 'POST', body: JSON.stringify({ request }) });
+            await call(`${base}/agent`, { method: 'POST', body: JSON.stringify({ provider, request, projectType: 'feature' }) });
             setText('');
             setNote({ ok: true });
         } catch (err) { setNote({ error: err.message }); } finally { setBusy(false); }
+    }
+    if (provider === null) {
+        return (
+            <aside className="card ide-assistant stack" aria-label="AI assistant">
+                <p className="ide-pane-title">AI assistant</p>
+                <p className="help" style={{ margin: 0 }}>Connect your own Claude or OpenAI API key to ask the AI for changes. You can still edit every file by hand.</p>
+                <a className="btn" href={`/studio/${projectId}/ai`}>Connect an API key</a>
+            </aside>
+        );
     }
     return (
         <aside className="card ide-assistant stack" aria-label="AI assistant">
@@ -46,7 +60,7 @@ function AssistantPane({ base, openPath, projectId }) {
                 <label className="sr-only" htmlFor="ide-ask">Ask the AI for a change</label>
                 <textarea id="ide-ask" rows={5} maxLength={1900} value={text} onChange={(e) => setText(e.target.value)} disabled={busy}
                     placeholder={openPath ? `Change something in ${openPath.split('/').pop()}…` : 'Describe a change…'} />
-                <button className="btn btn-primary" type="submit" disabled={busy || !text.trim()} aria-busy={busy}>{busy ? 'Thinking…' : 'Propose change'}</button>
+                <button className="btn btn-primary" type="submit" disabled={busy || !text.trim() || !provider} aria-busy={busy}>{busy ? 'Thinking…' : 'Propose change'}</button>
             </form>
             {note?.ok ? <p className="help" role="status">Proposal ready. <a href={`/studio/${projectId}/ai`}>Review the diff and approve →</a></p> : null}
             {note?.error ? <p className="error" role="alert">{note.error}</p> : null}
