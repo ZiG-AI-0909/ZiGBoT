@@ -8,8 +8,8 @@ Every status below was checked against the code and tests in this repository. "N
 | Phase | Status | Commits |
 |---|---|---|
 | 1 Dashboard redesign and sidebar navigation | Done | `567b3ab`, `8ca89c7`, `e05b6ba` |
-| 2 Futuristic Studio experience | **Skipped by the owner.** Parts of it shipped elsewhere: per-specialization accents and dashboards (Phase 6), canvas, AI panels, simulator console. | none |
-| 3 Automation creation and Premium monetization | Done | `57492b3` |
+| 2 Futuristic Studio experience | Done: neon / glass theme, Studio hero, IDE workspace with an AI assistant pane and status bar, execution console | `ec92008` |
+| 3 Automation creation and Premium monetization | Done, including live execution through the owner's runner | `57492b3`, `c0f47c3` |
 | 4 Homepage, branding and SEO | Done | `7291813` |
 | 5 Server-owner announcements and dashboard recheck | **Skipped by the owner.** The dashboard was rechecked in Phase 9 instead. | none |
 | 6 Personalized "Create New Bot" | Done | `91d0162` |
@@ -147,8 +147,8 @@ Run these in order. They are additive and can be re-run.
 
 ## 10. Known limitations
 
-- **No ZiGBoT hosting:** live workflow execution returns 503 `runtime_not_available` until Studio hosting exists. Bots run through the user's own self-hosted runner.
-- **Activated workflows don't run yet:** activation is saved and enforced, but nothing runs an activated workflow on live events until hosting exists.
+- **No ZiGBoT hosting:** active workflows run live only inside the owner's own bot on their self-hosted runner (discord.js JavaScript projects only).
+- **Intents:** triggers need the matching gateway intents, which the bot's template decides (the bundle lists the ones needed). Migration `20261116000004_runner_workflows` is required.
 - **Agents not integrated:** GitHub Copilot (no public API) and the Claude Code / Codex command-line agents (they would need a sandbox).
 - **Phases 2 and 5** were not done (skipped).
 - **Dependency advisories** (`npm audit --omit=dev`):
