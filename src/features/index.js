@@ -13,8 +13,9 @@ const { createSecurityPlus } = require('./securityPlus');
 const { createTempVoice } = require('./tempVoice');
 const { createSocial, createTwitchApi } = require('./social');
 const { createAnalytics } = require('./analytics');
+const { createOps } = require('./ops');
 
-function createFeatures({ settings = {}, resolveContext, auditLog, getClient, store = null, now = () => Date.now(), logger = console, renderWelcomeImage, renderRankCard, aiClient = null, aiModel = '', listWarnings = null, counters = {} }) {
+function createFeatures({ settings = {}, resolveContext, auditLog, getClient, store = null, now = () => Date.now(), logger = console, renderWelcomeImage, renderRankCard, aiClient = null, aiModel = '', listWarnings = null, counters = {}, ownerId = '', onShutdown = async () => {}, getStatus = () => ({}) }) {
     const supabase = new SupabaseFeatureStore({ supabaseUrl: settings.supabaseUrl, serviceRoleKey: settings.supabaseServiceRoleKey });
     const featureStore = store || (supabase.enabled ? supabase : new MemoryFeatureStore({ now }));
     const scheduler = createScheduler({ store: featureStore, now, logger });
@@ -32,7 +33,8 @@ function createFeatures({ settings = {}, resolveContext, auditLog, getClient, st
     ];
     const aiTools = createAiTools({ ...shared, aiClient, aiModel, listWarnings });
     const analytics = createAnalytics({ ...shared, aiClient, aiModel, counters });
-    modules.push(aiTools, analytics);
+    const ops = createOps({ store: featureStore, auditLog, ownerId, onShutdown, getStatus, now, logger });
+    modules.push(aiTools, analytics, ops);
 
     const each = (hook, ...args) => Promise.all(modules.filter((m) => typeof m[hook] === 'function').map((m) => Promise.resolve(m[hook](...args))
         .catch((error) => logger.error?.(`[ZiGBoT FEATURES] ${hook} failed: ${error?.message || error}`))));
@@ -41,13 +43,18 @@ function createFeatures({ settings = {}, resolveContext, auditLog, getClient, st
         store: featureStore,
         scheduler,
         modules,
-        start: () => scheduler.start(),
+        start: () => { scheduler.start(); return ops.load(); },
         stop: () => scheduler.stop(),
         onMemberAdd: (member) => each('onMemberAdd', member),
         onMemberRemove: (member) => each('onMemberRemove', member),
         onMemberUpdate: (oldMember, newMember) => each('onMemberUpdate', oldMember, newMember),
         onReaction: (reaction, user, added) => each('onReaction', reaction, user, added),
         onVoiceState: (oldState, newState) => each('onVoiceState', oldState, newState),
+        /** Maintenance mode (Section M): true = give this message author no reply. */
+        blocksMessage: (message) => ops.blocksMessage(message),
+        /** Maintenance mode for interactions: true = answered "under maintenance", stop. */
+        gateInteraction: (interaction) => ops.gateInteraction(interaction),
+        isMaintenance: () => ops.isMaintenance(),
         /** Analytics counts (Section L), called first in the message listener. Never throws. */
         observeMessage: (message) => analytics.observeMessage(message),
         /** Per-channel / per-server AI limits (Section D). true = the AI may reply. */

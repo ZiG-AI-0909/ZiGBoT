@@ -299,7 +299,7 @@ Section K reuses the existing OAuth login and GuildEditor. Settings for every ne
 | Subscription management | WORKING | Per-guild Razorpay checkout/sync/cancel/verify routes and UI: `dashboard/app/api/guilds/[guildId]/billing/`, `dashboard/components/GuildEditor.js`; tests in `test/premium.test.js`, `test/purchaseThanks.test.js`. | Reuse |
 | Premium feature management | WORKING | Unchanged plan flag per guild (`premium.js`, Razorpay-backed `zb_guild_subscriptions`) with existing gates; the new optional features are free and off by default. Tests in `test/premium.test.js`. | Done (Section K) |
 | Staff permissions | WORKING | Admins choose dashboard staff roles (Add-ons → Dashboard staff). Staff get read-only access (staff page, analytics API) via `requireGuildStaff`, which only runs after the unchanged admin check fails for missing permission, re-checks Discord live, and never creates the `zb_guild_admins` row that row-level security needs for writes; all write routes still require an admin; tests `admins keep full access exactly as before; staff roles give read-only access only`, `staff access never grants database write access, and every write route still requires an admin`. | Done (Section K) |
-| Health monitoring | PARTIAL | Dashboard API health route and Anti-Nuke permission/status reporting exist (`dashboard/app/api/health/route.js`, `src/antinuke/monitor.js:167-178`); not a complete service/dependency monitor. | Improve |
+| Health monitoring | WORKING | Bot `/healthz` readiness JSON, dashboard `/api/health?deep=1` database check, and `/owner status` (Section M); tests in `test/section-m-devtools.test.js`. | Done (Section M) |
 
 ## L. Analytics
 
@@ -322,20 +322,22 @@ Section L is off by default (Add-ons → Analytics). It stores only aggregated d
 
 ## M. Developer Tools
 
+Section M extends the existing health server and health route without changing their default answers, and adds bot-owner operator tools (`/owner`, home servers only). Tests: `test/section-m-devtools.test.js`.
+
 | Feature | Status | Proof | Action |
 |---|---|---|---|
-| Bot health | WORKING (UNTESTED) | `src/health.js:3-9` exposes a plain liveness response; it does not probe Discord/database dependencies. No direct health test found. | Add tests |
-| API health | WORKING (UNTESTED) | Dashboard has `dashboard/app/api/health/route.js`; no focused endpoint health test found. | Add tests |
-| Database health | PARTIAL | Mongo memory status is exposed in `src/tools/router.js:615-650`; dashboard admin overview reports data-source errors (`dashboard/lib/adminData.js:53-99`). No unified readiness endpoint. | Improve |
-| Worker health | MISSING | Search `worker health|worker status|scheduler health|queue health` across `src/`, `dashboard/`, `supabase/`, `test/`: no health registry for background workers found. | Implement |
+| Bot health | WORKING | `src/health.js`: `/` still answers `ZiGBoT is alive` (200); new `GET /healthz` returns a JSON readiness report (Discord ready/guild count/ping, MongoDB and Supabase status, AI provider names, scheduler state, maintenance, uptime; no ids or secrets), 200 when ready, 503 otherwise; tests `bot health: "/" is unchanged; /healthz reports readiness as JSON (200 ready, 503 not)`, `the status report the bot exposes holds no ids, tokens or settings`. | Done (Section M) |
+| API health | WORKING | `/api/health` default answer unchanged; `?deep=1` adds a one-row database check and answers 503 if it fails; route test in `export and import routes are owner-only and reuse the normal save validation`. The deep check was built but not run against the live Supabase project: NOT VERIFIED there. | Done (Section M) |
+| Database health | WORKING | MongoDB connection and Supabase config-store status in `/healthz` and `/owner status`; dashboard database check via `/api/health?deep=1`; tests above. | Done (Section M) |
+| Worker health | WORKING | The shared feature scheduler reports running, last tick, jobs run and failed (`scheduler.status()`), exposed in `/healthz` and `/owner status`; test `/owner: bot owner only, status works, everyone else is refused and audited`. | Done (Section M) |
 | Shard monitoring where applicable | BLOCKED | No `ShardingManager`/cluster integration found; current `src/index.js` creates one Discord client. Shard state is not applicable until deployment is sharded. | Skip (blocked) |
-| Error reporting | PARTIAL | Runtime errors are written to `console` and audit logs, e.g. `src/index.js`, `src/antinuke/monitor.js`; no external error reporting/aggregation service found. | Improve |
-| Debug logging | PARTIAL | Prefixed `console.log/error` calls exist; no configurable structured debug logger. `src/antinuke/monitor.js:33-35`. | Improve |
+| Error reporting | PARTIAL | Unchanged console and audit-log reporting; failed scheduler jobs are counted in `/healthz`. No process-wide error hooks were added, because an `uncaughtException`/`unhandledRejection` listener would change today's crash behaviour; no external error service is configured. | PARTIAL |
+| Debug logging | PARTIAL | Unchanged prefixed console logging; every new module logs failures with a `[ZiGBoT <AREA>]` prefix. No log-level switch was added. | PARTIAL |
 | Feature flags | WORKING | Environment/config flags include `SECURITY_ENABLED`, memory summaries, custom identity, and guild feature gates: `src/config/settings.js:149-164`; test `security settings load the emergency switch, command role and AI rate window` (`test/settingsProviders.test.js`). | Reuse |
-| Configuration import/export | MISSING | Search `config(uration)?.*(import|export)|settings export|settings import` across `src/`, `dashboard/`, `supabase/`, `test/`: memory and admin-data exports exist, but no guild configuration import/export. | Implement |
-| Backup and recovery | MISSING | Search `backup|restore database|recovery snapshot` across `src/`, `dashboard/`, `supabase/`, `test/`: no database backup/recovery workflow found. | Implement |
-| Maintenance mode | MISSING | Search `maintenance mode|maintenanceMode|read.only mode` across `src/`, `dashboard/`, `supabase/`, `test/`: no operational maintenance switch found. | Implement |
-| Emergency shutdown | MISSING | Search `emergency shutdown|graceful shutdown|SIGTERM|client.destroy` across `src/`, `dashboard/`, `test/`: no controlled operator shutdown command/workflow found. | Implement |
+| Configuration import/export | WORKING | Owner-only `GET .../config/export` (JSON backup of every editor setting, no row ids, versions, timestamps, billing or identity) and `POST .../config/import` (unknown keys dropped, then the same `validateGuildConfig` + Premium checks as a normal save against the live channels/roles, written through the RLS-scoped client); Backup card in Add-ons; tests `config export: ...`, `config import refuses anything that is not a ZiGBoT export`, `export and import routes are owner-only and reuse the normal save validation`. | Done (Section M) |
+| Backup and recovery | PARTIAL | Per-server settings backup and restore = the config export/import above. Database-level backups are Supabase-managed (project backups) and MongoDB Atlas-managed; no extra database backup workflow was built here. | PARTIAL |
+| Maintenance mode | WORKING | `/owner maintenance on|off` (bot owner only; turning it on needs a one-use confirmation button that expires after 60 s), persisted across restarts; members get no message replies and slash commands answer "under maintenance", the owner is unaffected; gates sit inside the existing listeners; tests `maintenance mode: needs confirmation, only the owner can confirm, ...`, `src/index.js gates messages and interactions on maintenance inside the existing listeners`. | Done (Section M) |
+| Emergency shutdown | WORKING | `/owner shutdown` with the same confirmation: turns maintenance on and closes the Discord connection; the process and health server keep running, so the host does not restart it in a loop; restart the service to come back; test `emergency shutdown: confirmation expires after 60 s, cancel does nothing, confirm closes the connection`. | Done (Section M) |
 
 ## Verification notes
 

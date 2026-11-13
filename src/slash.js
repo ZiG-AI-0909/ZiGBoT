@@ -296,7 +296,9 @@ function buildDefinitions({ identity = false } = {}) {
 
 // YouTube is tied to the owner's personal channel: its commands are only
 // registered in home servers, so other servers never even see them.
-const YOUTUBE_COMMANDS = new Set(['watch', 'unwatch', 'ytstatus', 'ytgreet', 'ytmod', 'ytroast', 'ytretry']);
+// Despite the name, this is the set of HOME-SERVER-ONLY commands: the YouTube
+// tools plus the bot owner's /owner operator command (src/features/ops.js).
+const YOUTUBE_COMMANDS = new Set(['watch', 'unwatch', 'ytstatus', 'ytgreet', 'ytmod', 'ytroast', 'ytretry', 'owner']);
 
 // One rejected definition fails a whole bulk set, so failures are logged, not
 // swallowed. Only status/code and a bounded, scrubbed message are printed —

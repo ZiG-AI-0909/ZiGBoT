@@ -351,7 +351,8 @@ test('buildDefinitions returns plain JSON payloads ready for the Discord API', (
     // + Section D AI tools: /ai
     // + Section H temporary voice: /tempvoice
     // + Section L analytics: /analytics
-    assert.equal(definitions.length, 45);
+    // + Section M bot-owner operator command: /owner (home servers only)
+    assert.equal(definitions.length, 46);
     for (const definition of definitions) {
         assert.equal(typeof definition.toJSON, 'undefined');
         assert.equal(typeof definition.name, 'string');
@@ -359,7 +360,7 @@ test('buildDefinitions returns plain JSON payloads ready for the Discord API', (
     }
     assert.deepEqual(
         definitions.map(({ name }) => name),
-        ['play', 'search', 'pause', 'resume', 'skip', 'stop', 'queue', 'nowplaying', 'volume', 'shuffle', 'loop', 'remove', 'clearqueue', 'leave', 'join', 'kick', 'ban', 'memory', 'appeal', 'moderation', 'reputation', 'security', 'summarychannels', 'ticket', 'help', 'setup', 'watch', 'unwatch', 'ytstatus', 'ytgreet', 'ytmod', 'ytroast', 'ytretry', 'roles', 'suggest', 'community', 'automation', 'level', 'eco', 'games', 'giveaway', 'tournament', 'ai', 'tempvoice', 'analytics']
+        ['play', 'search', 'pause', 'resume', 'skip', 'stop', 'queue', 'nowplaying', 'volume', 'shuffle', 'loop', 'remove', 'clearqueue', 'leave', 'join', 'kick', 'ban', 'memory', 'appeal', 'moderation', 'reputation', 'security', 'summarychannels', 'ticket', 'help', 'setup', 'watch', 'unwatch', 'ytstatus', 'ytgreet', 'ytmod', 'ytroast', 'ytretry', 'roles', 'suggest', 'community', 'automation', 'level', 'eco', 'games', 'giveaway', 'tournament', 'ai', 'tempvoice', 'analytics', 'owner']
     );
 });
 

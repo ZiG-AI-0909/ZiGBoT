@@ -174,9 +174,23 @@ function analyticsCommands() {
     ];
 }
 
+function opsCommands() {
+    return [
+        new SlashCommandBuilder()
+            .setName('owner')
+            .setDescription('Bot owner: maintenance mode, emergency shutdown, status')
+            .addSubcommand((s) => s.setName('status').setDescription('Bot, database, AI and worker status'))
+            .addSubcommand((s) => s.setName('maintenance').setDescription('Turn maintenance mode on or off')
+                .addStringOption((o) => o.setName('state').setDescription('on or off').setRequired(true)
+                    .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' })))
+            .addSubcommand((s) => s.setName('shutdown').setDescription('Emergency shutdown (asks for confirmation)'))
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    ];
+}
+
 /** Every optional-feature command, as builders (src/slash.js turns them into JSON). */
 function featureCommandBuilders() {
-    return [...communityCommands(), ...automationCommands(), ...engagementCommands(), ...aiCommands(), ...voiceCommands(), ...analyticsCommands()];
+    return [...communityCommands(), ...automationCommands(), ...engagementCommands(), ...aiCommands(), ...voiceCommands(), ...analyticsCommands(), ...opsCommands()];
 }
 
 module.exports = { featureCommandBuilders };

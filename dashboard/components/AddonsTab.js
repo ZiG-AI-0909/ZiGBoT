@@ -91,7 +91,45 @@ function Control({ field, value, onChange, channels, roles, id, error }) {
     );
 }
 
-export default function AddonsTab({ draft, set, errors, channels, roles }) {
+// Settings backup (server owner only; enforced by the API routes).
+function BackupCard({ guildId }) {
+    const [status, setStatus] = useState(null);
+    async function importFile(event) {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+        if (file.size > 200 * 1024) return setStatus({ error: 'The file is larger than 200 KB.' });
+        setStatus({ busy: true });
+        try {
+            const res = await fetch(`/api/guilds/${guildId}/config/import`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: await file.text() });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                const fields = body.fieldErrors ? Object.entries(body.fieldErrors).slice(0, 5).map(([k, v]) => `${k}: ${v}`).join('; ') : '';
+                return setStatus({ error: `${body.error || 'Import failed.'}${fields ? ` ${fields}` : ''}` });
+            }
+            setStatus({ ok: 'Settings restored. Reloading…' });
+            window.location.reload();
+        } catch {
+            setStatus({ error: 'Import failed. Check your connection and try again.' });
+        }
+    }
+    return (
+        <div className="card" style={{ marginBottom: 16 }}>
+            <h2>Backup</h2>
+            <p className="help">Server owner only. Download every ZiGBoT setting of this server as a JSON file, or restore one. A restore is checked like a normal save, against this server's channels and roles.</p>
+            <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
+                <a className="btn" href={`/api/guilds/${guildId}/config/export`} download>Export settings</a>
+                <label className="btn" htmlFor="addons-import">Import settings
+                    <input id="addons-import" type="file" accept="application/json,.json" onChange={importFile} style={{ position: 'absolute', width: 1, height: 1, opacity: 0 }} disabled={status?.busy} />
+                </label>
+            </div>
+            {status?.error ? <p className="error" role="alert">{status.error}</p> : null}
+            {status?.ok ? <p className="help" role="status">{status.ok}</p> : null}
+        </div>
+    );
+}
+
+export default function AddonsTab({ draft, set, errors, channels, roles, guildId }) {
     const names = Object.keys(FEATURE_SECTIONS);
     const [open, setOpen] = useState(names[0]);
     const all = draft.feature_settings || {};
@@ -99,6 +137,8 @@ export default function AddonsTab({ draft, set, errors, channels, roles }) {
     const errorCount = (section) => Object.keys(errors || {}).filter((k) => k.startsWith(`feature_settings.${section}.`)).length;
 
     return (
+        <>
+        {guildId ? <BackupCard guildId={guildId} /> : null}
         <div className="card">
             <h2>Add-ons</h2>
             <p className="help">Optional features. Everything here is off until you switch it on, and each one works only in this server.</p>
@@ -119,5 +159,6 @@ export default function AddonsTab({ draft, set, errors, channels, roles }) {
                 ))}
             </div>
         </div>
+        </>
     );
 }

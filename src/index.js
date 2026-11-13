@@ -173,7 +173,14 @@ const features = createFeatures({
         moderationCases: (guildId) => brain.listModerationCases(guildId, 100),
         securityIncidents: (guildId) => securityIntegration.getIncidents(guildId),
         ticketsSince: (guildId, sinceIso) => ticketStore.countTicketsSince(guildId, sinceIso)
-    }
+    },
+    // Operator tools (Section M): bot owner only.
+    ownerId: settings.botCreatorId,
+    onShutdown: async () => {
+        features.stop();
+        await client.destroy();
+    },
+    getStatus: () => botStatus()
 });
 const ticketCommands = createTicketCommands({
     store: ticketStore,
@@ -440,6 +447,8 @@ client.on(Events.GuildDelete, async (guild) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
+    // Maintenance mode (off unless the bot owner turns it on).
+    if (await features.gateInteraction(interaction)) return;
     if (features.isComponent(interaction)) {
         await features.handleComponent(interaction)
             .catch((error) => console.error(`[ZiGBoT FEATURES] Component failed: ${error?.code || error?.name || 'Error'}`));
@@ -735,6 +744,8 @@ client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot || !client.user) return;
     // Analytics (opt-in): daily counts only, no content; never blocks anything.
     features.observeMessage(message);
+    // Maintenance mode (off unless the bot owner turns it on): no replies.
+    if (features.blocksMessage(message)) return;
 
     // Per-server context: config is loaded for THIS message's guild only.
     const { ctx: guildCtx, gSettings, behavior } = await guildRuntime(message.guild, message.member);
@@ -1289,7 +1300,21 @@ async function handleVoiceTranscript({ guild, userId, transcript }) {
     }
 }
 
-startHealthServer();
+// Readiness report for GET /healthz and /owner status: booleans, counts and
+// provider names only (no ids, tokens or settings).
+function botStatus() {
+    const ready = Boolean(client.isReady?.());
+    return {
+        ok: ready,
+        discord: { ready, guilds: client.guilds?.cache?.size ?? 0, ping: Number.isFinite(client.ws?.ping) ? Math.round(client.ws.ping) : null },
+        database: { mongo: Boolean(brain.getMemoryStatus?.().connected), supabase: Boolean(guildStore.enabled && !guildStore.lastError) },
+        ai: { providers: (ai.client?.providers || []).map((p) => p.name) },
+        workers: { scheduler: features.scheduler.status() },
+        maintenance: features.isMaintenance(),
+        uptimeSeconds: Math.round(process.uptime())
+    };
+}
+startHealthServer(undefined, { getStatus: botStatus });
 
 // Connect the brain before login: warn storage is core to moderation, and
 // starting without it would be a silent broken state. Fail fast instead.
