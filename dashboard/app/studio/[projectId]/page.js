@@ -31,6 +31,7 @@ export default async function StudioProject({ params }) {
                 <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
                     <a className="btn btn-primary" href={`/api/studio/projects/${project.id}/export`} download>Download .zip</a>
                     <Link className="btn" href={`/studio/${project.id}/customize`}>Customize</Link>
+                    <Link className="btn" href={`/studio/${project.id}/code`}>Open Code Studio</Link>
                 </div>
                 <p className="help">Start it on your own computer: {framework?.start}. The zip never contains your bot token: copy <code>.env.example</code> to <code>.env</code> and fill it in.</p>
             </div>

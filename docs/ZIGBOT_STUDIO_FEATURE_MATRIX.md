@@ -47,11 +47,23 @@ Status: WORKING (a named test exercises it), PARTIAL, MISSING, NOT AVAILABLE (ne
 | Token encrypted with AES-256-GCM (STUDIO_SECRETS_KEY), never returned, never logged | WORKING | `lib/studio/secrets.js` (random IV, auth tag, project-bound AAD); `studio_secrets` unreachable from browser sessions (no grant, no policy); responses carry only configured + last 4 + bot name; tests `AES-256-GCM: ...` (2), `status and redaction never expose a secret`, `routes: the token is never returned, ...`, `secrets: no browser access at all; ...` |
 | Token excluded from exports | WORKING | the export route never reads `studio_secrets`; same routes test |
 
+## Phase 4: Code Studio
+
+| Feature | Status | Proof |
+|---|---|---|
+| Monaco editor | WORKING | `components/studio/CodeStudio.js` with `@monaco-editor/react`; Monaco served from this site (`scripts/copy-monaco.js` → `/monaco/vs`, CSP `worker-src 'self' blob:`); page `/studio/[id]/code` (owner check). Built, not browser-tested |
+| File tree: create, rename, delete | WORKING | `/api/studio/projects/[id]/file` (POST/PATCH/DELETE), max 300 files, owner-only |
+| Search | WORKING | `/api/studio/projects/[id]/search`; test `search: names and lines, capped, short queries ignored` |
+| Path traversal and > 500 KB blocked | WORKING | `validateFileWrite` + database check constraints; test `file writes: traversal, absolute paths, secrets and >500 KB are refused` |
+| Version history (snapshot on save, 50 per project) with diff | WORKING | `supabase/migrations/20261115000003_studio_versions.sql` (prune trigger, owner-only RLS), `lib/studio/diff.js`; tests `versions: owner-only RLS and pruned to the newest 50 per project`, `diff: added, removed and unchanged lines` |
+| Encrypted environment variables | WORKING | `/api/studio/projects/[id]/env`: AES-256-GCM like the token, answers name + last 4 only, DISCORD_TOKEN reserved; test `routes: every Phase 4 route checks ownership; env never returns values` |
+| Checks: validate structure, syntax check, lint (static only) | WORKING | `lib/studio/checks.js` (TypeScript parser, JSON.parse, text rules; nothing executed); test `checks: generated projects pass; syntax errors and leaks are found without running anything` |
+| Run tests / npm install | NOT AVAILABLE | Needs a sandbox to run customer code; shown as not available in the Checks panel |
+
 ## Later phases
 
 | Phase | Status |
 |---|---|
-| 4 Code Studio | MISSING |
 | 5 Visual builder | MISSING |
 | 6 AI bot creator | MISSING |
 | 7 Deployment foundation | MISSING (real hosting NOT AVAILABLE) |

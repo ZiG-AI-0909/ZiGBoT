@@ -21,6 +21,8 @@ const cspDirectives = [
     // The Checkout modal is an iframe served by Razorpay.
     "frame-src https://*.razorpay.com",
     "connect-src 'self' https://*.razorpay.com",
+    // Code Studio: Monaco (served from /monaco) runs its language workers from blob: URLs.
+    "worker-src 'self' blob:",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self' https://discord.com https://*.supabase.co https://*.razorpay.com"

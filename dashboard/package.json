@@ -4,7 +4,9 @@
   "private": true,
   "description": "ZiGBoT multi-server configuration dashboard (Next.js + Supabase, deploys to Vercel)",
   "scripts": {
+    "predev": "node scripts/copy-monaco.js",
     "dev": "next dev",
+    "prebuild": "node scripts/copy-monaco.js",
     "build": "next build",
     "start": "next start",
     "test": "npm --prefix .. test"
@@ -20,5 +22,10 @@
     "react-dom": "19.3.1",
     "server-only": "0.0.1",
     "sharp": "0.35.5"
+  },
+  "devDependencies": {
+    "@monaco-editor/react": "4.7.0",
+    "monaco-editor": "0.52.2",
+    "typescript": "5.6.3"
   }
 }

@@ -198,3 +198,19 @@ test('secrets: no browser access at all; only the service role reads or writes t
     await assert.rejects(db.query("insert into public.studio_secrets (project_id, owner_id, name, ciphertext, iv, tag, last4) values ($1, $2, 'bad-name', 'aaaaaaaaaaaaaaaaaaaa', 'aaaaaaaaaaaaaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaa', 'abcd')", [id, A]), /check constraint/);
     await db.query('delete from public.studio_projects where id = $1', [id]);
 });
+
+// Phase 4 table: version history is owner-only and keeps 50 per project.
+test('versions: owner-only RLS and pruned to the newest 50 per project', async () => {
+    await as(A);
+    const { rows: [{ id }] } = await insertProject(A, 'History bot');
+    for (let i = 0; i < 55; i += 1) await db.query("insert into public.studio_file_versions (project_id, owner_id, path, content) values ($1, $2, 'src/index.js', $3)", [id, A, `v${i}`]);
+    const { rows } = await db.query('select content from public.studio_file_versions where project_id = $1 order by id', [id]);
+    assert.equal(rows.length, 50);
+    assert.equal(rows[0].content, 'v5', 'the oldest ones were dropped');
+    await assert.rejects(db.query("insert into public.studio_file_versions (project_id, owner_id, path, content) values ($1, $2, '../x', 'x')", [id, A]), /check constraint/);
+    await as(B);
+    assert.equal((await db.query('select * from public.studio_file_versions where project_id = $1', [id])).rows.length, 0, 'B cannot read A\'s history');
+    await assert.rejects(db.query("insert into public.studio_file_versions (project_id, owner_id, path, content) values ($1, $2, 'a.js', 'x')", [id, B]), /row-level security/);
+    await as(A);
+    await db.query('delete from public.studio_projects where id = $1', [id]);
+});
