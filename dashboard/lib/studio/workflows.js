@@ -511,7 +511,8 @@ function exportCode(input, { name = 'workflow' } = {}) {
             emit(2, `if (!(${test})) return;`);
             emit(2, 'const ctx = context(client, i.guild, i.channel, i.member, i.user, null);');
         } else if (t.type === 'trigger.schedule') {
-            emit(1, `client.once(Events.ClientReady, () => setInterval(async () => {`);
+            // Works whether this module is registered before or after the bot is ready.
+            emit(1, `const ${`start_${t.id.replace(/\W/g, '_')}`} = () => setInterval(async () => {`);
             emit(2, 'const ctx = context(client, null, null, null, null, null);');
         } else {
             const [event, args] = ev;
@@ -528,7 +529,11 @@ function exportCode(input, { name = 'workflow' } = {}) {
         emit(2, '} catch (error) {');
         emit(3, `console.error(${q(`[workflow ${fnName}]`)}, error?.message || error);`);
         emit(2, '}');
-        emit(1, t.type === 'trigger.schedule' ? `}, ${t.data.everyMinutes * 60000}));` : '});');
+        if (t.type === 'trigger.schedule') {
+            const starter = `start_${t.id.replace(/\W/g, '_')}`;
+            emit(1, `}, ${t.data.everyMinutes * 60000});`);
+            emit(1, `if (client.isReady()) ${starter}(); else client.once(Events.ClientReady, ${starter});`);
+        } else emit(1, '});');
     }
     lines.push('};', '');
     return { path: `src/workflows/${fnName}.js`, content: lines.join('\n') };

@@ -41,6 +41,38 @@ export async function getAutomationEntitlement({ supabase, ownerId, discordId })
     }
 }
 
+/**
+ * The same entitlement for a project owner WITHOUT a browser session (used
+ * when their self-hosted runner deploys): service-role reads limited to that
+ * owner's own rows. Fails closed.
+ */
+export async function getEntitlementForOwner(ownerId) {
+    try {
+        const db = createServiceClient();
+        const [{ data: account }, { data: profile }, { data: guilds }] = await Promise.all([
+            db.from('studio_accounts').select('plan, plan_expires_at').eq('user_id', ownerId).maybeSingle(),
+            db.from('zb_profiles').select('discord_user_id').eq('user_id', ownerId).maybeSingle(),
+            db.from('zb_user_guilds').select('guild_id').eq('user_id', ownerId).eq('can_manage', true).limit(200)
+        ]);
+        const ids = (guilds || []).map((g) => String(g.guild_id));
+        let subscriptions = [];
+        if (ids.length) {
+            const { data } = await db.from('zb_guild_subscriptions').select('guild_id, status, current_period_end').in('guild_id', ids);
+            subscriptions = data || [];
+        }
+        return ent.resolveAutomationEntitlement({
+            studioPlan: account?.plan || 'free',
+            studioPlanExpiresAt: account?.plan_expires_at ?? null,
+            subscriptions,
+            managesHomeGuild: ids.some((id) => env.homeGuildIds.includes(id)),
+            isBotOwner: Boolean(env.botCreatorId) && String(profile?.discord_user_id || '') === env.botCreatorId
+        });
+    } catch (error) {
+        console.error('[studio] owner entitlement lookup failed:', error?.message);
+        return { premium: false, source: null, expiresAt: null, error: true };
+    }
+}
+
 export function paywallBody() {
     return ent.paywall({ priceLabels: env.premiumPriceLabels, billingEnabled: env.billingEnabled });
 }

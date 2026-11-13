@@ -74,6 +74,17 @@ function Canvas({ base, workflow, catalog, onSaved }) {
     const closePaywall = useCallback(() => setPaywall(null), []);
     const past = useRef([]); const future = useRef([]);
 
+    // Live run: the server re-checks Premium and deploys active workflows to the paired runner(s).
+    async function runLive() {
+        try {
+            const r = await call(`${base}/${workflow.id}/execute`, { method: 'POST', body: '{}' });
+            setMessage({ ok: r.message });
+        } catch (e) {
+            if (e.body?.code === 'premium_required') setPaywall(e.body);
+            else setMessage({ error: e.message });
+        }
+    }
+
     // Activation is decided by the server (Premium + a valid workflow); the
     // button only asks. A 402 opens the upgrade screen.
     async function setActive(on) {
@@ -221,7 +232,12 @@ function Canvas({ base, workflow, catalog, onSaved }) {
                     <span className={`wf-state${state === 'active' ? ' is-active' : state === 'paused_premium_expired' ? ' is-paused' : ''}`}>{state === 'active' ? 'Active' : state === 'paused_premium_expired' ? 'Paused: Premium expired' : 'Draft'}</span>
                     {state === 'draft' ? (
                         <button className="btn btn-primary" type="button" onClick={() => setActive(true)}>{workflow.entitlement?.premium ? '⚡ Activate' : '💎 Activate'}</button>
-                    ) : <button className="btn" type="button" onClick={() => setActive(false)}>Deactivate</button>}
+                    ) : (
+                        <>
+                            {state === 'active' ? <button className="btn btn-primary" type="button" onClick={runLive}>▶ Run live now</button> : null}
+                            <button className="btn" type="button" onClick={() => setActive(false)}>Deactivate</button>
+                        </>
+                    )}
                 </span>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '190px 1fr 260px', gap: 10 }}>

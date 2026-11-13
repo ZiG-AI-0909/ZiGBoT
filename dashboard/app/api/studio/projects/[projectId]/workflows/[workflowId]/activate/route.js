@@ -30,5 +30,5 @@ export const POST = handler(async (request, { params }) => {
     if (problems.length) throw new HttpError(422, 'Fix the workflow before activating it.', { problems });
     const { error } = await db.from('studio_workflows').update({ active: true, activated_at: new Date().toISOString() }).eq('id', workflow.id).eq('owner_id', ownerId);
     if (error) throw new Error('Activation failed.');
-    return json({ active: true, state: 'active', entitlement: { source: entitlement.source, expiresAt: entitlement.expiresAt }, runtime: { available: false, message: 'Live running starts when Studio hosting is available; your activation is saved and will run from then on.' } });
+    return json({ active: true, state: 'active', entitlement: { source: entitlement.source, expiresAt: entitlement.expiresAt }, runtime: { available: false, message: 'It runs live inside your bot on your self-hosted runner from the next deploy (press "Run live now" or Deploy).' } });
 });

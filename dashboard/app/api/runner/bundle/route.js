@@ -2,6 +2,8 @@ import { HttpError } from '@/lib/http';
 import runner from '@/lib/studio/runner';
 import secrets from '@/lib/studio/secrets';
 import { runnerHandler, requireRunner, reply } from '@/lib/studio/runnerServer';
+import workflowDeploy from '@/lib/studio/workflowDeploy';
+import { getEntitlementForOwner } from '@/lib/studio/entitlementServer';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,5 +28,17 @@ export const GET = runnerHandler(async (request) => {
     for (const s of sealed || []) {
         try { env[s.name] = secrets.decryptSecret(s, { key: process.env.STUDIO_SECRETS_KEY, aad: secrets.aadFor(project.id, s.name) }); } catch { /* skip unreadable, never log values */ }
     }
-    return reply(runner.buildBundle({ project, files: files || [], env }));
+    // Live workflows: only ACTIVE ones, only while the owner is still Premium
+    // (re-checked now, server-side), and only if they still validate.
+    let live = { files: [], included: [], skipped: [], intents: [] };
+    const { data: workflows } = await db.from('studio_workflows').select('id, name, graph, active').eq('project_id', r.project_id).eq('owner_id', r.owner_id).eq('active', true);
+    if ((workflows || []).length) {
+        const entitlement = await getEntitlementForOwner(r.owner_id);
+        if (entitlement.premium) live = workflowDeploy.buildWorkflowFiles(workflows, { framework: project.framework });
+        else live.skipped = workflows.map((w) => ({ name: w.name, reason: 'Premium is not active: workflows stay off.' }));
+    }
+    const generated = new Set(live.files.map((f) => f.path));
+    const merged = [...(files || []).filter((f) => !generated.has(f.path)), ...live.files];
+    await db.from('studio_runners').update({ workflows_deployed: live.included.length > 0, entitlement_checked_at: new Date().toISOString() }).eq('id', r.id);
+    return reply({ ...runner.buildBundle({ project, files: merged, env }), workflows: { included: live.included, skipped: live.skipped, intents: live.intents } });
 });
