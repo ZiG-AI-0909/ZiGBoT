@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import studio from '@/lib/studio/projects';
+import specs from '@/lib/studio/specializations';
+import SpecializationPicker from './SpecializationPicker';
 
 // The 5-step "Create new bot" wizard. The server validates everything again
 // (lib/studio/projects.js validateNewProject) and enforces the plan limit.
@@ -18,6 +20,8 @@ export default function StudioWizard() {
     const [busy, setBusy] = useState(false);
     const set = (key) => (e) => setDraft({ ...draft, [key]: e.target.value });
     const framework = FRAMEWORKS.find((f) => f.id === draft.framework);
+    // Step "0": what the AI should build. The 5 wizard steps follow.
+    const [specialization, setSpecialization] = useState(null);
 
     // Check the current step locally before moving on (same rules as the server).
     function next() {
@@ -32,14 +36,15 @@ export default function StudioWizard() {
         setBusy(true);
         setErrors({});
         try {
-            const res = await fetch('/api/studio/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...draft, language: framework.language }) });
+            const res = await fetch('/api/studio/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...draft, language: framework.language, specialization }) });
             const body = await res.json().catch(() => ({}));
             if (!res.ok) {
                 setErrors({ ...(body.fieldErrors || {}), _: body.error || 'Could not create the project.' });
                 if (body.fieldErrors?.name || body.fieldErrors?.botName) setStep(0);
                 return;
             }
-            router.push(`/studio/${body.project.id}`);
+            // Straight into the workspace that fits the chosen specialization.
+            router.push(specs.workspacePath(body.project.id, specialization));
         } finally {
             setBusy(false);
         }
@@ -54,9 +59,15 @@ export default function StudioWizard() {
         </div>
     );
 
+    if (!specialization) return <SpecializationPicker onPick={setSpecialization} />;
+    const spec = specs.byId(specialization);
+
     return (
-        <div className="card stack">
-            <h1 style={{ margin: 0 }}>Create a new bot</h1>
+        <div className="card stack spec-wizard" style={{ '--spec': spec.accent }}>
+            <div className="spread">
+                <h1 style={{ margin: 0 }}>Create a new bot</h1>
+                <button type="button" className="pill spec-chip" onClick={() => setSpecialization(null)} disabled={busy} title="Change specialization">{spec.title} · change</button>
+            </div>
             <ol className="row" aria-label="Steps" style={{ gap: 8, flexWrap: 'wrap', listStyle: 'none', padding: 0 }}>
                 {WIZARD_STEPS.map((s, i) => <li key={s.id} className="pill" aria-current={i === step ? 'step' : undefined} style={{ opacity: i === step ? 1 : 0.6 }}>{i + 1}. {s.title}</li>)}
             </ol>

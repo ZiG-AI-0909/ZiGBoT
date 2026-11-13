@@ -53,9 +53,11 @@ function projectContext(files) {
 }
 
 /** Chat messages for one request. The request never enters the system prompt. */
-function buildMessages({ request, files, framework }) {
+function buildMessages({ request, files, framework, specialization }) {
+    // The specialization adds a fixed, server-side style note (never user text).
+    const focus = specialization ? require('./specializations').byId(specialization).aiContext : '';
     return [
-        { role: 'system', content: systemPrompt(framework) },
+        { role: 'system', content: focus ? `${systemPrompt(framework)}\n${focus}` : systemPrompt(framework) },
         { role: 'user', content: projectContext(files) },
         { role: 'user', content: untrustedUserData(String(request ?? '').slice(0, LIMITS.requestChars)) }
     ];

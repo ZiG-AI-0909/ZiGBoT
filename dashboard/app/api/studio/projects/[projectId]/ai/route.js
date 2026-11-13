@@ -51,7 +51,7 @@ export const POST = handler(async (request, { params }) => {
     // Context: only THIS project's files (RLS + owner + project filters).
     const { data: files, error: filesError } = await supabase.from('studio_project_files').select('path, content').eq('project_id', project.id).eq('owner_id', ownerId).limit(1000);
     if (filesError) throw new Error('File read failed.');
-    const answer = await completeChat(ai.buildMessages({ request: text, files: files || [], framework: project.framework }));
+    const answer = await completeChat(ai.buildMessages({ request: text, files: files || [], framework: project.framework, specialization: project.specialization }));
     const proposal = ai.parseProposal(answer, files || []);
     if (proposal.error) throw new HttpError(422, proposal.error, { rejected: proposal.rejected || [] });
 

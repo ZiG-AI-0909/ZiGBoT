@@ -324,3 +324,12 @@ test('runners: owner-only reads, no hash columns, no browser writes', async () =
     await as(A);
     await db.query('delete from public.studio_projects where id = $1', [id]);
 });
+
+// Platform Phase 6: the specialization column only accepts the three ids.
+test('projects: specialization defaults to coding and only accepts known ids', async () => {
+    await as(A);
+    const { rows: [{ id }] } = await insertProject(A, 'Spec bot');
+    assert.equal((await db.query('select specialization from public.studio_projects where id = $1', [id])).rows[0].specialization, 'coding');
+    await assert.rejects(db.query("insert into public.studio_projects (owner_id, name, bot_name, framework, language, template, specialization) values ($1, 'Bad spec', 'Bot', 'discordjs', 'javascript', 'blank', 'hacking')", [A]), /check constraint/);
+    await db.query('delete from public.studio_projects where id = $1', [id]);
+});

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import specs from '@/lib/studio/specializations';
 import { useEffect, useState } from 'react';
 
 // ZiGBoT Studio "My bots": list, rename, duplicate, archive and delete (typed
@@ -96,11 +97,11 @@ export default function StudioProjects() {
             ) : null}
 
             {shown.map((p) => (
-                <div className="card" key={p.id}>
+                <div className="card" key={p.id} style={{ borderLeft: `3px solid ${specs.byId(p.specialization).accent}` }}>
                     <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
                         <div>
                             <h2 style={{ margin: 0 }}><Link href={`/studio/${p.id}`}>{p.name}</Link></h2>
-                            <p className="help">{p.botName} · {LANG[p.language]} · {p.template} · {p.visibility}</p>
+                            <p className="help">{specs.byId(p.specialization).title} · {p.botName} · {LANG[p.language]} · {p.template} · {p.visibility}</p>
                             {p.description ? <p>{p.description}</p> : null}
                         </div>
                         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>

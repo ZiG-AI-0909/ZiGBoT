@@ -4,6 +4,7 @@
  *
  * Studio is separate from ZiGBoT: nothing in src/ may import this.
  */
+const { IDS: SPECIALIZATION_IDS } = require('./specializations');
 const FRAMEWORKS = Object.freeze([
     { id: 'discordjs', language: 'javascript', label: 'discord.js (JavaScript)', runtime: 'Node.js 20+', library: 'discord.js 14', description: 'The most used Discord library, plain JavaScript.', start: 'npm install, then npm start' },
     { id: 'discordjs-ts', language: 'typescript', label: 'discord.js (TypeScript)', runtime: 'Node.js 20+, TypeScript 5', library: 'discord.js 14', description: 'discord.js with types: errors show up before you run the bot.', start: 'npm install, npm run build, then npm start' },
@@ -57,8 +58,12 @@ function validateNewProject(input) {
     if (!framework) errors.framework = 'Pick one of the supported frameworks.';
     if (framework && input?.language !== undefined && input.language !== framework.language) errors.language = 'That language does not match the framework.';
     if (!TEMPLATES.some((t) => t.id === input?.template)) errors.template = 'Pick one of the starter templates.';
+    // Optional (older clients do not send it): the onboarding choice.
+    if (input?.specialization !== undefined && !SPECIALIZATION_IDS.includes(input.specialization)) errors.specialization = 'Pick one of the specializations.';
     if (Object.keys(errors).length) return { errors };
-    return { value: { name, bot_name: botName, description, visibility, framework: framework.id, language: framework.language, template: input.template } };
+    const value = { name, bot_name: botName, description, visibility, framework: framework.id, language: framework.language, template: input.template };
+    if (input?.specialization !== undefined) value.specialization = input.specialization;
+    return { value };
 }
 
 /** Rename / archive / visibility changes: { value } or { errors }. */
@@ -105,7 +110,7 @@ function projectView(row) {
     if (!row) return null;
     return {
         id: row.id, name: row.name, botName: row.bot_name, description: row.description, visibility: row.visibility,
-        language: row.language, framework: row.framework, template: row.template, status: row.status,
+        language: row.language, framework: row.framework, template: row.template, status: row.status, specialization: row.specialization || 'coding',
         createdAt: row.created_at, updatedAt: row.updated_at
     };
 }
