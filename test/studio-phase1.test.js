@@ -234,3 +234,22 @@ test('workflows: owner-only RLS, run history owner-only, 20 per project', async 
     assert.equal((await db.query('select count(*)::int as n from public.studio_workflow_runs where workflow_id = $1', [wfId])).rows[0].n, 20);
     await db.query('delete from public.studio_projects where id = $1', [id]);
 });
+
+// Phase 6 tables: proposals and AI usage are owner-only.
+test('ai: proposals and usage are owner-only; proposals pruned to 30 per project', async () => {
+    await as(A);
+    const { rows: [{ id }] } = await insertProject(A, 'AI bot');
+    await db.query("insert into public.studio_ai_proposals (project_id, owner_id, request) values ($1, $2, 'add ping')", [id, A]);
+    await db.query('insert into public.studio_ai_usage (owner_id, project_id) values ($1, $2)', [A, id]);
+    await as(B);
+    assert.equal((await db.query('select * from public.studio_ai_proposals where project_id = $1', [id])).rows.length, 0);
+    assert.equal((await db.query('select * from public.studio_ai_usage where owner_id = $1', [A])).rows.length, 0);
+    assert.equal((await db.query("update public.studio_ai_proposals set status = 'approved' where project_id = $1 returning id", [id])).rows.length, 0, 'B cannot approve A\'s proposal');
+    await assert.rejects(db.query("insert into public.studio_ai_proposals (project_id, owner_id, request) values ($1, $2, 'evil')", [id, B]), /row-level security/);
+    await assert.rejects(db.query('insert into public.studio_ai_usage (owner_id) values ($1)', [A]), /row-level security/, 'cannot burn someone else\'s quota');
+    await as(A);
+    await assert.rejects(db.query("insert into public.studio_ai_proposals (project_id, owner_id, request, status) values ($1, $2, 'x', 'deployed')", [id, A]), /check constraint/);
+    for (let i = 0; i < 31; i += 1) await db.query('insert into public.studio_ai_proposals (project_id, owner_id, request) values ($1, $2, $3)', [id, A, `r${i}`]);
+    assert.equal((await db.query('select count(*)::int as n from public.studio_ai_proposals where project_id = $1', [id])).rows[0].n, 30);
+    await db.query('delete from public.studio_projects where id = $1', [id]);
+});

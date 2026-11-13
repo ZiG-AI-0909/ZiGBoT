@@ -76,6 +76,18 @@ Status: WORKING (a named test exercises it), PARTIAL, MISSING, NOT AVAILABLE (ne
 | Export workflow as code | PARTIAL | discord.js (JavaScript) module, compiles (test `export: ...`); written into discord.js JS projects. TypeScript and discord.py projects: download only, not converted |
 | AI blocks running for real | NOT AVAILABLE | Simulated in the builder; exported code needs the bot owner's own AI provider (Phase 6 covers Studio's AI creator) |
 
+## Phase 6: AI creator
+
+| Feature | Status | Proof |
+|---|---|---|
+| Reuses the AI provider | WORKING | `lib/studio/aiProvider.js`: same NVIDIA endpoint, `NVIDIA_API_KEY` and `AI_MODEL` as the dashboard's preview route; 503 when no key. Not run against the real API here: NOT VERIFIED there |
+| Reuses the untrusted-data wrapper | WORKING | `lib/studio/aiCreator.js` `untrustedUserData`, identical to `src/ai/client.js` (test `same untrusted wrapper as ZiGBoT; ...`); project files sent as an escaped data block; secret files left out |
+| AI returns plan + file diffs | WORKING | `parseProposal` (paths, secrets, 500 KB, max 20 changes checked like the editor); test `proposals: plan + diffs; unsafe paths, secrets, oversize and traversal are refused` |
+| Approve before any write; never auto-deploy | WORKING | Generation route stores a `pending` proposal only; `ai/[proposalId]` approve/reject, one decision, files snapshotted, refuses if files changed since; tests `prompt injection cannot write without approval: ...`, `approve: applies only when files are unchanged since the proposal` |
+| Per-user daily AI limit | WORKING | 20 per user per day, race-safe `claimQuota` before the AI call (`studio_ai_usage`) |
+| Context isolated per project | WORKING | Only this project's files (owner + project filters + RLS); migration `20261115000005_studio_ai.sql`, test `ai: proposals and usage are owner-only; ...` |
+| AI creator page | WORKING | `/studio/[id]/ai` (`components/studio/AiCreator.js`). Built, not browser-tested |
+
 ## Later phases
 
 | Phase | Status |
