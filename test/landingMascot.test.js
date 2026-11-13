@@ -117,7 +117,7 @@ test('the hero mascot: SVG parts, a real button, no new dependencies, reduced mo
     assert.match(css, /\.zig-wrap \{ position: relative; width: min\(100%, 380px\); aspect-ratio: 1;/, 'fixed square: no layout shift');
     assert.match(css, /\.zig-poke:focus-visible \{ outline:/, 'visible focus');
     assert.deepEqual(Object.keys(JSON.parse(read('dashboard/package.json')).dependencies).sort(),
-        ['@supabase/ssr', '@supabase/supabase-js', 'next', 'react', 'react-dom', 'server-only', 'sharp']);
+        ['@monaco-editor/react', '@supabase/ssr', '@supabase/supabase-js', '@xyflow/react', 'monaco-editor', 'next', 'react', 'react-dom', 'server-only', 'sharp', 'typescript']);
 });
 
 test('the hero headline keeps a real space between words', () => {
