@@ -182,3 +182,19 @@ test('files: owner-only, cannot be planted in someone else\'s project, no traver
     await db.query('delete from public.studio_projects where id = $1', [id]);
     assert.equal((await db.query('select count(*)::int as n from public.studio_project_files where project_id = $1', [id])).rows[0].n, 0, 'files go with the project');
 });
+
+// Phase 3 table: secrets are unreachable from browser sessions, even the owner's own.
+test('secrets: no browser access at all; only the service role reads or writes them', async () => {
+    await as(A);
+    const { rows: [{ id }] } = await insertProject(A, 'Secret bot');
+    await assert.rejects(db.query("insert into public.studio_secrets (project_id, owner_id, name, ciphertext, iv, tag, last4) values ($1, $2, 'DISCORD_TOKEN', 'aaaaaaaaaaaaaaaaaaaa', 'aaaaaaaaaaaaaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaa', 'abcd')", [id, A]), /permission denied/);
+    await asService();
+    await db.query("insert into public.studio_secrets (project_id, owner_id, name, ciphertext, iv, tag, last4) values ($1, $2, 'DISCORD_TOKEN', 'aaaaaaaaaaaaaaaaaaaa', 'aaaaaaaaaaaaaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaa', 'abcd')", [id, A]);
+    await as(A);
+    await assert.rejects(db.query('select * from public.studio_secrets'), /permission denied/, 'not even the owner can read ciphertext from the browser');
+    await as(B);
+    await assert.rejects(db.query('select * from public.studio_secrets'), /permission denied/);
+    await asService();
+    await assert.rejects(db.query("insert into public.studio_secrets (project_id, owner_id, name, ciphertext, iv, tag, last4) values ($1, $2, 'bad-name', 'aaaaaaaaaaaaaaaaaaaa', 'aaaaaaaaaaaaaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaa', 'abcd')", [id, A]), /check constraint/);
+    await db.query('delete from public.studio_projects where id = $1', [id]);
+});

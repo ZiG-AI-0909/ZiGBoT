@@ -33,11 +33,24 @@ Status: WORKING (a named test exercises it), PARTIAL, MISSING, NOT AVAILABLE (ne
 | Export as .zip | WORKING | `GET /api/studio/projects/[id]/export` (owner-only) with a dependency-free zip writer (`lib/studio/zip.js`, CRC-32 verified); `.env`, keys and `.pem` files are never exported; test `zip export: valid archive with every file intact, secrets left out` |
 | Generated-project syntax checks in CI | WORKING (CI) | `.github/workflows/ci.yml` job `studio-generators`: `tsc --noEmit`, `python -m py_compile`, and each project's own tests. Not yet run on GitHub (commits are not pushed): NOT VERIFIED there |
 
+## Phase 3: Customization
+
+| Feature | Status | Proof |
+|---|---|---|
+| Presence, status and activity | WORKING | `dashboard/lib/studio/customize.js` `validateSettings` (online/idle/dnd/invisible; Playing/Listening/Watching/Competing; 128 characters); used by the generated bots at startup |
+| Embed colour, welcome/goodbye/error messages, timezone | WORKING | Same validator: `#RRGGBB`, IANA timezone check, 1-500 characters, no @everyone/@here; test `settings: presence, colour, timezone, messages and commands validated; ...` |
+| Slash command list (turn commands off) | WORKING | `disabledCommands`, only the template's commands and at least one stays on; honoured by every generator at load and registration |
+| Saving rewrites only settings.json | WORKING | `PUT /api/studio/projects/[id]/settings`; test `saved settings change only settings.json of the generated project` |
+| Live preview | WORKING | `customize.preview` rendered by `components/studio/StudioCustomize.js`; test `live preview follows the same placeholders as the generated bot` (UI not browser-tested) |
+| Developer Portal-only settings labelled | WORKING | `PORTAL_ONLY` list shown on the Customize page (username, avatar/banner, description, privileged intents, install link, token) |
+| Token validated server-side via Discord GET /users/@me only | WORKING | `lib/studio/discordToken.js`; tests `token check: one GET /users/@me with the bot token, nothing else; ...`, `token check: bad format, revoked token, user token, rate limit and network errors are refused plainly`. Not run against the real Discord API: NOT VERIFIED there |
+| Token encrypted with AES-256-GCM (STUDIO_SECRETS_KEY), never returned, never logged | WORKING | `lib/studio/secrets.js` (random IV, auth tag, project-bound AAD); `studio_secrets` unreachable from browser sessions (no grant, no policy); responses carry only configured + last 4 + bot name; tests `AES-256-GCM: ...` (2), `status and redaction never expose a secret`, `routes: the token is never returned, ...`, `secrets: no browser access at all; ...` |
+| Token excluded from exports | WORKING | the export route never reads `studio_secrets`; same routes test |
+
 ## Later phases
 
 | Phase | Status |
 |---|---|
-| 3 Customization, token validation | MISSING |
 | 4 Code Studio | MISSING |
 | 5 Visual builder | MISSING |
 | 6 AI bot creator | MISSING |
