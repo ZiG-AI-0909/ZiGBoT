@@ -14,6 +14,7 @@ const TABS = [
     { id: 'utilities', label: 'Utilities' },
     { id: 'features', label: 'Features' },
     { id: 'moderation', label: 'Moderation' },
+    { id: 'tickets', label: 'Tickets' },
     { id: 'antinuke', label: '🛡️ Anti-Nuke' },
     { id: 'music', label: '🎵 Music' },
     { id: 'voice', label: '🎙️ Voice' },
@@ -201,7 +202,7 @@ export default function GuildEditor({ initial, meta }) {
                 setTab('roles');
             } else if (error.data?.fieldErrors) {
                 const first = Object.keys(error.data.fieldErrors)[0] || '';
-                setTab(/^music_/.test(first) ? 'music' : /^voice_/.test(first) ? 'voice' : /_role_ids$|owner_pronouns/.test(first) ? 'roles' : /utility_commands/.test(first) ? 'utilities' : /channel|respond|cooldown|keyword/.test(first) ? 'channels' : /moderation_|warning_escalation|temporary_bans/.test(first) ? 'moderation' : /memory|reputation|music|voice|legacy/.test(first) ? 'features' : 'behaviour');
+                setTab(/^music_/.test(first) ? 'music' : /^voice_/.test(first) ? 'voice' : /_role_ids$|owner_pronouns/.test(first) ? 'roles' : /utility_commands/.test(first) ? 'utilities' : /^ticket/.test(first) ? 'tickets' : /channel|respond|cooldown|keyword/.test(first) ? 'channels' : /moderation_|warning_escalation|temporary_bans/.test(first) ? 'moderation' : /memory|reputation|music|voice|legacy/.test(first) ? 'features' : 'behaviour');
             }
             toast(error.status === 401 ? 'Your session expired. Sign in again.' : error.message, 'err');
         } finally {
@@ -277,6 +278,7 @@ export default function GuildEditor({ initial, meta }) {
                 {tab === 'utilities' ? <UtilitiesTab draft={draft} set={set} errors={fieldErrors} /> : null}
                 {tab === 'features' ? <FeaturesTab draft={draft} set={set} isHome={initial.guild.isHome} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'moderation' ? <ModerationTab draft={draft} set={set} errors={fieldErrors} /> : null}
+                {tab === 'tickets' ? <TicketsTab draft={draft} set={set} errors={fieldErrors} channels={channels} roles={roles} categories={initial.ticketCategories || []} /> : null}
                 {tab === 'music' ? <MusicTab guildId={initial.guild.id} draft={draft} set={set} errors={fieldErrors} roles={roles} channels={channels} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'premium' ? <PremiumTab guildId={initial.guild.id} plan={plan} setPlan={setPlan} perks={meta.perks} contactUrl={meta.contactUrl} toast={toast} /> : null}
                 {tab === 'identity' && meta.identityEnabled ? <IdentityTab guildId={initial.guild.id} guildName={initial.guild.name} premium={premium} onUpgrade={() => setTab('premium')} toast={toast} /> : null}
@@ -688,6 +690,64 @@ function ModerationTab({ draft, set, errors }) {
                 <Switch id="moderation-word-filter" checked={draft.moderation_word_filter_enabled} onChange={set('moderation_word_filter_enabled')} label="Custom word filter" help="Delete messages containing a listed word or phrase." />
                 <TextArea id="moderation-filtered-words" label="Filtered words and phrases" help="One entry per line; 500 characters maximum. These terms apply only to this server." value={draft.moderation_filtered_words} onChange={set('moderation_filtered_words')} max={500} error={errors.moderation_filtered_words} rows={4} />
                 <Switch id="moderation-appeals" checked={draft.moderation_appeals_enabled} onChange={set('moderation_appeals_enabled')} label="Accept moderation appeals" help="Allows members to submit /appeal. Moderators review submissions with /moderation review." />
+            </div>
+        </div>
+    );
+}
+
+function TicketsTab({ draft, set, errors, channels, roles, categories }) {
+    const categoryIds = draft.ticket_category_ids || [];
+    const staffRoleIds = draft.ticket_staff_role_ids || [];
+    const toggle = (current, id) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id];
+    return (
+        <div className="stack">
+            <div className="card stack">
+                <h2>Tickets and support</h2>
+                <p className="help">Tickets are off until enabled. Choose category channels, staff roles and a transcript log channel before turning them on.</p>
+                <Switch id="tickets-enabled" checked={draft.ticketing_enabled} onChange={set('ticketing_enabled')} label="Enable tickets in this server" help="Members can open one private ticket per category. ZiGBoT requires Manage Channels." />
+                <div className="field">
+                    <span className="label">Ticket categories</span>
+                    <span className="help">Choose up to 10 Discord category channels. Members choose one when opening a ticket.</span>
+                    <div className="checklist" role="group" aria-label="Ticket categories">
+                        {categories.map((category) => (
+                            <label key={category.id}>
+                                <input type="checkbox" checked={categoryIds.includes(category.id)} disabled={categoryIds.length >= 10 && !categoryIds.includes(category.id)} onChange={() => set('ticket_category_ids')(toggle(categoryIds, category.id))} />
+                                <span>{category.name}</span>
+                            </label>
+                        ))}
+                        {categories.length === 0 ? <span className="help">No category channels found.</span> : null}
+                    </div>
+                    {errors.ticket_category_ids ? <span className="error" role="alert">{errors.ticket_category_ids}</span> : null}
+                </div>
+                <div className="field">
+                    <span className="label">Ticket staff roles</span>
+                    <span className="help">Members with any selected role can claim, manage, escalate and close tickets.</span>
+                    <div className="checklist" role="group" aria-label="Ticket staff roles">
+                        {roles.map((role) => (
+                            <label key={role.id}>
+                                <input type="checkbox" checked={staffRoleIds.includes(role.id)} disabled={staffRoleIds.length >= 10 && !staffRoleIds.includes(role.id)} onChange={() => set('ticket_staff_role_ids')(toggle(staffRoleIds, role.id))} />
+                                <span>{role.name}</span>
+                            </label>
+                        ))}
+                    </div>
+                    {errors.ticket_staff_role_ids ? <span className="error" role="alert">{errors.ticket_staff_role_ids}</span> : null}
+                </div>
+                <div className="field">
+                    <label htmlFor="ticket-senior-role">Senior escalation role</label>
+                    <select id="ticket-senior-role" value={draft.ticket_senior_role_id || ''} onChange={(e) => set('ticket_senior_role_id')(e.target.value || null)} aria-invalid={errors.ticket_senior_role_id ? 'true' : undefined}>
+                        <option value="">Not configured</option>
+                        {roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
+                    </select>
+                    {errors.ticket_senior_role_id ? <span className="error" role="alert">{errors.ticket_senior_role_id}</span> : null}
+                </div>
+                <div className="field">
+                    <label htmlFor="ticket-log-channel">Transcript log channel</label>
+                    <select id="ticket-log-channel" value={draft.ticket_log_channel_id || ''} onChange={(e) => set('ticket_log_channel_id')(e.target.value || null)} aria-invalid={errors.ticket_log_channel_id ? 'true' : undefined}>
+                        <option value="">Choose a channel</option>
+                        {channels.filter((channel) => [0, 5].includes(channel.type)).map((channel) => <option key={channel.id} value={channel.id}>#{channel.name}</option>)}
+                    </select>
+                    {errors.ticket_log_channel_id ? <span className="error" role="alert">{errors.ticket_log_channel_id}</span> : null}
+                </div>
             </div>
         </div>
     );

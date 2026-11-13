@@ -647,6 +647,98 @@
               "example": "/security why user:@member"
             }
           ]
+        },
+        {
+          "name": "ticket",
+          "description": "Open and manage private support tickets",
+          "audience": "everyone",
+          "permission": null,
+          "about": "Private support tickets with transcripts, staff controls, priorities, escalation and optional advisory AI. Administrators enable tickets and configure categories and staff roles in the dashboard.",
+          "privacyLink": true,
+          "subcommands": [
+            {
+              "name": "panel",
+              "description": "Admin: post the ticket panel",
+              "audience": "admin",
+              "note": "Only a server administrator with Manage Server can post the ticket panel.",
+              "options": [],
+              "example": "/ticket panel"
+            },
+            {
+              "name": "claim",
+              "description": "Staff: claim this ticket",
+              "audience": "admin",
+              "note": "Only members with a configured ticket staff role can claim a ticket.",
+              "options": [],
+              "example": "/ticket claim"
+            },
+            {
+              "name": "close",
+              "description": "Close this ticket and send its transcript",
+              "audience": "everyone",
+              "options": [],
+              "example": "/ticket close"
+            },
+            {
+              "name": "add",
+              "description": "Staff: add a member to this ticket",
+              "audience": "admin",
+              "note": "Only members with a configured ticket staff role can add people to a ticket.",
+              "options": [
+                {
+                  "name": "member",
+                  "type": "member",
+                  "required": true,
+                  "description": "Member to add"
+                }
+              ],
+              "example": "/ticket add member:@member"
+            },
+            {
+              "name": "remove",
+              "description": "Staff: remove a member from this ticket",
+              "audience": "admin",
+              "note": "Only members with a configured ticket staff role can remove people from a ticket.",
+              "options": [
+                {
+                  "name": "member",
+                  "type": "member",
+                  "required": true,
+                  "description": "Member to remove"
+                }
+              ],
+              "example": "/ticket remove member:@member"
+            },
+            {
+              "name": "priority",
+              "description": "Staff: set this ticket priority",
+              "audience": "admin",
+              "note": "Only members with a configured ticket staff role can change priority.",
+              "options": [
+                {
+                  "name": "priority",
+                  "type": "text",
+                  "required": true,
+                  "description": "Ticket priority",
+                  "choices": [
+                    "Low",
+                    "Normal",
+                    "High",
+                    "Urgent"
+                  ]
+                }
+              ],
+              "example": "/ticket priority priority:Low"
+            },
+            {
+              "name": "escalate",
+              "description": "Staff: notify the senior support role",
+              "audience": "admin",
+              "note": "Only members with a configured ticket staff role can escalate a ticket.",
+              "options": [],
+              "example": "/ticket escalate"
+            }
+          ]
         }
       ]
     },

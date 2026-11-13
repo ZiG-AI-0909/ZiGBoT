@@ -24,7 +24,7 @@ const OUTPUT = path.join(__dirname, '..', 'dashboard', 'data', 'commands.json');
 const CATEGORIES = [
     { id: 'memory', name: 'Memory', commands: ['memory', 'summarychannels'] },
     { id: 'music', name: 'Music & voice', commands: ['play', 'search', 'pause', 'resume', 'skip', 'stop', 'queue', 'nowplaying', 'volume', 'shuffle', 'loop', 'remove', 'clearqueue', 'join', 'leave'] },
-    { id: 'moderation', name: 'Moderation', commands: ['kick', 'ban', 'appeal', 'moderation', 'reputation', 'security'] },
+    { id: 'moderation', name: 'Moderation', commands: ['kick', 'ban', 'appeal', 'moderation', 'reputation', 'security', 'ticket'] },
     { id: 'setup', name: 'Server setup', commands: ['setup'] },
     { id: 'help', name: 'Help', commands: ['help'] }
 ];
@@ -55,7 +55,8 @@ const ABOUT = {
     summarychannels: 'Admins choose up to 10 channels where members who opted in to conversation summaries may also have their own messages summarised. A member is only read in a channel they were shown when they opted in. Age-restricted channels and threads are never allowed.',
     appeal: 'Submit a private appeal for a moderation case when appeals are enabled by this server.',
     moderation: 'Privately inspect moderation cases and review submitted appeals. Requires the Discord Moderate Members permission.',
-    security: 'View this server’s security-monitoring status, incident counts, and deterministic evidence. AI explanations are advisory only. Administrator or the configured security role is required.'
+    security: 'View this server’s security-monitoring status, incident counts, and deterministic evidence. AI explanations are advisory only. Administrator or the configured security role is required.',
+    ticket: 'Private support tickets with transcripts, staff controls, priorities, escalation and optional advisory AI. Administrators enable tickets and configure categories and staff roles in the dashboard.'
 };
 
 // Subcommands that are admin-only even though the parent command is not
@@ -64,7 +65,13 @@ const SUBCOMMAND_ADMIN_NOTES = {
     'memory diagnostics': 'Members can see /memory, but this subcommand is refused unless you are the server owner or an admin.',
     'security status': 'The command is available to members, but this subcommand is refused unless you have Administrator or the configured security role.',
     'security report': 'The command is available to members, but this subcommand is refused unless you have Administrator or the configured security role.',
-    'security why': 'The command is available to members, but this subcommand is refused unless you have Administrator or the configured security role.'
+    'security why': 'The command is available to members, but this subcommand is refused unless you have Administrator or the configured security role.',
+    'ticket panel': 'Only a server administrator with Manage Server can post the ticket panel.',
+    'ticket claim': 'Only members with a configured ticket staff role can claim a ticket.',
+    'ticket add': 'Only members with a configured ticket staff role can add people to a ticket.',
+    'ticket remove': 'Only members with a configured ticket staff role can remove people from a ticket.',
+    'ticket priority': 'Only members with a configured ticket staff role can change priority.',
+    'ticket escalate': 'Only members with a configured ticket staff role can escalate a ticket.'
 };
 
 // "Talk to ZiGBoT": mention examples, each tied to the code that handles it.

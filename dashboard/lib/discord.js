@@ -77,6 +77,13 @@ export function textChannels(channels) {
         .map((channel) => ({ id: String(channel.id), name: channel.name, type: channel.type, parent_id: channel.parent_id || null }));
 }
 
+export function categoryChannels(channels) {
+    return (channels || [])
+        .filter((channel) => channel.type === 4)
+        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+        .map((channel) => ({ id: String(channel.id), name: channel.name }));
+}
+
 export function assignableRoles(guild) {
     return (guild?.roles || [])
         .filter((role) => String(role.id) !== String(guild.id) && !role.managed)

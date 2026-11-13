@@ -82,6 +82,8 @@ const { createSecurityCommands } = require('./security/commands');
 const { createModerationFilterEngine } = require('./moderation/messageFilters');
 const { createPunishmentExpiryService } = require('./moderation/expiry');
 const { createModerationCommands } = require('./moderation/commands');
+const { SupabaseTicketStore } = require('./tickets/store');
+const { createTicketCommands } = require('./tickets/commands');
 const { version: BOT_VERSION } = require('../package.json');
 
 function logAiError(error) {
@@ -148,6 +150,24 @@ const summaryService = createSummaryService({
         if (guild.members.cache.has(userId)) return true;
         return guild.members.fetch(userId).then(() => true, () => false);
     }
+});
+const ticketStore = new SupabaseTicketStore({
+    supabaseUrl: settings.supabaseUrl,
+    serviceRoleKey: settings.supabaseServiceRoleKey
+});
+const ticketCommands = createTicketCommands({
+    store: ticketStore,
+    resolveContext: async (guild) => {
+        const ctx = await guildStore.getGuildContext(guild);
+        return {
+            config: ctx?.config || {},
+            settings: ctx ? buildGuildSettings(settings, ctx) : settings
+        };
+    },
+    aiClient: ai.client,
+    aiModel: ai.model,
+    auditLog,
+    logger: console
 });
 // /memory preference changes clear the summariser's short-lived cache at once.
 const memoryCommands = createMemoryCommands({ brain, onPreferenceChange: (guildId, userId) => summaryService.invalidate(guildId, userId) });
@@ -387,6 +407,11 @@ client.on(Events.GuildDelete, async (guild) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
+    if (ticketCommands.isComponent(interaction)) {
+        await ticketCommands.handleComponent(interaction)
+            .catch((error) => console.error(`[ZiGBoT TICKETS] Component failed: ${error?.code || error?.name || 'Error'}`));
+        return;
+    }
     if (isVoiceComponent(interaction)) {
         await handleVoiceComponent(interaction, async (intent) => {
             const fakeMessage = { author: interaction.user, member: interaction.member, guild: interaction.guild, channel: interaction.channel, reply: () => null };
@@ -417,6 +442,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return;
     }
     if (!interaction.isChatInputCommand()) return;
+    if (interaction.commandName === 'ticket') {
+        await ticketCommands.handleSlash(interaction)
+            .catch((error) => console.error(`[ZiGBoT TICKETS] /ticket failed: ${error?.code || error?.name || 'Error'}`));
+        return;
+    }
     if (interaction.commandName === 'appeal') {
         await moderationCommands.handleAppeal(interaction)
             .catch((error) => console.error(`[ZiGBoT MODERATION] /appeal failed: ${error?.code || error?.name || 'Error'}`));

@@ -30,7 +30,11 @@ export const POST = handler(async (request, { params }) => {
     if (message.length > LIMITS.previewMessage) throw new HttpError(422, `Test messages are limited to ${LIMITS.previewMessage} characters.`);
 
     const channels = await getChannels(guild.id);
-    const configResult = validateGuildConfig(body?.config, { channelIds: new Set(channels.map((c) => String(c.id))), guildId: String(guild.id) });
+    const configResult = validateGuildConfig(body?.config, {
+        channelIds: new Set(channels.map((c) => String(c.id))),
+        channelTypes: new Map(channels.map((channel) => [String(channel.id), channel.type])),
+        guildId: String(guild.id)
+    });
     if (!configResult.ok) throw new HttpError(422, 'Fix the highlighted settings before testing.', { fieldErrors: configResult.errors });
 
     // The tester picks which of the three tones to hear; anything else is rejected.

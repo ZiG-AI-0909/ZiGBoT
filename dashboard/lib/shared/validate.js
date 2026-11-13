@@ -239,6 +239,11 @@ function validateGuildConfig(input, ctx = {}) {
         moderation_filtered_words: checkText(errors, 'moderation_filtered_words', input.moderation_filtered_words, TEXT_LIMITS.moderation_filtered_words),
         moderation_appeals_enabled: checkBool(errors, 'moderation_appeals_enabled', input.moderation_appeals_enabled, base.moderation_appeals_enabled),
         utility_commands: checkUtilityCommands(errors, input.utility_commands, base.utility_commands),
+        ticketing_enabled: checkBool(errors, 'ticketing_enabled', input.ticketing_enabled, base.ticketing_enabled),
+        ticket_category_ids: checkIdList(errors, 'ticket_category_ids', input.ticket_category_ids, channels).slice(0, 10),
+        ticket_staff_role_ids: checkIdList(errors, 'ticket_staff_role_ids', input.ticket_staff_role_ids, ctx.roleIds || null).slice(0, 10),
+        ticket_senior_role_id: null,
+        ticket_log_channel_id: null,
         // Server setup (also set by the bot's /setup command).
         owner_pronouns: input.owner_pronouns === undefined || input.owner_pronouns === null || input.owner_pronouns === '' ? null : checkEnum(errors, 'owner_pronouns', input.owner_pronouns, PRONOUNS, null),
         male_role_ids: checkIdList(errors, 'male_role_ids', input.male_role_ids, ctx.roleIds || null).slice(0, 10),
@@ -256,6 +261,36 @@ function validateGuildConfig(input, ctx = {}) {
     if (value.male_role_ids.some((id) => value.female_role_ids.includes(id))) errors.female_role_ids = 'A role cannot be both male and female.';
     if (value.adult_role_ids.some((id) => value.minor_role_ids.includes(id))) errors.minor_role_ids = 'A role cannot be both 18+ and under 18.';
     if (value.adults_only && !value.adult_role_ids.length) errors.adults_only = 'Pick at least one 18+ role first, or ZiGBoT will chat with nobody.';
+    if (Array.isArray(input.ticket_category_ids) && input.ticket_category_ids.length > 10) errors.ticket_category_ids = 'Choose at most 10 ticket categories.';
+    if (Array.isArray(input.ticket_staff_role_ids) && input.ticket_staff_role_ids.length > 10) errors.ticket_staff_role_ids = 'Choose at most 10 ticket staff roles.';
+    if (input.ticket_senior_role_id !== undefined && input.ticket_senior_role_id !== null && input.ticket_senior_role_id !== '') {
+        const [id] = checkIdList(errors, 'ticket_senior_role_id', [input.ticket_senior_role_id], ctx.roleIds || null);
+        value.ticket_senior_role_id = id || null;
+    }
+    if (input.ticket_log_channel_id !== undefined && input.ticket_log_channel_id !== null && input.ticket_log_channel_id !== '') {
+        const [id] = checkIdList(errors, 'ticket_log_channel_id', [input.ticket_log_channel_id], channels);
+        value.ticket_log_channel_id = id || null;
+    }
+    if (ctx.channelTypes instanceof Map) {
+        for (const id of value.ticket_category_ids) {
+            if (ctx.channelTypes.has(id) && ctx.channelTypes.get(id) !== 4) {
+                errors.ticket_category_ids = `Channel ${id} is not a category.`;
+                break;
+            }
+        }
+        if (value.ticket_log_channel_id && ctx.channelTypes.has(value.ticket_log_channel_id) &&
+            ![0, 5].includes(ctx.channelTypes.get(value.ticket_log_channel_id))) {
+            errors.ticket_log_channel_id = 'Choose a text or announcement channel.';
+        }
+    }
+    if (value.ticket_category_ids.includes(String(ctx.guildId))) errors.ticket_category_ids = '@everyone cannot be a ticket category.';
+    if (value.ticket_staff_role_ids.includes(String(ctx.guildId))) errors.ticket_staff_role_ids = '@everyone cannot be a ticket staff role.';
+    if (value.ticket_senior_role_id === String(ctx.guildId)) errors.ticket_senior_role_id = '@everyone cannot be the senior escalation role.';
+    if (value.ticketing_enabled) {
+        if (!value.ticket_category_ids.length) errors.ticket_category_ids = 'Choose at least one ticket category.';
+        if (!value.ticket_staff_role_ids.length) errors.ticket_staff_role_ids = 'Choose at least one staff role.';
+        if (!value.ticket_log_channel_id) errors.ticket_log_channel_id = 'Choose a transcript log channel.';
+    }
     if (input.music_channel_id !== undefined && input.music_channel_id !== null && input.music_channel_id !== '') {
         const [id] = checkIdList(errors, 'music_channel_id', [input.music_channel_id], channels);
         value.music_channel_id = id || null;
@@ -349,7 +384,7 @@ function sanitizeStoredConfig(row, { guildId } = {}) {
         if (Array.isArray(defaults[key])) {
             if (key === 'utility_commands') out[key] = sanitizeUtilityCommands(row[key]);
             else if (Array.isArray(row[key])) out[key] = row[key].map(String).filter((id) => SNOWFLAKE.test(id));
-        } else if (key === 'log_channel_id' || key === 'music_channel_id') {
+        } else if (['log_channel_id', 'music_channel_id', 'ticket_senior_role_id', 'ticket_log_channel_id'].includes(key)) {
             out[key] = SNOWFLAKE.test(String(row[key])) ? String(row[key]) : null;
         } else if (key === 'gif_settings') {
             out[key] = sanitizeGifSettings(row[key]);
@@ -367,6 +402,14 @@ function sanitizeStoredConfig(row, { guildId } = {}) {
     }
     if (out.voice_speaker && !VOICE_SPEAKERS.includes(out.voice_speaker)) out.voice_speaker = '';
     if (!VOICE_LANGUAGES.includes(out.voice_language)) out.voice_language = 'auto';
+    const everyoneId = String(guildId ?? row.guild_id ?? '');
+    out.ticket_category_ids = [...new Set(out.ticket_category_ids)].filter((id) => id !== everyoneId).slice(0, 10);
+    out.ticket_staff_role_ids = [...new Set(out.ticket_staff_role_ids)].filter((id) => id !== everyoneId).slice(0, 10);
+    if (out.ticket_senior_role_id === everyoneId) out.ticket_senior_role_id = null;
+    if (out.ticket_log_channel_id === everyoneId) out.ticket_log_channel_id = null;
+    if (out.ticketing_enabled && (!out.ticket_category_ids.length || !out.ticket_staff_role_ids.length || !out.ticket_log_channel_id)) {
+        out.ticketing_enabled = false;
+    }
     out.voice_pace = Math.min(200, Math.max(50, Math.round(out.voice_pace) || 100));
     out.music_idle_minutes = Math.min(60, Math.max(1, Math.round(out.music_idle_minutes) || defaults.music_idle_minutes));
     out.music_default_volume = Math.min(100, Math.max(1, Math.round(out.music_default_volume) || defaults.music_default_volume));

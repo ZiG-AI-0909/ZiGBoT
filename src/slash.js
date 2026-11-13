@@ -184,6 +184,25 @@ function buildDefinitions({ identity = false } = {}) {
             .addSubcommand((sub) => sub.setName('list').setDescription('Show the summary channels'))
             .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
         new SlashCommandBuilder()
+            .setName('ticket')
+            .setDescription('Open and manage private support tickets')
+            .addSubcommand((sub) => sub.setName('panel').setDescription('Admin: post the ticket panel'))
+            .addSubcommand((sub) => sub.setName('claim').setDescription('Staff: claim this ticket'))
+            .addSubcommand((sub) => sub.setName('close').setDescription('Close this ticket and send its transcript'))
+            .addSubcommand((sub) => sub.setName('add').setDescription('Staff: add a member to this ticket')
+                .addUserOption((option) => option.setName('member').setDescription('Member to add').setRequired(true)))
+            .addSubcommand((sub) => sub.setName('remove').setDescription('Staff: remove a member from this ticket')
+                .addUserOption((option) => option.setName('member').setDescription('Member to remove').setRequired(true)))
+            .addSubcommand((sub) => sub.setName('priority').setDescription('Staff: set this ticket priority')
+                .addStringOption((option) => option.setName('priority').setDescription('Ticket priority').setRequired(true)
+                    .addChoices(
+                        { name: 'Low', value: 'low' },
+                        { name: 'Normal', value: 'normal' },
+                        { name: 'High', value: 'high' },
+                        { name: 'Urgent', value: 'urgent' }
+                    )))
+            .addSubcommand((sub) => sub.setName('escalate').setDescription('Staff: notify the senior support role')),
+        new SlashCommandBuilder()
             .setName('help')
             .setDescription('List everything ZiGBoT can do'),
         new SlashCommandBuilder()

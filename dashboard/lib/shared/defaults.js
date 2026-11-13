@@ -70,6 +70,11 @@ function defaultGuildConfig({ guildId, legacy = false, legacySettings = null } =
         moderation_filtered_words: '',
         moderation_appeals_enabled: false,
         utility_commands: [],
+        ticketing_enabled: false,
+        ticket_category_ids: [],
+        ticket_staff_role_ids: [],
+        ticket_senior_role_id: null,
+        ticket_log_channel_id: null,
         version: 1
     };
 }

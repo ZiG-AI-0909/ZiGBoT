@@ -23,9 +23,10 @@ export const PUT = handler(async (request, { params }) => {
     const body = await readJson(request);
     const channels = await getChannels(guild.id);
     const channelIds = new Set(channels.map((c) => String(c.id)));
+    const channelTypes = new Map(channels.map((channel) => [String(channel.id), channel.type]));
     // DJ roles: real, non-managed roles of THIS guild (from Discord, not the request).
     const roleIds = new Set((guild.roles || []).filter((r) => !r.managed).map((r) => String(r.id)));
-    const result = validateGuildConfig(body?.config, { channelIds, roleIds, guildId: String(guild.id) });
+    const result = validateGuildConfig(body?.config, { channelIds, channelTypes, roleIds, guildId: String(guild.id) });
     if (!result.ok) throw new HttpError(422, 'Some settings need fixing.', { fieldErrors: result.errors });
 
     // Free servers cannot add or change Premium settings. Values saved while

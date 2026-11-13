@@ -1,7 +1,7 @@
 import 'server-only';
 import shared from './shared';
 import { createServiceClient } from './supabase/server';
-import { getChannels, textChannels, assignableRoles, guildIconUrl } from './discord';
+import { getChannels, textChannels, categoryChannels, assignableRoles, guildIconUrl } from './discord';
 import { env } from './env';
 import { loadPlan } from './billing';
 
@@ -73,6 +73,7 @@ export async function loadGuildBundle({ supabase, guild, decision, early = null 
         mappings,
         roles: assignableRoles(guild),
         channels: textChannels(channels),
+        ticketCategories: categoryChannels(channels),
         botStatus: { installed: true, ...botStatus },
         plan
     };
