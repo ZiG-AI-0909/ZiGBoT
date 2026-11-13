@@ -164,7 +164,7 @@ test('ticket counting is guild-scoped and read-only', async () => {
 
 test('dashboard route is admin-verified and pinned to the verified guild; the tab exists', () => {
     const route = fs.readFileSync(path.join(__dirname, '..', 'dashboard', 'app', 'api', 'guilds', '[guildId]', 'analytics', 'route.js'), 'utf8');
-    assert.match(route, /await requireGuildAdmin\(guildId\)/);
+    assert.match(route, /await requireGuildStaff\(guildId\)/);
     assert.match(route, /\.eq\('guild_id', String\(guild\.id\)\)/);
     assert.match(route, /\.eq\('kind', 'analytics'\)/);
     const editor = fs.readFileSync(path.join(__dirname, '..', 'dashboard', 'components', 'GuildEditor.js'), 'utf8');

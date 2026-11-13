@@ -17,5 +17,6 @@ module.exports = {
     ...require('./antinuke'),
     ...require('./greetings'),
     ...require('./feedback'),
-    ...require('./features')
+    ...require('./features'),
+    ...require('./staffAccess')
 };

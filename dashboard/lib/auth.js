@@ -83,3 +83,26 @@ export async function requireGuildAdmin(guildId, { onVerified = null } = {}) {
 
     return { ...current, guild, member, decision, early };
 }
+
+/**
+ * Admin OR read-only dashboard staff (lib/shared/staffAccess.js).
+ * Admins go through the unchanged requireGuildAdmin. Only when that fails
+ * for "missing permission" are the server's configured staff roles checked
+ * (live Discord member data, stored config read with the service role).
+ * Staff never get a zb_guild_admins row, so row-level security keeps
+ * refusing any write from them. Use ONLY for read-only staff views.
+ */
+export async function requireGuildStaff(guildId) {
+    try {
+        return { ...(await requireGuildAdmin(guildId)), staff: false };
+    } catch (error) {
+        if (!(error instanceof HttpError) || error.extra?.code !== 'missing_permission') throw error;
+    }
+    const current = await requireUser();
+    const [guild, fetchedMember] = await Promise.all([getGuild(guildId), getMember(guildId, current.discordId)]);
+    const { data } = await createServiceClient().from('zb_guild_configs').select('feature_settings').eq('guild_id', String(guildId)).maybeSingle();
+    const staffRoleIds = shared.sanitizeFeatureSettings(data?.feature_settings, { guildId: String(guildId) }).dashboard.staff_role_ids;
+    const decision = shared.decideStaffAccess({ guild, member: guild ? fetchedMember : null, discordUserId: current.discordId, staffRoleIds });
+    if (!decision.allowed) throw new HttpError(decision.status, 'You need the Manage Server permission or one of this server\u2019s dashboard staff roles.', { code: decision.code });
+    return { ...current, guild, member: fetchedMember, decision, staff: true };
+}

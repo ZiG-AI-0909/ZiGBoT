@@ -174,6 +174,12 @@ const FEATURE_SECTIONS = {
             int('poll_minutes', 'Check every (minutes)', 10, 5, 1440)
         ]
     },
+    dashboard: {
+        label: 'Dashboard staff',
+        fields: [
+            roles('staff_role_ids', 'Roles with read-only staff access (staff page: analytics). They can never change settings.', 10)
+        ]
+    },
     analytics: {
         label: 'Analytics',
         fields: [

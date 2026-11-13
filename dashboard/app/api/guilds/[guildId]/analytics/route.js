@@ -1,16 +1,17 @@
 import { handler, json, HttpError } from '@/lib/http';
-import { requireGuildAdmin } from '@/lib/auth';
+import { requireGuildStaff } from '@/lib/auth';
 import { createServiceClient } from '@/lib/supabase/server';
 import analytics from '@/lib/shared/analyticsExport';
 
 export const dynamic = 'force-dynamic';
 
 // GET ?days=30[&format=csv]: THIS guild's daily analytics counts (Section L).
-// Admin-verified (live Discord check); the service-role read is pinned to the
-// verified guild id. Counts only: no message content, no member ids.
+// Admins or read-only dashboard staff (live Discord check, lib/auth.js
+// requireGuildStaff); the service-role read is pinned to the verified guild
+// id. Counts only: no message content, no member ids.
 export const GET = handler(async (request, { params }) => {
     const { guildId } = await params;
-    const { guild } = await requireGuildAdmin(guildId);
+    const { guild } = await requireGuildStaff(guildId);
     const url = new URL(request.url);
     const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') || '30', 10) || 30, 1), 400);
     const { data, error } = await createServiceClient()
