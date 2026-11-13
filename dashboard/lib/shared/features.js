@@ -138,6 +138,16 @@ const FEATURE_SECTIONS = {
             int('channel_daily_limit', 'AI replies per day in each channel (0 = no limit)', 0, 0, 100000)
         ]
     },
+    voice: {
+        label: 'Voice',
+        fields: [
+            bool('tempvoice_enabled', 'Temporary voice channels ("join to create")'),
+            channel('tempvoice_hub_channel_id', '"Join to create" voice channel'),
+            channel('tempvoice_category_id', 'Category for the new channels (default: the hub\'s category)'),
+            text('tempvoice_name', 'Channel name', "{user}'s channel", 80, { help: 'Placeholder: {user}' }),
+            int('tempvoice_limit', 'User limit for new channels (0 = none)', 0, 0, 99)
+        ]
+    },
     security: {
         label: 'Security+',
         fields: [
@@ -302,6 +312,7 @@ FEATURE_SECTIONS.security.checks = [
         ? { key: 'alert_channel_id', error: 'Pick the channel where security alerts go.' } : null),
     (s) => (s.known_scam_quarantine && !s.threat_intel_use ? { key: 'known_scam_quarantine', error: 'Switch on the shared scam list first.' } : null)
 ];
+FEATURE_SECTIONS.voice.checks = [needs('tempvoice_enabled', 'tempvoice_hub_channel_id', 'Pick the "join to create" voice channel.')];
 FEATURE_SECTIONS.automation.checks = [
     needs('scheduled_messages_enabled', 'scheduled_messages', 'Add at least one scheduled message.'),
     needs('auto_purge_enabled', 'auto_purge', 'Add at least one channel to purge.'),

@@ -459,6 +459,96 @@
           "permission": null,
           "options": [],
           "example": "/leave"
+        },
+        {
+          "name": "tempvoice",
+          "description": "Control your temporary voice channel",
+          "audience": "everyone",
+          "permission": null,
+          "about": "Controls for the owner of a temporary voice channel (created by joining the server \"join to create\" channel, deleted when empty): lock, unlock, user limit, rename, permit or reject members, and claim an abandoned channel. Off until an admin enables it (Add-ons, Voice).",
+          "privacyLink": true,
+          "subcommands": [
+            {
+              "name": "lock",
+              "description": "Only invited members can join",
+              "audience": "everyone",
+              "options": [],
+              "example": "/tempvoice lock"
+            },
+            {
+              "name": "unlock",
+              "description": "Anyone can join again",
+              "audience": "everyone",
+              "options": [],
+              "example": "/tempvoice unlock"
+            },
+            {
+              "name": "limit",
+              "description": "Set the user limit",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "users",
+                  "type": "number",
+                  "required": true,
+                  "description": "0 to 99 (0 = no limit)",
+                  "min": 0,
+                  "max": 99
+                }
+              ],
+              "example": "/tempvoice limit users:0"
+            },
+            {
+              "name": "rename",
+              "description": "Rename the channel",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "name",
+                  "type": "text",
+                  "required": true,
+                  "description": "New name",
+                  "maxLength": 100
+                }
+              ],
+              "example": "/tempvoice rename name:<name>"
+            },
+            {
+              "name": "permit",
+              "description": "Let a member join even when locked",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "member",
+                  "type": "member",
+                  "required": true,
+                  "description": "Member"
+                }
+              ],
+              "example": "/tempvoice permit member:@member"
+            },
+            {
+              "name": "reject",
+              "description": "Remove a member and keep them out",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "member",
+                  "type": "member",
+                  "required": true,
+                  "description": "Member"
+                }
+              ],
+              "example": "/tempvoice reject member:@member"
+            },
+            {
+              "name": "claim",
+              "description": "Take over the channel when its owner has left",
+              "audience": "everyone",
+              "options": [],
+              "example": "/tempvoice claim"
+            }
+          ]
         }
       ]
     },

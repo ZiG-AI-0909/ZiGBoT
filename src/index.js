@@ -413,6 +413,8 @@ client.on(Events.GuildCreate, async (guild) => {
 // Music: pause and leave later when everyone leaves the bot's voice channel;
 // resume when someone comes back.
 client.on(Events.VoiceStateUpdate, (oldState, newState) => {
+    // Optional features first (temporary voice channels): music below is unchanged.
+    void features.onVoiceState(oldState, newState);
     const guild = newState.guild || oldState.guild;
     const botChannel = guild?.members?.me?.voice?.channel;
     if (!botChannel) return;

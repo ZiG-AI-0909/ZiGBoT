@@ -230,6 +230,8 @@ All Section G features are off by default and enabled per server in the dashboar
 
 ## H. Music and Voice
 
+Existing music is untouched. Section H added temporary voice channels (Add-ons → Voice, `feature_settings.voice`, off by default), hooked at the top of the existing `VoiceStateUpdate` listener before the music early-return. No new music sources were added, so nothing here touches platform ToS. Tests: `test/section-h-tempvoice.test.js`.
+
 | Feature | Status | Proof | Action |
 |---|---|---|---|
 | Music playback | WORKING (UNTESTED) | `src/music/player.js`, `src/music/sources.js`, `src/voice/voiceManager.js`; unit tests cover source validation/fallback, not a live Discord voice session (`test/music.test.js`: `music queue accepts HTTPS sources and rejects other protocols`). | Add tests |
@@ -240,9 +242,9 @@ All Section G features are off by default and enabled per server in the dashboar
 | Loop | WORKING | Track/queue/off modes: `src/music/player.js`; test `loop cycles off -> song -> queue -> off and rejects bad modes`. | Reuse |
 | Volume | WORKING | Bounded volume and per-server defaults: `src/music/player.js`; tests `music volume is bounded`, `per-server default volume applies only at the start of a session`. | Reuse |
 | Now playing | WORKING (UNTESTED) | `/nowplaying` route and player state: `src/slash.js:75`, `src/tools/router.js:471-486`; no focused current-track command test found. | Add tests |
-| Temporary voice channels | MISSING | Search `temporary voice channel|voice channel create|temp.?voice` across `src/`, `dashboard/`, `supabase/`, `test/`: no temporary channel lifecycle found. | Implement |
-| Voice permissions | PARTIAL | Music requires connect/speak and has DJ role/request-channel rules: `src/music/access.js`; test `DJ role and request channel rules` (`test/music.test.js`). No voice permission editor/temporary channel ACLs. | Improve |
-| Voice activity features | PARTIAL | `VoiceStateUpdate` pauses/resumes music when the bot channel empties: `src/index.js:357-365`; voice listening/transcription code exists in `src/voice/`; tests `voice path allows playback and info commands`, speech conversion unit tests. No production voice activity analytics. | Improve |
+| Temporary voice channels | WORKING | "Join to create" hub creates `{user}'s channel` next to it, moves the member in and makes them owner; deleted when the last person leaves; a scheduler sweep removes channels that emptied while the bot was down; one per member, 50 per server, 10 s create cooldown, needs Manage Channels + Move Members: `src/features/tempVoice.js`; tests `joining the hub creates a channel ...`, `the channel is deleted when the last person leaves ...`, `a channel left empty while the bot was down is cleaned up by the sweep`, `no channels without the bot permissions, when switched off, or for hub-hopping spam`. | Done (Section H) |
+| Voice permissions | WORKING | Existing DJ/request-channel rules unchanged; temporary channels get owner ACLs and `/tempvoice lock|unlock|limit|rename|permit|reject|claim`, owner-only, audited; test `/tempvoice: only the owner controls the channel; claim works only once the owner left`. | Done (Section H) |
+| Voice activity features | PARTIAL | Existing music pause/resume on empty channel unchanged; temporary channels react to joins and leaves (`src/features/tempVoice.js`). Voice-time analytics are not collected (Section L stores message/member aggregates only). | PARTIAL |
 
 ## I. Social Media Integration
 

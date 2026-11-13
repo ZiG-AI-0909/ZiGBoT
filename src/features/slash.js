@@ -143,9 +143,28 @@ function aiCommands() {
     ];
 }
 
+function voiceCommands() {
+    return [
+        new SlashCommandBuilder()
+            .setName('tempvoice')
+            .setDescription('Control your temporary voice channel')
+            .addSubcommand((s) => s.setName('lock').setDescription('Only invited members can join'))
+            .addSubcommand((s) => s.setName('unlock').setDescription('Anyone can join again'))
+            .addSubcommand((s) => s.setName('limit').setDescription('Set the user limit')
+                .addIntegerOption((o) => o.setName('users').setDescription('0 to 99 (0 = no limit)').setRequired(true).setMinValue(0).setMaxValue(99)))
+            .addSubcommand((s) => s.setName('rename').setDescription('Rename the channel')
+                .addStringOption((o) => o.setName('name').setDescription('New name').setRequired(true).setMaxLength(100)))
+            .addSubcommand((s) => s.setName('permit').setDescription('Let a member join even when locked')
+                .addUserOption((o) => o.setName('member').setDescription('Member').setRequired(true)))
+            .addSubcommand((s) => s.setName('reject').setDescription('Remove a member and keep them out')
+                .addUserOption((o) => o.setName('member').setDescription('Member').setRequired(true)))
+            .addSubcommand((s) => s.setName('claim').setDescription('Take over the channel when its owner has left'))
+    ];
+}
+
 /** Every optional-feature command, as builders (src/slash.js turns them into JSON). */
 function featureCommandBuilders() {
-    return [...communityCommands(), ...automationCommands(), ...engagementCommands(), ...aiCommands()];
+    return [...communityCommands(), ...automationCommands(), ...engagementCommands(), ...aiCommands(), ...voiceCommands()];
 }
 
 module.exports = { featureCommandBuilders };

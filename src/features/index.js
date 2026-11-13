@@ -10,6 +10,7 @@ const { createAutomation } = require('./automation');
 const { createEngagement } = require('./engagement');
 const { createAiTools } = require('./aiTools');
 const { createSecurityPlus } = require('./securityPlus');
+const { createTempVoice } = require('./tempVoice');
 
 function createFeatures({ settings = {}, resolveContext, auditLog, getClient, store = null, now = () => Date.now(), logger = console, renderWelcomeImage, renderRankCard, aiClient = null, aiModel = '', listWarnings = null }) {
     const supabase = new SupabaseFeatureStore({ supabaseUrl: settings.supabaseUrl, serviceRoleKey: settings.supabaseServiceRoleKey });
@@ -23,6 +24,7 @@ function createFeatures({ settings = {}, resolveContext, auditLog, getClient, st
         createSecurityPlus({ ...shared, aiClient, aiModel }),
         createCommunity({ ...shared, renderWelcomeImage: image }),
         createAutomation(shared),
+        createTempVoice(shared),
         createEngagement({ ...shared, renderRankCard: rankCard })
     ];
     const aiTools = createAiTools({ ...shared, aiClient, aiModel, listWarnings });

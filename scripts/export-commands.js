@@ -23,7 +23,7 @@ const OUTPUT = path.join(__dirname, '..', 'dashboard', 'data', 'commands.json');
 
 const CATEGORIES = [
     { id: 'memory', name: 'Memory', commands: ['memory', 'summarychannels'] },
-    { id: 'music', name: 'Music & voice', commands: ['play', 'search', 'pause', 'resume', 'skip', 'stop', 'queue', 'nowplaying', 'volume', 'shuffle', 'loop', 'remove', 'clearqueue', 'join', 'leave'] },
+    { id: 'music', name: 'Music & voice', commands: ['play', 'search', 'pause', 'resume', 'skip', 'stop', 'queue', 'nowplaying', 'volume', 'shuffle', 'loop', 'remove', 'clearqueue', 'join', 'leave', 'tempvoice'] },
     { id: 'moderation', name: 'Moderation', commands: ['kick', 'ban', 'appeal', 'moderation', 'reputation', 'security', 'ticket'] },
     { id: 'setup', name: 'Server setup', commands: ['setup', 'roles', 'suggest', 'community', 'automation', 'level', 'eco', 'games', 'giveaway', 'tournament', 'ai'] },
     { id: 'help', name: 'Help', commands: ['help'] }
@@ -66,6 +66,7 @@ const ABOUT = {
     giveaway: 'Staff run giveaways with an Enter button, an optional required role, an end time that survives restarts, and rerolls.',
     tournament: 'Sign-up lists and single-elimination brackets for up to 32 players. Staff start the bracket and record winners.',
     ai: 'AI tools, each off until an admin enables it (Add-ons, AI tools): translate text, privately summarize recent channel messages, ask the server FAQ (answers come only from it), and an advisory moderation suggestion for staff. The AI never takes actions.',
+    tempvoice: 'Controls for the owner of a temporary voice channel (created by joining the server "join to create" channel, deleted when empty): lock, unlock, user limit, rename, permit or reject members, and claim an abandoned channel. Off until an admin enables it (Add-ons, Voice).',
     ticket: 'Private support tickets with transcripts, staff controls, priorities, escalation and optional advisory AI. Administrators enable tickets and configure categories and staff roles in the dashboard.'
 };
 
