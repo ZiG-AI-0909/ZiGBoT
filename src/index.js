@@ -728,6 +728,9 @@ client.on(Events.MessageCreate, async (message) => {
     const moderationResult = await moderationFilters.processMessage(message, guildCtx?.config || null);
     if (moderationResult.deleted) return;
     if (guildCtx && !channelAllowed(guildCtx.config, message.channel)) return;
+    // Optional features (src/features): e.g. automation rules. Off by default;
+    // they never stop the normal flow unless a feature fully handled the message.
+    if (await features.onMessage(message, { guildCtx })) return;
 
     // AFK (automatic): "afk <reason>" sets it (and stops here); any other
     // message welcomes an AFK author back and tells people who mention an

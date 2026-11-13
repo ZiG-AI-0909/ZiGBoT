@@ -1038,6 +1038,98 @@
               "example": "/community stats"
             }
           ]
+        },
+        {
+          "name": "automation",
+          "description": "Reminders, scheduled events and automation rules",
+          "audience": "everyone",
+          "permission": null,
+          "about": "Personal reminders, Discord scheduled events and a view of the server automation rules. Each is off until an admin enables it in the dashboard (Add-ons, Automation), where scheduled messages, auto-purge and WHEN/IF/THEN rules are also set up.",
+          "privacyLink": true,
+          "subcommands": [
+            {
+              "name": "remind",
+              "description": "Remind me here later",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "minutes",
+                  "type": "number",
+                  "required": true,
+                  "description": "In how many minutes",
+                  "min": 1,
+                  "max": 43200
+                },
+                {
+                  "name": "message",
+                  "type": "text",
+                  "required": true,
+                  "description": "What to remind you about",
+                  "maxLength": 1800
+                }
+              ],
+              "example": "/automation remind minutes:1 message:<message>"
+            },
+            {
+              "name": "event-create",
+              "description": "Staff: create a Discord scheduled event",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "name",
+                  "type": "text",
+                  "required": true,
+                  "description": "Event name",
+                  "maxLength": 100
+                },
+                {
+                  "name": "starts_in_minutes",
+                  "type": "number",
+                  "required": true,
+                  "description": "Starts in how many minutes",
+                  "min": 1,
+                  "max": 525600
+                },
+                {
+                  "name": "duration_minutes",
+                  "type": "number",
+                  "required": false,
+                  "description": "How long (default 60)",
+                  "min": 5,
+                  "max": 10080
+                },
+                {
+                  "name": "location",
+                  "type": "text",
+                  "required": false,
+                  "description": "Where (default: Discord)",
+                  "maxLength": 100
+                },
+                {
+                  "name": "description",
+                  "type": "text",
+                  "required": false,
+                  "description": "What it is about",
+                  "maxLength": 1000
+                }
+              ],
+              "example": "/automation event-create name:<name> starts_in_minutes:1"
+            },
+            {
+              "name": "events",
+              "description": "List upcoming scheduled events",
+              "audience": "everyone",
+              "options": [],
+              "example": "/automation events"
+            },
+            {
+              "name": "rules",
+              "description": "Admin: show the automation rules of this server",
+              "audience": "everyone",
+              "options": [],
+              "example": "/automation rules"
+            }
+          ]
         }
       ]
     },

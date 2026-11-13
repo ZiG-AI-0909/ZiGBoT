@@ -46,9 +46,28 @@ function communityCommands() {
     ];
 }
 
+function automationCommands() {
+    return [
+        new SlashCommandBuilder()
+            .setName('automation')
+            .setDescription('Reminders, scheduled events and automation rules')
+            .addSubcommand((s) => s.setName('remind').setDescription('Remind me here later')
+                .addIntegerOption((o) => o.setName('minutes').setDescription('In how many minutes').setRequired(true).setMinValue(1).setMaxValue(43200))
+                .addStringOption((o) => o.setName('message').setDescription('What to remind you about').setRequired(true).setMaxLength(1800)))
+            .addSubcommand((s) => s.setName('event-create').setDescription('Staff: create a Discord scheduled event')
+                .addStringOption((o) => o.setName('name').setDescription('Event name').setRequired(true).setMaxLength(100))
+                .addIntegerOption((o) => o.setName('starts_in_minutes').setDescription('Starts in how many minutes').setRequired(true).setMinValue(1).setMaxValue(525600))
+                .addIntegerOption((o) => o.setName('duration_minutes').setDescription('How long (default 60)').setMinValue(5).setMaxValue(10080))
+                .addStringOption((o) => o.setName('location').setDescription('Where (default: Discord)').setMaxLength(100))
+                .addStringOption((o) => o.setName('description').setDescription('What it is about').setMaxLength(1000)))
+            .addSubcommand((s) => s.setName('events').setDescription('List upcoming scheduled events'))
+            .addSubcommand((s) => s.setName('rules').setDescription('Admin: show the automation rules of this server'))
+    ];
+}
+
 /** Every optional-feature command, as builders (src/slash.js turns them into JSON). */
 function featureCommandBuilders() {
-    return [...communityCommands()];
+    return [...communityCommands(), ...automationCommands()];
 }
 
 module.exports = { featureCommandBuilders };

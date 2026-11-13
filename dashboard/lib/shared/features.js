@@ -24,6 +24,8 @@ const roles = (key, label, max = 10, extra = {}) => ({ key, label, type: 'roles'
 const channels = (key, label, max = 20, extra = {}) => ({ key, label, type: 'channels', default: [], max, ...extra });
 const pick = (key, label, def, options, extra = {}) => ({ key, label, type: 'enum', default: def, options, ...extra });
 
+const list = (key, label, max, itemFields, extra = {}) => ({ key, label, type: 'list', default: [], max, itemFields, ...extra });
+
 const TIMEZONES = ['Asia/Kolkata', 'UTC', 'Europe/London', 'Europe/Berlin', 'America/New_York', 'America/Chicago', 'America/Los_Angeles', 'Asia/Dubai', 'Asia/Singapore', 'Asia/Tokyo', 'Australia/Sydney'];
 
 const FEATURE_SECTIONS = {
@@ -55,6 +57,46 @@ const FEATURE_SECTIONS = {
             bool('role_panels_enabled', 'Self-assign role panels (/roles)'),
             bool('polls_enabled', 'Polls (/community poll)'),
             bool('announcements_enabled', 'Staff announcements and reminders (/community announce, remind)')
+        ]
+    },
+    automation: {
+        label: 'Automation',
+        fields: [
+            bool('scheduled_messages_enabled', 'Scheduled and automatic announcements'),
+            list('scheduled_messages', 'Scheduled messages', 10, [
+                channel('channel_id', 'Channel'),
+                text('message', 'Message', '', 1500, { help: 'Placeholders: {server} {memberCount}' }),
+                int('every_hours', 'Every how many hours', 24, 1, 720)
+            ], { itemCheck: (e) => (!e.channel_id ? 'pick a channel' : !e.message.trim() ? 'write the message' : null) }),
+            bool('auto_purge_enabled', 'Auto-purge old messages'),
+            list('auto_purge', 'Auto-purge channels', 5, [
+                channel('channel_id', 'Channel'),
+                int('older_than_hours', 'Delete messages older than (hours)', 24, 1, 336, { help: 'Discord only bulk-deletes messages younger than 14 days. Pinned messages are kept.' }),
+                int('every_hours', 'Run every how many hours', 6, 1, 168)
+            ], { itemCheck: (e) => (!e.channel_id ? 'pick a channel' : null) }),
+            bool('rules_enabled', 'Trigger rules (WHEN … IF … THEN …)'),
+            list('rules', 'Rules', 25, [
+                pick('when', 'When', 'join', ['join', 'message', 'reaction']),
+                text('keyword', 'Message contains (for "message")', '', 100),
+                text('emoji', 'Reaction emoji (for "reaction")', '', 64),
+                role('if_role_id', 'Only if the member has role'),
+                channel('if_channel_id', 'Only in channel'),
+                pick('then', 'Then', 'send_message', ['send_message', 'add_role', 'remove_role']),
+                text('message', 'Message to send', '', 1500, { help: 'Placeholders: {user} {server} {memberCount}' }),
+                channel('channel_id', 'Send in channel (default: where it happened)'),
+                role('role_id', 'Role to add or remove')
+            ], {
+                itemCheck: (e) => {
+                    if (e.when === 'message' && !e.keyword.trim()) return 'a message rule needs a keyword';
+                    if (e.when === 'reaction' && !e.emoji.trim()) return 'a reaction rule needs an emoji';
+                    if (e.then === 'send_message' && !e.message.trim()) return 'write the message to send';
+                    if (e.then === 'send_message' && e.when === 'join' && !e.channel_id) return 'pick the channel to send in';
+                    if (e.then !== 'send_message' && !e.role_id) return 'pick the role';
+                    return null;
+                }
+            }),
+            bool('events_enabled', 'Discord scheduled events (/automation event)'),
+            bool('reminders_enabled', 'Personal reminders (/automation remind)')
         ]
     }
 };
@@ -111,13 +153,23 @@ function readField(field, raw, ids, guildId) {
             return { value: list };
         }
         case 'list': {
+            // Each entry is an object checked field by field (field.itemFields),
+            // then by field.itemCheck(entry) for rules that span fields.
             if (!Array.isArray(raw)) return { error: 'Must be a list.' };
             if (raw.length > field.max) return { error: `At most ${field.max} entries.` };
             const out = [];
             for (let i = 0; i < raw.length; i += 1) {
-                const item = field.item(raw[i], { ids, guildId });
-                if (!item || item.error) return { error: `Entry ${i + 1}: ${item?.error || 'not valid'}.` };
-                out.push(item.value);
+                const given = raw[i];
+                if (!given || typeof given !== 'object' || Array.isArray(given)) return { error: `Entry ${i + 1} is not valid.` };
+                const entry = {};
+                for (const sub of field.itemFields) {
+                    const result = readField(sub, given[sub.key], ids, guildId);
+                    if (result.error) return { error: `Entry ${i + 1}, ${sub.label}: ${result.error}` };
+                    entry[sub.key] = result.value;
+                }
+                const problem = field.itemCheck ? field.itemCheck(entry) : null;
+                if (problem) return { error: `Entry ${i + 1}: ${problem}` };
+                out.push(entry);
             }
             return { value: out };
         }
@@ -179,5 +231,10 @@ FEATURE_SECTIONS.community.checks = [
     needs('suggestions_enabled', 'suggestions_channel_id', 'Pick a suggestions channel.'),
     (s) => (s.milestones_enabled && !s.welcome_channel_id ? { key: 'welcome_channel_id', error: 'Milestones are posted in the welcome channel: pick one.' } : null)
 ];
+FEATURE_SECTIONS.automation.checks = [
+    needs('scheduled_messages_enabled', 'scheduled_messages', 'Add at least one scheduled message.'),
+    needs('auto_purge_enabled', 'auto_purge', 'Add at least one channel to purge.'),
+    needs('rules_enabled', 'rules', 'Add at least one rule.')
+];
 
-module.exports = { FEATURE_SECTIONS, TIMEZONES, defaultFeatureSettings, validateFeatureSettings, sanitizeFeatureSettings, featureFieldHelpers: { bool, int, text, channel, role, roles, channels, pick, needs } };
+module.exports = { FEATURE_SECTIONS, TIMEZONES, defaultFeatureSettings, validateFeatureSettings, sanitizeFeatureSettings, featureFieldHelpers: { bool, int, text, channel, role, roles, channels, pick, list, needs } };

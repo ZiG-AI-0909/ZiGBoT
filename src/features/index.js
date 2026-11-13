@@ -6,6 +6,7 @@
 const { SupabaseFeatureStore, MemoryFeatureStore } = require('./store');
 const { createScheduler } = require('./scheduler');
 const { createCommunity } = require('./community');
+const { createAutomation } = require('./automation');
 
 function createFeatures({ settings = {}, resolveContext, auditLog, getClient, store = null, now = () => Date.now(), logger = console, renderWelcomeImage }) {
     const supabase = new SupabaseFeatureStore({ supabaseUrl: settings.supabaseUrl, serviceRoleKey: settings.supabaseServiceRoleKey });
@@ -13,7 +14,7 @@ function createFeatures({ settings = {}, resolveContext, auditLog, getClient, st
     const scheduler = createScheduler({ store: featureStore, now, logger });
     const image = renderWelcomeImage === undefined ? (input) => require('./welcomeImage').renderWelcomeImage(input) : renderWelcomeImage;
     const shared = { store: featureStore, scheduler, resolveContext, auditLog, getClient, now, logger };
-    const modules = [createCommunity({ ...shared, renderWelcomeImage: image })];
+    const modules = [createCommunity({ ...shared, renderWelcomeImage: image }), createAutomation(shared)];
 
     const each = (hook, ...args) => Promise.all(modules.filter((m) => typeof m[hook] === 'function').map((m) => Promise.resolve(m[hook](...args))
         .catch((error) => logger.error?.(`[ZiGBoT FEATURES] ${hook} failed: ${error?.message || error}`))));

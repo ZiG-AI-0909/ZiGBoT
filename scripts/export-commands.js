@@ -25,7 +25,7 @@ const CATEGORIES = [
     { id: 'memory', name: 'Memory', commands: ['memory', 'summarychannels'] },
     { id: 'music', name: 'Music & voice', commands: ['play', 'search', 'pause', 'resume', 'skip', 'stop', 'queue', 'nowplaying', 'volume', 'shuffle', 'loop', 'remove', 'clearqueue', 'join', 'leave'] },
     { id: 'moderation', name: 'Moderation', commands: ['kick', 'ban', 'appeal', 'moderation', 'reputation', 'security', 'ticket'] },
-    { id: 'setup', name: 'Server setup', commands: ['setup', 'roles', 'suggest', 'community'] },
+    { id: 'setup', name: 'Server setup', commands: ['setup', 'roles', 'suggest', 'community', 'automation'] },
     { id: 'help', name: 'Help', commands: ['help'] }
 ];
 
@@ -59,6 +59,7 @@ const ABOUT = {
     roles: 'Posts a panel where members give themselves roles with buttons, a dropdown or reactions. Off until an admin enables role panels in the dashboard. Roles with staff permissions can never be put on a panel.',
     suggest: 'Sends your idea to the suggestions channel of the server, where members vote and staff approve or deny it. Off until an admin enables suggestions in the dashboard.',
     community: 'Community tools, each off until an admin enables it in the dashboard: save your birthday (day and month only), polls, staff announcements and reminders, and quick server stats.',
+    automation: 'Personal reminders, Discord scheduled events and a view of the server automation rules. Each is off until an admin enables it in the dashboard (Add-ons, Automation), where scheduled messages, auto-purge and WHEN/IF/THEN rules are also set up.',
     ticket: 'Private support tickets with transcripts, staff controls, priorities, escalation and optional advisory AI. Administrators enable tickets and configure categories and staff roles in the dashboard.'
 };
 

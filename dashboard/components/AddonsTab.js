@@ -56,8 +56,30 @@ function Control({ field, value, onChange, channels, roles, id, error }) {
                 {error ? <span className="error" role="alert" id={`${id}-error`}>{error}</span> : null}
             </div>
         );
+    } else if (field.type === 'list') {
+        // Rows of sub-fields (rules, scheduled messages...): add, edit, remove.
+        const rows = Array.isArray(value) ? value : [];
+        const blank = () => Object.fromEntries(field.itemFields.map((f) => [f.key, Array.isArray(f.default) ? [] : f.default]));
+        const change = (index, key, next) => onChange(rows.map((row, i) => (i === index ? { ...row, [key]: next } : row)));
+        return (
+            <fieldset className="field" style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12 }}>
+                <legend className="label">{field.label} ({rows.length}/{field.max})</legend>
+                {rows.length === 0 ? <span className="help">None yet.</span> : null}
+                {rows.map((row, index) => (
+                    <div key={index} className="grid" style={{ gap: 8, padding: '10px 0', borderTop: index ? '1px solid var(--border)' : 'none' }}>
+                        <strong>#{index + 1}</strong>
+                        {field.itemFields.map((sub) => (
+                            <Control key={sub.key} field={sub} id={`${id}-${index}-${sub.key}`} value={row[sub.key]} onChange={(next) => change(index, sub.key, next)} channels={channels} roles={roles} />
+                        ))}
+                        <button type="button" className="btn btn-danger" onClick={() => onChange(rows.filter((_, i) => i !== index))}>Remove #{index + 1}</button>
+                    </div>
+                ))}
+                <button type="button" className="btn" disabled={rows.length >= field.max} onClick={() => onChange([...rows, blank()])}>Add</button>
+                {error ? <span className="error" role="alert" id={`${id}-error`}>{error}</span> : null}
+            </fieldset>
+        );
     } else {
-        return null; // list-type settings have their own editors
+        return null;
     }
     return (
         <div className="field">
