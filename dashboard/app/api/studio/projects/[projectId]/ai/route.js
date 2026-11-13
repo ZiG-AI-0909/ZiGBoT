@@ -2,7 +2,8 @@ import { handler, json, readJson, HttpError } from '@/lib/http';
 import ai from '@/lib/studio/aiCreator';
 import { completeChat } from '@/lib/studio/aiProvider';
 import { claimQuota } from '@/lib/shared/quota';
-import { requireStudioUser, getOwnedProject } from '@/lib/studio/server';
+import market from '@/lib/studio/marketplace';
+import { requireStudioUser, getOwnedProject, getPlan } from '@/lib/studio/server';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -17,7 +18,8 @@ export const GET = handler(async (_request, { params }) => {
     const { data, error } = await supabase.from('studio_ai_proposals').select('*').eq('project_id', project.id).eq('owner_id', ownerId).order('created_at', { ascending: false }).limit(30);
     if (error) throw new HttpError(503, 'AI storage is not set up yet: run the newest files in supabase/migrations.');
     const { count } = await supabase.from('studio_ai_usage').select('id', { count: 'exact', head: true }).eq('owner_id', ownerId).gte('created_at', since());
-    return json({ proposals: (data || []).map(ai.publicProposal), remaining: Math.max(0, ai.LIMITS.perDay - (count || 0)), limit: ai.LIMITS.perDay });
+    const perDay = market.limitsFor(await getPlan(supabase, ownerId)).aiPerDay;
+    return json({ proposals: (data || []).map(ai.publicProposal), remaining: Math.max(0, perDay - (count || 0)), limit: perDay });
 });
 
 // POST { request }: ask the AI for a plan + changes. This NEVER writes project
@@ -30,8 +32,10 @@ export const POST = handler(async (request, { params }) => {
     const text = String(body?.request ?? '').trim();
     if (!text || text.length > ai.LIMITS.requestChars) throw new HttpError(422, `Describe the change in 1-${ai.LIMITS.requestChars} characters.`, { fieldErrors: { request: 'Invalid request.' } });
 
+    // Per-user daily limit from the plan (Free 20, Developer 100, Premium 300).
+    const perDay = market.limitsFor(await getPlan(supabase, ownerId)).aiPerDay;
     const allowed = await claimQuota({
-        limit: ai.LIMITS.perDay,
+        limit: perDay,
         insert: async () => {
             const { error } = await supabase.from('studio_ai_usage').insert({ owner_id: ownerId, project_id: project.id });
             if (error) throw new HttpError(503, 'AI storage is not set up yet: run the newest files in supabase/migrations.');
@@ -42,7 +46,7 @@ export const POST = handler(async (request, { params }) => {
             return count;
         }
     });
-    if (!allowed) throw new HttpError(429, `You can use the AI creator ${ai.LIMITS.perDay} times per day. Try again tomorrow.`);
+    if (!allowed) throw new HttpError(429, `You can use the AI creator ${perDay} times per day on your plan. Try again tomorrow.`);
 
     // Context: only THIS project's files (RLS + owner + project filters).
     const { data: files, error: filesError } = await supabase.from('studio_project_files').select('path, content').eq('project_id', project.id).eq('owner_id', ownerId).limit(1000);

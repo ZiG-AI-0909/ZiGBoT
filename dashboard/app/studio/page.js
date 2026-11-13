@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import TopBar from '@/components/TopBar';
 import StudioProjects from '@/components/studio/StudioProjects';
 import { getCurrentUser } from '@/lib/auth';
@@ -13,7 +14,7 @@ export default async function StudioHome() {
     return (
         <div className="shell">
             <TopBar profile={profile} />
-            <p className="small muted" style={{ marginTop: 0 }}>ZiGBoT Studio · Create. Customize. Code. Deploy.</p>
+            <p className="small muted" style={{ marginTop: 0 }}>ZiGBoT Studio · Create. Customize. Code. Deploy. · <Link href="/studio/marketplace">Marketplace</Link></p>
             <StudioProjects />
         </div>
     );

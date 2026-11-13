@@ -100,10 +100,27 @@ Status: WORKING (a named test exercises it), PARTIAL, MISSING, NOT AVAILABLE (ne
 | Real hosting (running customer bots) | NOT AVAILABLE | No isolated runtime infrastructure. `getProvider()` returns `NotAvailableProvider`; the route answers 503 `runtime_not_available`; no customer code runs on this server (test `real hosting is NOT AVAILABLE: ...`) |
 | Live logs and metrics | NOT AVAILABLE | Interface + MockProvider only; needs real hosting |
 
-## Later phases
+## Phase 8: Marketplace and plans
 
-| Phase | Status |
-|---|---|
-| 6 AI bot creator | MISSING |
-| 7 Deployment foundation | MISSING (real hosting NOT AVAILABLE) |
-| 8 Marketplace and billing | MISSING (payments BLOCKED) |
+| Feature | Status | Proof |
+|---|---|---|
+| Publish a project as a template | WORKING | `POST /api/studio/marketplace`: exportable files only (no .env/keys), 5 MB, written by the server so the browser cannot set the status; migration `20261115000007_studio_marketplace.sql` |
+| Static scan on publish (tokens, eval, child_process, obfuscation) | WORKING | `lib/studio/marketplace.js` `scanFiles` (text matching only): credentials block publishing; eval/Function, child_process/subprocess/os.system, vm, dynamic require, escape/charcode/blob/decode-and-run obfuscation and minified lines are flagged for review; tests `static scan: ...` (2), `generated projects scan clean ...` |
+| Pending review; Super Admin approve/reject | WORKING | Every template starts `pending_review`; approve/reject only for `SUPER_ADMIN_DISCORD_IDS`, audited in `zb_admin_audit_log`; review queue shown on the marketplace page to admins; test `review flow: ...` |
+| Unpublish | WORKING | Owner only (published or pending → unpublished) |
+| Install / clone a template | WORKING | Copies the text files into a new project of the installer (counts toward the plan's project limit); never executed; only published (or own) templates; test `install never executes code; ...` |
+| Template visibility | WORKING | RLS: published or own; browsers cannot write; install counter callable by the server only; test `templates: published or own only; ...` |
+| Plans Free / Developer / Premium as flags with backend limits | WORKING | `studio_accounts.plan` (service role only). `PLAN_LIMITS`: projects 3/20/100 (database trigger), AI requests per day 20/100/300, published templates 1/10/50, simulator runs per day 200/1000/5000; used by the AI, simulator and publish routes |
+| Marketplace page | WORKING | `/studio/marketplace` (search, install, publish, my templates, review queue, plan + billing status). Built, not browser-tested |
+| Payments / billing | BLOCKED | No Studio payment provider; plans are changed by the ZiGBoT team (service role). Shown as "not available" on the page |
+
+## Required security tests
+
+| Test | Result | Where |
+|---|---|---|
+| IDOR (user B cannot reach user A's data) | PASS | `test/studio-phase1.test.js`: projects, files, versions, workflows + runs, AI proposals + usage, deployments, templates (PGlite with the real migrations and RLS) |
+| Token never in any response, log or export | PASS | `test/studio-phase3.test.js` (status/redaction, routes, export), `studio-phase4` (env route), `studio-phase7` (deployments never store env values or .env), `studio-phase8` (templates exclude secrets; scan never echoes them) |
+| Path traversal | PASS | `studio-phase4` `file writes: ...`, database check constraints (`studio-phase1`), AI proposals (`studio-phase6`) |
+| Workflow infinite loop | PASS | `studio-phase5` `simulator: loops are capped at 50 and runs stop at the step and time budgets`; cycles refused by the validator |
+| AI prompt injection cannot write without approval | PASS | `studio-phase6` `prompt injection cannot write without approval: ...` |
+| SSRF to 127.0.0.1 / 169.254.169.254 | PASS | `studio-phase5` `HTTP block: allowlist and SSRF protection ...` (IP literals, decimal/hex forms, localhost, DNS answers to private ranges) |

@@ -270,3 +270,20 @@ test('deployments: owner reads (not the stored files), only the service role wri
     await as(A);
     await db.query('delete from public.studio_projects where id = $1', [id]);
 });
+
+// Phase 8 table: templates are visible when published or owned; only the server writes them.
+test('templates: published or own only; browsers cannot write or change status; install counter server-only', async () => {
+    await asService();
+    await db.query("insert into public.studio_templates (owner_id, name, framework, base_template, files, status) values ($1, 'Pending pack', 'discordjs', 'blank', '[]', 'pending_review'), ($1, 'Live pack', 'discordjs', 'blank', '[]', 'published')", [A]);
+    await as(B);
+    assert.deepEqual((await db.query('select name from public.studio_templates order by name')).rows.map((r) => r.name), ['Live pack'], 'others see only published');
+    await assert.rejects(db.query("insert into public.studio_templates (owner_id, name, framework, base_template, files, status) values ($1, 'Sneaky', 'discordjs', 'blank', '[]', 'published')", [B]), /permission denied/);
+    await assert.rejects(db.query("update public.studio_templates set status = 'published'"), /permission denied/);
+    await assert.rejects(db.query("select public.studio_count_install(id) from public.studio_templates limit 1"), /permission denied/);
+    await as(A);
+    assert.equal((await db.query('select name from public.studio_templates')).rows.length, 2, 'owners see their pending ones');
+    await asService();
+    await assert.rejects(db.query("insert into public.studio_templates (owner_id, name, framework, base_template, files, status) values ($1, 'Bad', 'discordjs', 'blank', '[]', 'live')", [A]), /check constraint/);
+    await db.query('delete from public.studio_templates where owner_id = $1', [A]);
+    await as(A);
+});
