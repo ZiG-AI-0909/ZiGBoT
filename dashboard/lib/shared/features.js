@@ -120,6 +120,23 @@ const FEATURE_SECTIONS = {
             bool('giveaways_enabled', 'Giveaways (/giveaway)'),
             bool('tournaments_enabled', 'Events and tournaments with sign-ups and brackets (/tournament)')
         ]
+    },
+    ai: {
+        label: 'AI tools',
+        fields: [
+            bool('translation_enabled', 'Translation (/ai translate)'),
+            bool('summarize_enabled', 'Channel summaries (/ai summarize)'),
+            bool('faq_enabled', 'FAQ assistant (/ai faq), answers only from your FAQ'),
+            list('faq', 'FAQ entries', 25, [
+                text('question', 'Question', '', 200),
+                text('answer', 'Answer', '', 1000)
+            ], { itemCheck: (e) => (!e.question.trim() || !e.answer.trim() ? 'write both the question and the answer' : null) }),
+            bool('mod_assistant_enabled', 'Moderation advisor for staff (/ai modreview), advisory only'),
+            channels('ai_off_channel_ids', 'Channels where ZiGBoT never gives AI replies', 25),
+            bool('limits_enabled', 'Daily AI usage limits'),
+            int('daily_limit', 'AI replies per day for the whole server (0 = no limit)', 0, 0, 100000),
+            int('channel_daily_limit', 'AI replies per day in each channel (0 = no limit)', 0, 0, 100000)
+        ]
     }
 };
 
@@ -220,7 +237,8 @@ function validateFeatureSettings(input, { channelIds = null, roleIds = null, gui
         }
         for (const check of section.checks || []) {
             const problem = check(value[name]);
-            if (problem) errors[`${name}.${problem.key}`] = problem.error;
+            // Keep the first, more specific error for a field (e.g. which entry is wrong).
+            if (problem && !errors[`${name}.${problem.key}`]) errors[`${name}.${problem.key}`] = problem.error;
         }
     }
     return { value, errors };
@@ -258,6 +276,9 @@ FEATURE_SECTIONS.engagement.checks = [
         const names = s.shop_items.map((i) => i.name.trim().toLowerCase());
         return new Set(names).size !== names.length ? { key: 'shop_items', error: 'Two shop items have the same name.' } : null;
     }
+];
+FEATURE_SECTIONS.ai.checks = [
+    needs('faq_enabled', 'faq', 'Add at least one FAQ entry.')
 ];
 FEATURE_SECTIONS.automation.checks = [
     needs('scheduled_messages_enabled', 'scheduled_messages', 'Add at least one scheduled message.'),

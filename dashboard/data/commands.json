@@ -1491,6 +1491,90 @@
               "example": "/tournament show message_id:<message_id>"
             }
           ]
+        },
+        {
+          "name": "ai",
+          "description": "AI tools: translate, summarize, FAQ, moderation advice",
+          "audience": "everyone",
+          "permission": null,
+          "about": "AI tools, each off until an admin enables it (Add-ons, AI tools): translate text, privately summarize recent channel messages, ask the server FAQ (answers come only from it), and an advisory moderation suggestion for staff. The AI never takes actions.",
+          "privacyLink": true,
+          "subcommands": [
+            {
+              "name": "translate",
+              "description": "Translate text",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "text",
+                  "type": "text",
+                  "required": true,
+                  "description": "What to translate",
+                  "maxLength": 1500
+                },
+                {
+                  "name": "to",
+                  "type": "text",
+                  "required": true,
+                  "description": "Target language, e.g. Hindi",
+                  "maxLength": 30
+                }
+              ],
+              "example": "/ai translate text:<text> to:<to>"
+            },
+            {
+              "name": "summarize",
+              "description": "Summarize the recent messages in this channel (only you see it)",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "messages",
+                  "type": "number",
+                  "required": false,
+                  "description": "How many messages (5-100, default 50)",
+                  "min": 5,
+                  "max": 100
+                }
+              ],
+              "example": "/ai summarize"
+            },
+            {
+              "name": "faq",
+              "description": "Ask the server FAQ",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "question",
+                  "type": "text",
+                  "required": true,
+                  "description": "Your question",
+                  "maxLength": 300
+                }
+              ],
+              "example": "/ai faq question:<question>"
+            },
+            {
+              "name": "modreview",
+              "description": "Staff: advisory suggestion for a moderation case",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "member",
+                  "type": "member",
+                  "required": true,
+                  "description": "The member"
+                },
+                {
+                  "name": "situation",
+                  "type": "text",
+                  "required": false,
+                  "description": "What happened",
+                  "maxLength": 1000
+                }
+              ],
+              "example": "/ai modreview member:@member"
+            }
+          ]
         }
       ]
     },

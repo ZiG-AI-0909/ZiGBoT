@@ -125,9 +125,27 @@ function engagementCommands() {
     ];
 }
 
+function aiCommands() {
+    return [
+        new SlashCommandBuilder()
+            .setName('ai')
+            .setDescription('AI tools: translate, summarize, FAQ, moderation advice')
+            .addSubcommand((s) => s.setName('translate').setDescription('Translate text')
+                .addStringOption((o) => o.setName('text').setDescription('What to translate').setRequired(true).setMaxLength(1500))
+                .addStringOption((o) => o.setName('to').setDescription('Target language, e.g. Hindi').setRequired(true).setMaxLength(30)))
+            .addSubcommand((s) => s.setName('summarize').setDescription('Summarize the recent messages in this channel (only you see it)')
+                .addIntegerOption((o) => o.setName('messages').setDescription('How many messages (5-100, default 50)').setMinValue(5).setMaxValue(100)))
+            .addSubcommand((s) => s.setName('faq').setDescription('Ask the server FAQ')
+                .addStringOption((o) => o.setName('question').setDescription('Your question').setRequired(true).setMaxLength(300)))
+            .addSubcommand((s) => s.setName('modreview').setDescription('Staff: advisory suggestion for a moderation case')
+                .addUserOption((o) => o.setName('member').setDescription('The member').setRequired(true))
+                .addStringOption((o) => o.setName('situation').setDescription('What happened').setMaxLength(1000)))
+    ];
+}
+
 /** Every optional-feature command, as builders (src/slash.js turns them into JSON). */
 function featureCommandBuilders() {
-    return [...communityCommands(), ...automationCommands(), ...engagementCommands()];
+    return [...communityCommands(), ...automationCommands(), ...engagementCommands(), ...aiCommands()];
 }
 
 module.exports = { featureCommandBuilders };

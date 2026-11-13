@@ -25,7 +25,7 @@ const CATEGORIES = [
     { id: 'memory', name: 'Memory', commands: ['memory', 'summarychannels'] },
     { id: 'music', name: 'Music & voice', commands: ['play', 'search', 'pause', 'resume', 'skip', 'stop', 'queue', 'nowplaying', 'volume', 'shuffle', 'loop', 'remove', 'clearqueue', 'join', 'leave'] },
     { id: 'moderation', name: 'Moderation', commands: ['kick', 'ban', 'appeal', 'moderation', 'reputation', 'security', 'ticket'] },
-    { id: 'setup', name: 'Server setup', commands: ['setup', 'roles', 'suggest', 'community', 'automation', 'level', 'eco', 'games', 'giveaway', 'tournament'] },
+    { id: 'setup', name: 'Server setup', commands: ['setup', 'roles', 'suggest', 'community', 'automation', 'level', 'eco', 'games', 'giveaway', 'tournament', 'ai'] },
     { id: 'help', name: 'Help', commands: ['help'] }
 ];
 
@@ -65,6 +65,7 @@ const ABOUT = {
     games: 'Trivia (the first right answer wins virtual coins), coinflip and rock-paper-scissors. No betting. Off until an admin enables games.',
     giveaway: 'Staff run giveaways with an Enter button, an optional required role, an end time that survives restarts, and rerolls.',
     tournament: 'Sign-up lists and single-elimination brackets for up to 32 players. Staff start the bracket and record winners.',
+    ai: 'AI tools, each off until an admin enables it (Add-ons, AI tools): translate text, privately summarize recent channel messages, ask the server FAQ (answers come only from it), and an advisory moderation suggestion for staff. The AI never takes actions.',
     ticket: 'Private support tickets with transcripts, staff controls, priorities, escalation and optional advisory AI. Administrators enable tickets and configure categories and staff roles in the dashboard.'
 };
 

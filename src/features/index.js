@@ -8,8 +8,9 @@ const { createScheduler } = require('./scheduler');
 const { createCommunity } = require('./community');
 const { createAutomation } = require('./automation');
 const { createEngagement } = require('./engagement');
+const { createAiTools } = require('./aiTools');
 
-function createFeatures({ settings = {}, resolveContext, auditLog, getClient, store = null, now = () => Date.now(), logger = console, renderWelcomeImage, renderRankCard }) {
+function createFeatures({ settings = {}, resolveContext, auditLog, getClient, store = null, now = () => Date.now(), logger = console, renderWelcomeImage, renderRankCard, aiClient = null, aiModel = '', listWarnings = null }) {
     const supabase = new SupabaseFeatureStore({ supabaseUrl: settings.supabaseUrl, serviceRoleKey: settings.supabaseServiceRoleKey });
     const featureStore = store || (supabase.enabled ? supabase : new MemoryFeatureStore({ now }));
     const scheduler = createScheduler({ store: featureStore, now, logger });
@@ -21,6 +22,8 @@ function createFeatures({ settings = {}, resolveContext, auditLog, getClient, st
         createAutomation(shared),
         createEngagement({ ...shared, renderRankCard: rankCard })
     ];
+    const aiTools = createAiTools({ ...shared, aiClient, aiModel, listWarnings });
+    modules.push(aiTools);
 
     const each = (hook, ...args) => Promise.all(modules.filter((m) => typeof m[hook] === 'function').map((m) => Promise.resolve(m[hook](...args))
         .catch((error) => logger.error?.(`[ZiGBoT FEATURES] ${hook} failed: ${error?.message || error}`))));
@@ -35,6 +38,8 @@ function createFeatures({ settings = {}, resolveContext, auditLog, getClient, st
         onMemberRemove: (member) => each('onMemberRemove', member),
         onReaction: (reaction, user, added) => each('onReaction', reaction, user, added),
         onVoiceState: (oldState, newState) => each('onVoiceState', oldState, newState),
+        /** Per-channel / per-server AI limits (Section D). true = the AI may reply. */
+        allowAiReply: (message) => aiTools.allowAiReply(message),
         /** true when a module fully handled the message (the caller then stops). */
         async onMessage(message, context) {
             for (const m of modules) {

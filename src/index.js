@@ -164,7 +164,10 @@ const features = createFeatures({
         return { config: ctx?.config || {}, settings: ctx ? buildGuildSettings(settings, ctx) : settings, premium: Boolean(ctx?.premium) };
     },
     auditLog,
-    getClient: () => client
+    getClient: () => client,
+    aiClient: ai.client,
+    aiModel: ai.model,
+    listWarnings: (guildId, userId) => brain.listWarnings(guildId, userId)
 });
 const ticketCommands = createTicketCommands({
     store: ticketStore,
@@ -801,6 +804,8 @@ client.on(Events.MessageCreate, async (message) => {
     }
     // A role mapping can switch the AI off for some members (deny "chat").
     if (!ownerMemoryTarget && !hasFeature(behavior, 'chat')) return;
+    // Per-channel AI switch and daily AI limits (Add-ons → AI tools); off = no limit.
+    if (!ownerMemoryTarget && !(await features.allowAiReply(message))) return;
     // "18+ only" server switch: everyone else is ignored, with no reply at all.
     if (!ownerMemoryTarget && blockedByAdultsOnly(guildCtx?.config, behavior)) return;
 
