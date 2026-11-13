@@ -7,14 +7,20 @@ const { SupabaseFeatureStore, MemoryFeatureStore } = require('./store');
 const { createScheduler } = require('./scheduler');
 const { createCommunity } = require('./community');
 const { createAutomation } = require('./automation');
+const { createEngagement } = require('./engagement');
 
-function createFeatures({ settings = {}, resolveContext, auditLog, getClient, store = null, now = () => Date.now(), logger = console, renderWelcomeImage }) {
+function createFeatures({ settings = {}, resolveContext, auditLog, getClient, store = null, now = () => Date.now(), logger = console, renderWelcomeImage, renderRankCard }) {
     const supabase = new SupabaseFeatureStore({ supabaseUrl: settings.supabaseUrl, serviceRoleKey: settings.supabaseServiceRoleKey });
     const featureStore = store || (supabase.enabled ? supabase : new MemoryFeatureStore({ now }));
     const scheduler = createScheduler({ store: featureStore, now, logger });
     const image = renderWelcomeImage === undefined ? (input) => require('./welcomeImage').renderWelcomeImage(input) : renderWelcomeImage;
     const shared = { store: featureStore, scheduler, resolveContext, auditLog, getClient, now, logger };
-    const modules = [createCommunity({ ...shared, renderWelcomeImage: image }), createAutomation(shared)];
+    const rankCard = renderRankCard === undefined ? (input) => require('./rankCard').renderRankCard(input) : renderRankCard;
+    const modules = [
+        createCommunity({ ...shared, renderWelcomeImage: image }),
+        createAutomation(shared),
+        createEngagement({ ...shared, renderRankCard: rankCard })
+    ];
 
     const each = (hook, ...args) => Promise.all(modules.filter((m) => typeof m[hook] === 'function').map((m) => Promise.resolve(m[hook](...args))
         .catch((error) => logger.error?.(`[ZiGBoT FEATURES] ${hook} failed: ${error?.message || error}`))));

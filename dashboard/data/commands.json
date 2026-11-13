@@ -1130,6 +1130,367 @@
               "example": "/automation rules"
             }
           ]
+        },
+        {
+          "name": "level",
+          "description": "XP, levels and the leaderboard",
+          "audience": "everyone",
+          "permission": null,
+          "about": "XP for chatting (once a minute), levels, a rank card and the leaderboard. Off until an admin enables XP in the dashboard (Add-ons, Engagement).",
+          "privacyLink": true,
+          "subcommands": [
+            {
+              "name": "rank",
+              "description": "Show a rank card",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "member",
+                  "type": "member",
+                  "required": false,
+                  "description": "Whose rank (default: yours)"
+                }
+              ],
+              "example": "/level rank"
+            },
+            {
+              "name": "leaderboard",
+              "description": "Top members by XP",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "page",
+                  "type": "number",
+                  "required": false,
+                  "description": "Page number",
+                  "min": 1
+                }
+              ],
+              "example": "/level leaderboard"
+            }
+          ]
+        },
+        {
+          "name": "eco",
+          "description": "Virtual coins: daily reward, shop, inventory, trading and achievements",
+          "audience": "everyone",
+          "permission": null,
+          "about": "Virtual coins with no real-money value: daily reward with streaks, a shop, inventory, achievements, and trades that only happen when both members agree. Off until an admin enables the economy.",
+          "privacyLink": true,
+          "subcommands": [
+            {
+              "name": "daily",
+              "description": "Claim your daily reward",
+              "audience": "everyone",
+              "options": [],
+              "example": "/eco daily"
+            },
+            {
+              "name": "balance",
+              "description": "Show coins",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "member",
+                  "type": "member",
+                  "required": false,
+                  "description": "Whose balance (default: yours)"
+                }
+              ],
+              "example": "/eco balance"
+            },
+            {
+              "name": "shop",
+              "description": "See the shop",
+              "audience": "everyone",
+              "options": [],
+              "example": "/eco shop"
+            },
+            {
+              "name": "buy",
+              "description": "Buy a shop item",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "item",
+                  "type": "text",
+                  "required": true,
+                  "description": "Item name",
+                  "maxLength": 40
+                }
+              ],
+              "example": "/eco buy item:<item>"
+            },
+            {
+              "name": "inventory",
+              "description": "Show items",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "member",
+                  "type": "member",
+                  "required": false,
+                  "description": "Whose items (default: yours)"
+                }
+              ],
+              "example": "/eco inventory"
+            },
+            {
+              "name": "achievements",
+              "description": "Show your achievements",
+              "audience": "everyone",
+              "options": [],
+              "example": "/eco achievements"
+            },
+            {
+              "name": "trade",
+              "description": "Offer a trade (they must accept)",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "member",
+                  "type": "member",
+                  "required": true,
+                  "description": "Who to trade with"
+                },
+                {
+                  "name": "give_coins",
+                  "type": "number",
+                  "required": false,
+                  "description": "Coins you give",
+                  "min": 0,
+                  "max": 1000000000
+                },
+                {
+                  "name": "give_item",
+                  "type": "text",
+                  "required": false,
+                  "description": "Item you give",
+                  "maxLength": 40
+                },
+                {
+                  "name": "want_coins",
+                  "type": "number",
+                  "required": false,
+                  "description": "Coins you want",
+                  "min": 0,
+                  "max": 1000000000
+                },
+                {
+                  "name": "want_item",
+                  "type": "text",
+                  "required": false,
+                  "description": "Item you want",
+                  "maxLength": 40
+                }
+              ],
+              "example": "/eco trade member:@member"
+            }
+          ]
+        },
+        {
+          "name": "games",
+          "description": "Trivia, coinflip and rock-paper-scissors",
+          "audience": "everyone",
+          "permission": null,
+          "about": "Trivia (the first right answer wins virtual coins), coinflip and rock-paper-scissors. No betting. Off until an admin enables games.",
+          "privacyLink": true,
+          "subcommands": [
+            {
+              "name": "trivia",
+              "description": "Start a trivia question in this channel",
+              "audience": "everyone",
+              "options": [],
+              "example": "/games trivia"
+            },
+            {
+              "name": "coinflip",
+              "description": "Flip a coin",
+              "audience": "everyone",
+              "options": [],
+              "example": "/games coinflip"
+            },
+            {
+              "name": "rps",
+              "description": "Rock, paper, scissors against ZiGBoT",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "choice",
+                  "type": "text",
+                  "required": true,
+                  "description": "Your pick",
+                  "choices": [
+                    "Rock",
+                    "Paper",
+                    "Scissors"
+                  ]
+                }
+              ],
+              "example": "/games rps choice:Rock"
+            }
+          ]
+        },
+        {
+          "name": "giveaway",
+          "description": "Staff: run giveaways",
+          "audience": "admin",
+          "permission": "Manage Server",
+          "about": "Staff run giveaways with an Enter button, an optional required role, an end time that survives restarts, and rerolls.",
+          "privacyLink": true,
+          "subcommands": [
+            {
+              "name": "start",
+              "description": "Start a giveaway in this channel",
+              "audience": "admin",
+              "options": [
+                {
+                  "name": "prize",
+                  "type": "text",
+                  "required": true,
+                  "description": "What can be won",
+                  "maxLength": 200
+                },
+                {
+                  "name": "minutes",
+                  "type": "number",
+                  "required": true,
+                  "description": "How long it runs",
+                  "min": 1,
+                  "max": 43200
+                },
+                {
+                  "name": "winners",
+                  "type": "number",
+                  "required": false,
+                  "description": "How many winners (default 1)",
+                  "min": 1,
+                  "max": 10
+                },
+                {
+                  "name": "required_role",
+                  "type": "role",
+                  "required": false,
+                  "description": "Only members with this role can enter"
+                }
+              ],
+              "example": "/giveaway start prize:<prize> minutes:1"
+            },
+            {
+              "name": "end",
+              "description": "End a giveaway now",
+              "audience": "admin",
+              "options": [
+                {
+                  "name": "message_id",
+                  "type": "text",
+                  "required": true,
+                  "description": "ID of the message (right-click, Copy Message ID)",
+                  "maxLength": 20
+                }
+              ],
+              "example": "/giveaway end message_id:<message_id>"
+            },
+            {
+              "name": "reroll",
+              "description": "Pick new winners for an ended giveaway",
+              "audience": "admin",
+              "options": [
+                {
+                  "name": "message_id",
+                  "type": "text",
+                  "required": true,
+                  "description": "ID of the message (right-click, Copy Message ID)",
+                  "maxLength": 20
+                }
+              ],
+              "example": "/giveaway reroll message_id:<message_id>"
+            }
+          ]
+        },
+        {
+          "name": "tournament",
+          "description": "Events and tournaments: sign-ups and brackets",
+          "audience": "everyone",
+          "permission": null,
+          "about": "Sign-up lists and single-elimination brackets for up to 32 players. Staff start the bracket and record winners.",
+          "privacyLink": true,
+          "subcommands": [
+            {
+              "name": "create",
+              "description": "Staff: open sign-ups",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "name",
+                  "type": "text",
+                  "required": true,
+                  "description": "Event name",
+                  "maxLength": 100
+                },
+                {
+                  "name": "max_players",
+                  "type": "number",
+                  "required": false,
+                  "description": "2 to 32 (default 16)",
+                  "min": 2,
+                  "max": 32
+                }
+              ],
+              "example": "/tournament create name:<name>"
+            },
+            {
+              "name": "start",
+              "description": "Staff: close sign-ups and post the bracket",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "message_id",
+                  "type": "text",
+                  "required": true,
+                  "description": "ID of the message (right-click, Copy Message ID)",
+                  "maxLength": 20
+                }
+              ],
+              "example": "/tournament start message_id:<message_id>"
+            },
+            {
+              "name": "win",
+              "description": "Staff: record a match winner",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "message_id",
+                  "type": "text",
+                  "required": true,
+                  "description": "ID of the message (right-click, Copy Message ID)",
+                  "maxLength": 20
+                },
+                {
+                  "name": "player",
+                  "type": "member",
+                  "required": true,
+                  "description": "Who won the match"
+                }
+              ],
+              "example": "/tournament win message_id:<message_id> player:@member"
+            },
+            {
+              "name": "show",
+              "description": "Show the bracket",
+              "audience": "everyone",
+              "options": [
+                {
+                  "name": "message_id",
+                  "type": "text",
+                  "required": true,
+                  "description": "ID of the message (right-click, Copy Message ID)",
+                  "maxLength": 20
+                }
+              ],
+              "example": "/tournament show message_id:<message_id>"
+            }
+          ]
         }
       ]
     },

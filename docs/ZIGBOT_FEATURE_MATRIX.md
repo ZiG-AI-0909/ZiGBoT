@@ -203,24 +203,26 @@ All Section C features are off by default and enabled per server in the dashboar
 
 ## G. Community Engagement
 
+All Section G features are off by default and enabled per server in the dashboard (Add-ons → Engagement, `feature_settings.engagement`). Coins are virtual only: no purchase, cash-out or betting. Member records are guild-scoped in `zb_feature_records` (kind `member`), changed only through versioned `mutate`. Tests: `test/section-g-engagement.test.js`.
+
 | Feature | Status | Proof | Action |
 |---|---|---|---|
-| XP system | MISSING | Search `XP|experience points|leveling` across `src/`, `dashboard/`, `supabase/`, `test/`: no XP accrual model/command found. | Implement |
-| Leveling | MISSING | Same engagement search; no levels or level progression found. | Implement |
-| Rank cards | MISSING | Search `rank.?card|leaderboard` across `src/`, `dashboard/`, `supabase/`, `test/`: no rank card renderer found. | Implement |
-| Leaderboards | MISSING | Same engagement search; no leaderboard query/command found. | Implement |
-| Daily rewards | MISSING | Search `daily.?reward|claim reward` across `src/`, `dashboard/`, `supabase/`, `test/`: no reward economy found. | Implement |
-| Achievements | MISSING | Search `achievement|badge unlock` across `src/`, `dashboard/`, `supabase/`, `test/`: no achievement system found. | Implement |
-| Virtual currency | MISSING | Search `virtual.?currency|coins|wallet|balance` across `src/`, `dashboard/`, `supabase/`, `test/`: no server economy found. | Implement |
-| Inventory | MISSING | Search `inventory|items owned` across `src/`, `dashboard/`, `supabase/`, `test/`: no member inventory found. | Implement |
-| Collectibles | MISSING | Search `collectible|collectibles` across `src/`, `dashboard/`, `supabase/`, `test/`: no collectible system found. | Implement |
-| Trading | MISSING | Search `trade|trading|exchange items` across `src/`, `dashboard/`, `supabase/`, `test/`: no member-to-member trading found. | Implement |
-| Games | MISSING | Search `game|mini.?game` across `src/`, `dashboard/`, `supabase/`, `test/`: no community game workflow found. | Implement |
-| Trivia | MISSING | Search `trivia|quiz question` across `src/`, `dashboard/`, `supabase/`, `test/`: no trivia workflow found. | Implement |
-| Polls | MISSING | Same poll search as section C; no poll workflow exists. Implement once if added, not once per matrix category. | Implement |
-| Giveaways | MISSING | Search `giveaway|winner selection` across `src/`, `dashboard/`, `supabase/`, `test/`: no giveaway workflow found. | Implement |
-| Events | MISSING | Search `scheduled event|event participation|event RSVP` across `src/`, `dashboard/`, `supabase/`, `test/`: no community event/attendance feature found. | Implement |
-| Tournaments | MISSING | Search `tournament|bracket` across `src/`, `dashboard/`, `supabase/`, `test/`: no tournament system found. | Implement |
+| XP system | WORKING | 15-25 XP per message, 60 s cooldown (also across workers), none in ignored channels or for bots, from the existing message listener: `src/features/engagement.js` (`onMessage`); tests `XP: 15-25 per message, once a minute, not in ignored channels, level-up announced once`, `XP cooldown holds across two workers (no double count)`. | Done (Section G) |
+| Leveling | WORKING | Level formula 5*l^2+50*l+100 (`src/features/engagementRules.js`); level-ups announced in the configured channel; test `level formula 5l²+50l+100, with exact level boundaries`. | Done (Section G) |
+| Rank cards | WORKING | `/level rank` with an `@napi-rs/canvas` image (`src/features/rankCard.js`); test `rank card and paginated leaderboard`. | Done (Section G) |
+| Leaderboards | WORKING | `/level leaderboard` paginated by 10; same test. | Done (Section G) |
+| Daily rewards | WORKING | `/eco daily`, 24 h cooldown, streak kept within 48 h; test `daily: once per 24 h, streak grows within 48 h and resets after, achievements unlock`. | Done (Section G) |
+| Achievements | WORKING | Level, message and streak milestones (`ACHIEVEMENTS` in `src/features/engagementRules.js`), `/eco achievements`; daily test above. | Done (Section G) |
+| Virtual currency | WORKING | Virtual coins with a cap, no real value; `/eco balance`; tests `shop: ...`, `concurrent purchases never spend coins twice`. | Done (Section G) |
+| Inventory | WORKING | `/eco inventory`; test `shop: buying needs enough coins, adds to the inventory, and never hands out a staff role`. | Done (Section G) |
+| Collectibles | WORKING | Admin-defined shop items (max 25, optional safe role) as collectibles; same shop test. | Done (Section G) |
+| Trading | WORKING | `/eco trade` + Accept/Decline buttons: only the other member accepts, claimed once, 5-minute expiry, both sides checked and moved together or refunded; tests `trading: only the other member can accept, both sides move together, or nothing moves`, `trading: a side that can no longer pay rolls everything back; offers expire`. | Done (Section G) |
+| Games | WORKING | `/games coinflip` and `/games rps`, no betting; test `coinflip and rps answer without betting anything`. | Done (Section G) |
+| Trivia | WORKING | `/games trivia`: 25-question bank, 30 s, one answer per member, first right answer wins virtual coins; tests `trivia: one answer per member, first right answer wins virtual coins, late clicks refused`, `trivia rounds keep the right answer findable after shuffling; rps rules`. | Done (Section G) |
+| Polls | WORKING | Implemented once in Section C (`/community poll`, Discord native polls), as the matrix asked; test `polls, announcements and reminders are staff-only and never ping` (`test/section-c-community.test.js`). | Done (Section G) |
+| Giveaways | WORKING | `/giveaway start|end|reroll` (Manage Server): Enter button, optional required role, end time on the persistent scheduler, fair crypto draw, reroll excludes previous winners; test `giveaways: staff only, required role, toggle entry, ends on schedule after a restart, reroll excludes winners`. | Done (Section G) |
+| Events | WORKING | Discord scheduled events via `/automation event-create|events` (Section J) and tournament sign-up lists; tests in `test/section-j-automation.test.js` and `tournaments: ...`. | Done (Section G) |
+| Tournaments | WORKING | `/tournament create|start|win|show`: sign-ups to a cap, single-elimination bracket for 2-32 players with byes, champion; tests `tournaments: sign-ups to the cap, bracket on start, winners advance to a champion`, `brackets: 2-32 players, ...`. | Done (Section G) |
 
 ## H. Music and Voice
 

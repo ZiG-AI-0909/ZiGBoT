@@ -65,9 +65,69 @@ function automationCommands() {
     ];
 }
 
+function engagementCommands() {
+    const messageId = (o) => o.setName('message_id').setDescription('ID of the message (right-click, Copy Message ID)').setRequired(true).setMinLength(17).setMaxLength(20);
+    return [
+        new SlashCommandBuilder()
+            .setName('level')
+            .setDescription('XP, levels and the leaderboard')
+            .addSubcommand((s) => s.setName('rank').setDescription('Show a rank card')
+                .addUserOption((o) => o.setName('member').setDescription('Whose rank (default: yours)')))
+            .addSubcommand((s) => s.setName('leaderboard').setDescription('Top members by XP')
+                .addIntegerOption((o) => o.setName('page').setDescription('Page number').setMinValue(1))),
+        new SlashCommandBuilder()
+            .setName('eco')
+            .setDescription('Virtual coins: daily reward, shop, inventory, trading and achievements')
+            .addSubcommand((s) => s.setName('daily').setDescription('Claim your daily reward'))
+            .addSubcommand((s) => s.setName('balance').setDescription('Show coins')
+                .addUserOption((o) => o.setName('member').setDescription('Whose balance (default: yours)')))
+            .addSubcommand((s) => s.setName('shop').setDescription('See the shop'))
+            .addSubcommand((s) => s.setName('buy').setDescription('Buy a shop item')
+                .addStringOption((o) => o.setName('item').setDescription('Item name').setRequired(true).setMaxLength(40)))
+            .addSubcommand((s) => s.setName('inventory').setDescription('Show items')
+                .addUserOption((o) => o.setName('member').setDescription('Whose items (default: yours)')))
+            .addSubcommand((s) => s.setName('achievements').setDescription('Show your achievements'))
+            .addSubcommand((s) => s.setName('trade').setDescription('Offer a trade (they must accept)')
+                .addUserOption((o) => o.setName('member').setDescription('Who to trade with').setRequired(true))
+                .addIntegerOption((o) => o.setName('give_coins').setDescription('Coins you give').setMinValue(0).setMaxValue(1000000000))
+                .addStringOption((o) => o.setName('give_item').setDescription('Item you give').setMaxLength(40))
+                .addIntegerOption((o) => o.setName('want_coins').setDescription('Coins you want').setMinValue(0).setMaxValue(1000000000))
+                .addStringOption((o) => o.setName('want_item').setDescription('Item you want').setMaxLength(40))),
+        new SlashCommandBuilder()
+            .setName('games')
+            .setDescription('Trivia, coinflip and rock-paper-scissors')
+            .addSubcommand((s) => s.setName('trivia').setDescription('Start a trivia question in this channel'))
+            .addSubcommand((s) => s.setName('coinflip').setDescription('Flip a coin'))
+            .addSubcommand((s) => s.setName('rps').setDescription('Rock, paper, scissors against ZiGBoT')
+                .addStringOption((o) => o.setName('choice').setDescription('Your pick').setRequired(true)
+                    .addChoices({ name: 'Rock', value: 'rock' }, { name: 'Paper', value: 'paper' }, { name: 'Scissors', value: 'scissors' }))),
+        new SlashCommandBuilder()
+            .setName('giveaway')
+            .setDescription('Staff: run giveaways')
+            .addSubcommand((s) => s.setName('start').setDescription('Start a giveaway in this channel')
+                .addStringOption((o) => o.setName('prize').setDescription('What can be won').setRequired(true).setMaxLength(200))
+                .addIntegerOption((o) => o.setName('minutes').setDescription('How long it runs').setRequired(true).setMinValue(1).setMaxValue(43200))
+                .addIntegerOption((o) => o.setName('winners').setDescription('How many winners (default 1)').setMinValue(1).setMaxValue(10))
+                .addRoleOption((o) => o.setName('required_role').setDescription('Only members with this role can enter')))
+            .addSubcommand((s) => s.setName('end').setDescription('End a giveaway now').addStringOption(messageId))
+            .addSubcommand((s) => s.setName('reroll').setDescription('Pick new winners for an ended giveaway').addStringOption(messageId))
+            .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+        new SlashCommandBuilder()
+            .setName('tournament')
+            .setDescription('Events and tournaments: sign-ups and brackets')
+            .addSubcommand((s) => s.setName('create').setDescription('Staff: open sign-ups')
+                .addStringOption((o) => o.setName('name').setDescription('Event name').setRequired(true).setMaxLength(100))
+                .addIntegerOption((o) => o.setName('max_players').setDescription('2 to 32 (default 16)').setMinValue(2).setMaxValue(32)))
+            .addSubcommand((s) => s.setName('start').setDescription('Staff: close sign-ups and post the bracket').addStringOption(messageId))
+            .addSubcommand((s) => s.setName('win').setDescription('Staff: record a match winner').addStringOption(messageId)
+                .addUserOption((o) => o.setName('player').setDescription('Who won the match').setRequired(true)))
+            .addSubcommand((s) => s.setName('show').setDescription('Show the bracket').addStringOption(messageId))
+    ];
+}
+
 /** Every optional-feature command, as builders (src/slash.js turns them into JSON). */
 function featureCommandBuilders() {
-    return [...communityCommands(), ...automationCommands()];
+    return [...communityCommands(), ...automationCommands(), ...engagementCommands()];
 }
 
 module.exports = { featureCommandBuilders };

@@ -25,7 +25,7 @@ const CATEGORIES = [
     { id: 'memory', name: 'Memory', commands: ['memory', 'summarychannels'] },
     { id: 'music', name: 'Music & voice', commands: ['play', 'search', 'pause', 'resume', 'skip', 'stop', 'queue', 'nowplaying', 'volume', 'shuffle', 'loop', 'remove', 'clearqueue', 'join', 'leave'] },
     { id: 'moderation', name: 'Moderation', commands: ['kick', 'ban', 'appeal', 'moderation', 'reputation', 'security', 'ticket'] },
-    { id: 'setup', name: 'Server setup', commands: ['setup', 'roles', 'suggest', 'community', 'automation'] },
+    { id: 'setup', name: 'Server setup', commands: ['setup', 'roles', 'suggest', 'community', 'automation', 'level', 'eco', 'games', 'giveaway', 'tournament'] },
     { id: 'help', name: 'Help', commands: ['help'] }
 ];
 
@@ -60,6 +60,11 @@ const ABOUT = {
     suggest: 'Sends your idea to the suggestions channel of the server, where members vote and staff approve or deny it. Off until an admin enables suggestions in the dashboard.',
     community: 'Community tools, each off until an admin enables it in the dashboard: save your birthday (day and month only), polls, staff announcements and reminders, and quick server stats.',
     automation: 'Personal reminders, Discord scheduled events and a view of the server automation rules. Each is off until an admin enables it in the dashboard (Add-ons, Automation), where scheduled messages, auto-purge and WHEN/IF/THEN rules are also set up.',
+    level: 'XP for chatting (once a minute), levels, a rank card and the leaderboard. Off until an admin enables XP in the dashboard (Add-ons, Engagement).',
+    eco: 'Virtual coins with no real-money value: daily reward with streaks, a shop, inventory, achievements, and trades that only happen when both members agree. Off until an admin enables the economy.',
+    games: 'Trivia (the first right answer wins virtual coins), coinflip and rock-paper-scissors. No betting. Off until an admin enables games.',
+    giveaway: 'Staff run giveaways with an Enter button, an optional required role, an end time that survives restarts, and rerolls.',
+    tournament: 'Sign-up lists and single-elimination brackets for up to 32 players. Staff start the bracket and record winners.',
     ticket: 'Private support tickets with transcripts, staff controls, priorities, escalation and optional advisory AI. Administrators enable tickets and configure categories and staff roles in the dashboard.'
 };
 

@@ -98,6 +98,28 @@ const FEATURE_SECTIONS = {
             bool('events_enabled', 'Discord scheduled events (/automation event)'),
             bool('reminders_enabled', 'Personal reminders (/automation remind)')
         ]
+    },
+    engagement: {
+        label: 'Engagement',
+        fields: [
+            bool('xp_enabled', 'XP and levels (15-25 XP per message, once a minute)'),
+            channels('xp_ignored_channel_ids', 'No XP in these channels', 25),
+            channel('levelup_channel_id', 'Level-up announcements channel (default: where it happened)'),
+            bool('economy_enabled', 'Virtual coins: daily reward, shop, inventory and trading'),
+            text('currency_name', 'Currency name', 'coins', 20),
+            int('daily_amount', 'Daily reward', 100, 1, 100000),
+            list('shop_items', 'Shop items (collectibles)', 25, [
+                text('name', 'Name', '', 40),
+                int('price', 'Price', 100, 1, 10000000),
+                text('emoji', 'Emoji', '🎁', 16),
+                role('role_id', 'Role given on purchase (optional)')
+            ], { itemCheck: (e) => (!e.name.trim() ? 'give the item a name' : null) }),
+            bool('achievements_enabled', 'Achievements for level, message and streak milestones'),
+            bool('games_enabled', 'Games: trivia, coinflip, rock-paper-scissors'),
+            int('trivia_reward', 'Trivia reward (virtual coins)', 25, 0, 10000),
+            bool('giveaways_enabled', 'Giveaways (/giveaway)'),
+            bool('tournaments_enabled', 'Events and tournaments with sign-ups and brackets (/tournament)')
+        ]
     }
 };
 
@@ -230,6 +252,12 @@ FEATURE_SECTIONS.community.checks = [
     needs('starboard_enabled', 'starboard_channel_id', 'Pick a starboard channel.'),
     needs('suggestions_enabled', 'suggestions_channel_id', 'Pick a suggestions channel.'),
     (s) => (s.milestones_enabled && !s.welcome_channel_id ? { key: 'welcome_channel_id', error: 'Milestones are posted in the welcome channel: pick one.' } : null)
+];
+FEATURE_SECTIONS.engagement.checks = [
+    (s) => {
+        const names = s.shop_items.map((i) => i.name.trim().toLowerCase());
+        return new Set(names).size !== names.length ? { key: 'shop_items', error: 'Two shop items have the same name.' } : null;
+    }
 ];
 FEATURE_SECTIONS.automation.checks = [
     needs('scheduled_messages_enabled', 'scheduled_messages', 'Add at least one scheduled message.'),
