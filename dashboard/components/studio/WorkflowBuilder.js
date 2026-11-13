@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Handle, Position, addEdge, applyNodeChanges, applyEdgeChanges, useReactFlow } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import PremiumPaywall from './PremiumPaywall';
 
 const KIND_COLOUR = { trigger: '#8b5cf6', condition: '#f59e0b', action: '#22c55e', ai: '#ec4899', logic: '#38bdf8', integration: '#f97316' };
 const KIND_LABEL = { trigger: 'Triggers', condition: 'Conditions', action: 'Actions', ai: 'AI', logic: 'Logic', integration: 'Integrations' };
@@ -68,7 +69,24 @@ function Canvas({ base, workflow, catalog, onSaved }) {
     const [runs, setRuns] = useState(workflow.runs || []);
     const [message, setMessage] = useState(null);
     const [dirty, setDirty] = useState(false);
+    const [state, setState] = useState(workflow.state || 'draft');
+    const [paywall, setPaywall] = useState(null);
+    const closePaywall = useCallback(() => setPaywall(null), []);
     const past = useRef([]); const future = useRef([]);
+
+    // Activation is decided by the server (Premium + a valid workflow); the
+    // button only asks. A 402 opens the upgrade screen.
+    async function setActive(on) {
+        if (on) { const p = await save(); if (p === null) return; if (p.length) { setMessage({ error: 'Fix the problems before activating.' }); return; } }
+        try {
+            const r = await call(`${base}/${workflow.id}/activate`, { method: 'POST', body: JSON.stringify({ active: on }) });
+            setState(r.state);
+            setMessage({ ok: on ? `Activated. ${r.runtime?.message || ''}` : 'Deactivated: back to draft.' });
+        } catch (e) {
+            if (e.body?.code === 'premium_required') setPaywall(e.body);
+            else setMessage({ error: e.message });
+        }
+    }
     const flow = useReactFlow();
     const fileInput = useRef(null);
 
@@ -126,6 +144,7 @@ function Canvas({ base, workflow, catalog, onSaved }) {
         try {
             const body = await call(`${base}/${workflow.id}`, { method: 'PUT', body: JSON.stringify({ graph: fromFlow(nodes, edges) }) });
             setProblems(body.problems); setDirty(false);
+            if (body.deactivated) setState('draft');
             setMessage({ ok: body.problems.length ? `Saved with ${body.problems.length} problem(s) to fix.` : 'Saved. No problems found ✓' });
             onSaved?.();
             return body.problems;
@@ -184,6 +203,7 @@ function Canvas({ base, workflow, catalog, onSaved }) {
 
     return (
         <div className="stack">
+            {paywall ? <PremiumPaywall info={paywall} onClose={closePaywall} /> : null}
             {message?.error ? <p className="error" role="alert">{message.error}</p> : null}
             {message?.ok ? <p className="help" role="status">{message.ok}</p> : null}
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
@@ -197,6 +217,12 @@ function Canvas({ base, workflow, catalog, onSaved }) {
                 <input ref={fileInput} type="file" accept="application/json,.json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) importJson(f); e.target.value = ''; }} />
                 <button className="btn" type="button" onClick={() => exportCode(false)}>Download code</button>
                 <button className="btn" type="button" onClick={() => exportCode(true)}>Write code to project</button>
+                <span className="row" style={{ gap: 8, alignItems: 'center', marginLeft: 'auto' }}>
+                    <span className={`wf-state${state === 'active' ? ' is-active' : state === 'paused_premium_expired' ? ' is-paused' : ''}`}>{state === 'active' ? 'Active' : state === 'paused_premium_expired' ? 'Paused: Premium expired' : 'Draft'}</span>
+                    {state === 'draft' ? (
+                        <button className="btn btn-primary" type="button" onClick={() => setActive(true)}>{workflow.entitlement?.premium ? '⚡ Activate' : '💎 Activate'}</button>
+                    ) : <button className="btn" type="button" onClick={() => setActive(false)}>Deactivate</button>}
+                </span>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '190px 1fr 260px', gap: 10 }}>
                 <aside className="card" aria-label="Blocks" style={{ maxHeight: '70vh', overflow: 'auto', padding: 8 }}>
@@ -270,7 +296,7 @@ export default function WorkflowBuilder({ projectId }) {
     useEffect(() => { load(); }, [load]);
 
     async function open(id) {
-        try { const b = await call(`${base}/${id}`); setCurrent({ ...b.workflow, problems: b.problems, runs: b.runs }); } catch (e) { setError(e.message); }
+        try { const b = await call(`${base}/${id}`); setCurrent({ ...b.workflow, problems: b.problems, runs: b.runs, entitlement: b.entitlement }); } catch (e) { setError(e.message); }
     }
     async function create(e) {
         e.preventDefault();

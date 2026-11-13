@@ -287,3 +287,19 @@ test('templates: published or own only; browsers cannot write or change status; 
     await db.query('delete from public.studio_templates where owner_id = $1', [A]);
     await as(A);
 });
+
+// Platform Phase 3: browsers can edit drafts but cannot activate workflows or extend plans.
+test('automation premium: activation columns and plan expiry are server-only', async () => {
+    await as(A);
+    const { rows: [{ id }] } = await insertProject(A, 'Paywall bot');
+    const { rows: [{ id: wfId }] } = await db.query("insert into public.studio_workflows (project_id, owner_id, name) values ($1, $2, 'Draft') returning id", [id, A]);
+    await db.query("update public.studio_workflows set name = 'Renamed', graph = '{\"version\":1,\"nodes\":[],\"edges\":[]}' where id = $1", [wfId]);
+    await assert.rejects(db.query('update public.studio_workflows set active = true where id = $1', [wfId]), /permission denied/, 'owner cannot self-activate');
+    await assert.rejects(db.query("insert into public.studio_workflows (project_id, owner_id, name, active) values ($1, $2, 'x', true)", [id, A]), /permission denied/);
+    await assert.rejects(db.query("update public.studio_accounts set plan_expires_at = now() + interval '1 year'"), /permission denied/);
+    await asService();
+    await db.query('update public.studio_workflows set active = true, activated_at = now() where id = $1', [wfId]);
+    await as(A);
+    assert.equal((await db.query('select active from public.studio_workflows where id = $1', [wfId])).rows[0].active, true);
+    await db.query('delete from public.studio_projects where id = $1', [id]);
+});
