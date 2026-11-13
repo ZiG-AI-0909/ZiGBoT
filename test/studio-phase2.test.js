@@ -123,12 +123,16 @@ test('file rows carry the session owner and the project id only', () => {
 
 test('routes: export and file list are owner-only; create stores the generated files or rolls back', () => {
     const read = (...p) => fs.readFileSync(path.join(ROOT, 'dashboard', 'app', 'api', 'studio', 'projects', ...p), 'utf8');
-    for (const file of [['[projectId]', 'export', 'route.js'], ['[projectId]', 'files', 'route.js']]) {
+    for (const file of [['[projectId]', 'files', 'route.js']]) {
         const src = read(...file);
         assert.match(src, /getOwnedProject\(supabase, ownerId, projectId\)/);
         assert.match(src, /\.eq\('owner_id', ownerId\)/);
     }
-    assert.match(read('[projectId]', 'export', 'route.js'), /projectFiles\.exportable\(/);
+    // The .zip download was switched off at the owner's request: owner-checked 410, no files read.
+    const exportRoute = read('[projectId]', 'export', 'route.js');
+    assert.match(exportRoute, /getOwnedProject\(supabase, ownerId, projectId\)/);
+    assert.match(exportRoute, /HttpError\(410/);
+    assert.doesNotMatch(exportRoute, /studio_project_files|createZip/);
     const create = read('route.js');
     assert.match(create, /generators\.generateProject\(/);
     assert.match(create, /if \(filesError\) \{\s*await supabase\.from\('studio_projects'\)\.delete\(\)/);

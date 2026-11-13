@@ -12,7 +12,7 @@ export const GET = handler(async (_request, { params }) => {
     const provider = runtime.getProvider();
     const { data, error } = await supabase.from('studio_deployments').select('id, version, status, provider, error, manifest, source_version, created_at').eq('project_id', project.id).eq('owner_id', ownerId).order('version', { ascending: false }).limit(runtime.HISTORY);
     return json({
-        hosting: { available: provider.available, provider: provider.name, message: provider.available ? null : 'Hosting coming soon. Until then, export the project (.zip) and run it on your own host.' },
+        hosting: { available: provider.available, provider: provider.name, message: provider.available ? null : 'Hosting coming soon.' },
         deployments: error ? [] : (data || []).map(runtime.publicDeployment)
     });
 });

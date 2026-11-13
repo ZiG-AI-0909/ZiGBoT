@@ -303,3 +303,24 @@ test('automation premium: activation columns and plan expiry are server-only', a
     assert.equal((await db.query('select active from public.studio_workflows where id = $1', [wfId])).rows[0].active, true);
     await db.query('delete from public.studio_projects where id = $1', [id]);
 });
+
+// Self-hosted runners: owners read their runners, commands and logs, never the hashes; only the server writes.
+test('runners: owner-only reads, no hash columns, no browser writes', async () => {
+    await as(A);
+    const { rows: [{ id }] } = await insertProject(A, 'Runner bot');
+    await assert.rejects(db.query("insert into public.studio_runners (project_id, owner_id, name) values ($1, $2, 'vps')", [id, A]), /permission denied/);
+    await asService();
+    const { rows: [{ id: runnerId }] } = await db.query("insert into public.studio_runners (project_id, owner_id, name, status, token_hash) values ($1, $2, 'vps', 'paired', repeat('a', 64)) returning id", [id, A]);
+    await db.query("insert into public.studio_runner_commands (runner_id, project_id, owner_id, action) values ($1, $2, $3, 'deploy')", [runnerId, id, A]);
+    await assert.rejects(db.query("insert into public.studio_runner_commands (runner_id, project_id, owner_id, action) values ($1, $2, $3, 'rm -rf')", [runnerId, id, A]), /check constraint/);
+    await as(A);
+    assert.equal((await db.query('select id, name, state from public.studio_runners where project_id = $1', [id])).rows.length, 1);
+    await assert.rejects(db.query('select token_hash from public.studio_runners'), /permission denied/);
+    await assert.rejects(db.query("insert into public.studio_runner_commands (runner_id, project_id, owner_id, action) values ($1, $2, $3, 'start')", [runnerId, id, A]), /permission denied/);
+    assert.equal((await db.query('select * from public.studio_runner_commands where runner_id = $1', [runnerId])).rows.length, 1);
+    await as(B);
+    assert.equal((await db.query('select id from public.studio_runners where project_id = $1', [id])).rows.length, 0);
+    assert.equal((await db.query('select id from public.studio_runner_commands where runner_id = $1', [runnerId])).rows.length, 0);
+    await as(A);
+    await db.query('delete from public.studio_projects where id = $1', [id]);
+});

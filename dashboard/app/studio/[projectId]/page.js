@@ -29,7 +29,6 @@ export default async function StudioProject({ params }) {
                 <p className="help">{project.botName} · {framework?.label} · template {project.template} · {project.visibility} · {project.status}</p>
                 {project.description ? <p>{project.description}</p> : null}
                 <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                    <a className="btn btn-primary" href={`/api/studio/projects/${project.id}/export`} download>Download .zip</a>
                     <Link className="btn" href={`/studio/${project.id}/customize`}>Customize</Link>
                     <Link className="btn" href={`/studio/${project.id}/code`}>Open Code Studio</Link>
                     <Link className="btn" href={`/studio/${project.id}/builder`}>Visual builder</Link>

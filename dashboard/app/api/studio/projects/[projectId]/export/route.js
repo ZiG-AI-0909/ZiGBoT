@@ -1,25 +1,14 @@
-import { handler } from '@/lib/http';
-import projectFiles from '@/lib/studio/files';
-import zip from '@/lib/studio/zip';
+import { handler, HttpError } from '@/lib/http';
 import { requireStudioUser, getOwnedProject } from '@/lib/studio/server';
 
 export const dynamic = 'force-dynamic';
 
-// GET: the owner's project as a .zip. Secret files (.env, keys) are never
-// included; only .env.example with empty placeholders is.
+// The .zip download is switched off (owner's decision, 2026-11-13): project
+// code leaves Studio only through a paired self-hosted runner (Deployments).
+// Kept as an owner-checked route that answers 410, so old links explain it.
 export const GET = handler(async (_request, { params }) => {
     const { projectId } = await params;
     const { supabase, ownerId } = await requireStudioUser();
-    const project = await getOwnedProject(supabase, ownerId, projectId);
-    const { data, error } = await supabase.from('studio_project_files').select('path, content').eq('project_id', project.id).eq('owner_id', ownerId).limit(1000);
-    if (error) throw new Error(`File read failed: ${error.message}`);
-    const files = projectFiles.exportable(data || []).sort((a, b) => a.path.localeCompare(b.path));
-    const folder = project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'bot';
-    return new Response(zip.createZip(files, { folder }), {
-        headers: {
-            'Content-Type': 'application/zip',
-            'Content-Disposition': `attachment; filename="${folder}.zip"`,
-            'Cache-Control': 'no-store'
-        }
-    });
+    await getOwnedProject(supabase, ownerId, projectId);
+    throw new HttpError(410, 'Project downloads are switched off. Run your bot on your own machine with a self-hosted runner (Deployments page).', { code: 'export_disabled' });
 });
