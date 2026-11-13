@@ -466,3 +466,6 @@ textarea:disabled, input:disabled { opacity: 0.55; cursor: not-allowed; }
 }
 .section-title { font-family: var(--font-display), sans-serif; font-weight: 400; font-size: 28px; letter-spacing: 0.04em; margin: 18px 0 12px; }
 .tabs[hidden] { display: none; }
+/* Fallback tab bar (outside the sidebar shell): scroll sideways instead of cutting tabs off. */
+.tabs:not([hidden]) { overflow-x: auto; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+.tabs .tab { flex-shrink: 0; white-space: nowrap; }
