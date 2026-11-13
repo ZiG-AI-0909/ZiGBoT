@@ -248,17 +248,19 @@ Existing music is untouched. Section H added temporary voice channels (Add-ons â
 
 ## I. Social Media Integration
 
+Section I is off by default (Add-ons â†’ Social, `feature_settings.social`), polled on the shared scheduler at most every `poll_minutes` (minimum 5). User-supplied feed URLs go through an SSRF-safe fetcher (`src/features/net.js`): https only, connect-time address check (blocks private/loopback/link-local/metadata, including DNS rebinding), every redirect re-checked, 10 s timeout, 1 MB cap. New env vars: `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` (in `.env.example`). Tests: `test/section-i-social.test.js`.
+
 | Feature | Status | Proof | Action |
 |---|---|---|---|
-| YouTube notifications | PARTIAL | YouTube live-stream discovery/chat monitoring exists (`src/youtube/liveDetector.js`, `src/youtube/index.js`); tests `pollForLiveStream finds live videos within the uploads playlist`, `watch resolves activeLiveChatId and starts the monitor`. No general new-upload notification delivery. | Improve |
-| Twitch notifications | MISSING | Search `Twitch|twitch.tv|helix` across `src/`, `dashboard/`, `supabase/`, `test/`: no Twitch API integration found. | Implement |
-| Kick notifications | MISSING | Search `Kick|kick.com` across `src/`, `dashboard/`, `supabase/`, `test/`: no Kick integration found (case-insensitive search; no ticket-related context counted). | Implement |
-| RSS feeds | MISSING | Search `RSS|feed parser|feed URL` across `src/`, `dashboard/`, `supabase/`, `test/`: no RSS polling/subscription integration found. | Implement |
-| Reddit feeds | MISSING | Search `Reddit|reddit.com` across `src/`, `dashboard/`, `supabase/`, `test/`: no Reddit feed integration found. | Implement |
-| Supported X integrations | MISSING | Search `Twitter API|X API|twitter.com` across `src/`, `dashboard/`, `supabase/`, `test/`: no X/Twitter integration found. | Implement |
-| Supported Instagram integrations | MISSING | Search `Instagram|instagram.com` across `src/`, `dashboard/`, `supabase/`, `test/`: no Instagram integration found. | Implement |
-| Creator notifications | PARTIAL | YouTube live stream detection can identify a watched creator's live stream (`src/youtube/liveDetector.js`); no multi-creator upload/stream notification subscriptions in Discord. | Improve |
-| Scheduled announcements | PARTIAL | Scheduled greeting text can be posted on schedules (`src/greetings/scheduler.js`; tests in `test/scheduledGreetings.test.js`); no generic creator/announcement feed scheduler. | Improve |
+| YouTube notifications | WORKING | New-upload notices from the channel's public RSS feed (`feedUrl` type `youtube`, no Data API quota); the existing live-chat module is unchanged and still handles live streams; tests `RSS and Atom parsing: titles decoded, only https links kept`, `feeds: the first poll posts nothing, then only new items, oldest first, at most 3, never pinging`. | Done (Section I) |
+| Twitch notifications | WORKING | Official Helix API with client-credentials token (`createTwitchApi`), one alert per stream id, optional configured role ping only; first check (online or offline) records state without alerting; tests `Twitch: one alert per stream, with the configured role ping only, and none on the first check`, `Twitch API client: client-credentials token reused until expiry, official Helix endpoint only`. Live Twitch credentials were not available: NOT VERIFIED against the real API. | Done (Section I) |
+| Kick notifications | BLOCKED | Kick has no official free public API for third-party stream notifications; scraping would break their terms. | BLOCKED |
+| RSS feeds | WORKING | Up to 10 feeds per server (RSS 2.0 and Atom), SSRF-safe fetch, first poll seeds without posting, max 3 new items per poll, no pings; tests `SSRF: ...` (5 tests), `feeds: ...`, `feeds respect the poll interval (minimum 5 minutes) and survive a failing feed`. | Done (Section I) |
+| Reddit feeds | WORKING | Subreddit's public RSS feed (`https://www.reddit.com/r/<name>/new/.rss`), name validated; same feed tests. Not verified against live Reddit (network not used in tests). | Done (Section I) |
+| Supported X integrations | BLOCKED | X's API has no free tier for reading posts or streaming notifications; no official free API. | BLOCKED |
+| Supported Instagram integrations | BLOCKED | Instagram's Graph API only serves business/creator accounts the app owner manages, after Meta app review; no official free API for following arbitrary accounts. | BLOCKED |
+| Creator notifications | WORKING | Multi-creator subscriptions per server: YouTube uploads, Twitch live, Reddit and RSS, each to its own channel; same tests. | Done (Section I) |
+| Scheduled announcements | WORKING | Provided once by Section J scheduled messages (`src/features/automation.js`), as instructed (no duplicate scheduler); test `scheduled messages post once per interval, survive a restart, and never ping` (`test/section-j-automation.test.js`). | Done (Section I) |
 
 ## J. Automation
 

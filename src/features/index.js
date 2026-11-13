@@ -11,6 +11,7 @@ const { createEngagement } = require('./engagement');
 const { createAiTools } = require('./aiTools');
 const { createSecurityPlus } = require('./securityPlus');
 const { createTempVoice } = require('./tempVoice');
+const { createSocial, createTwitchApi } = require('./social');
 
 function createFeatures({ settings = {}, resolveContext, auditLog, getClient, store = null, now = () => Date.now(), logger = console, renderWelcomeImage, renderRankCard, aiClient = null, aiModel = '', listWarnings = null }) {
     const supabase = new SupabaseFeatureStore({ supabaseUrl: settings.supabaseUrl, serviceRoleKey: settings.supabaseServiceRoleKey });
@@ -25,6 +26,7 @@ function createFeatures({ settings = {}, resolveContext, auditLog, getClient, st
         createCommunity({ ...shared, renderWelcomeImage: image }),
         createAutomation(shared),
         createTempVoice(shared),
+        createSocial({ ...shared, twitch: createTwitchApi({ clientId: process.env.TWITCH_CLIENT_ID || '', clientSecret: process.env.TWITCH_CLIENT_SECRET || '' }) }),
         createEngagement({ ...shared, renderRankCard: rankCard })
     ];
     const aiTools = createAiTools({ ...shared, aiClient, aiModel, listWarnings });

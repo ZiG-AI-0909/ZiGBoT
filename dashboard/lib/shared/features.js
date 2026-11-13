@@ -148,6 +148,32 @@ const FEATURE_SECTIONS = {
             int('tempvoice_limit', 'User limit for new channels (0 = none)', 0, 0, 99)
         ]
     },
+    social: {
+        label: 'Social',
+        fields: [
+            bool('feeds_enabled', 'Feed notifications (RSS, Reddit, YouTube uploads)'),
+            list('feeds', 'Feeds', 10, [
+                pick('type', 'Type', 'rss', ['rss', 'reddit', 'youtube']),
+                text('source', 'RSS: https feed link · Reddit: subreddit name · YouTube: channel ID (UC...)', '', 300),
+                channel('channel_id', 'Post in channel')
+            ], {
+                itemCheck: (e) => {
+                    if (!e.channel_id) return 'pick a channel';
+                    if (e.type === 'reddit' && !/^[A-Za-z0-9_]{2,21}$/.test(e.source)) return 'a subreddit name is 2-21 letters, numbers or _ (without r/)';
+                    if (e.type === 'youtube' && !/^UC[\w-]{22}$/.test(e.source)) return 'a YouTube channel ID starts with UC and has 24 characters';
+                    if (e.type === 'rss' && !/^https:\/\/[^\s]+$/i.test(e.source)) return 'an RSS feed must be an https:// link';
+                    return null;
+                }
+            }),
+            bool('twitch_enabled', 'Twitch "went live" notifications'),
+            list('twitch', 'Twitch channels', 10, [
+                text('login', 'Twitch username', '', 25),
+                channel('channel_id', 'Post in channel'),
+                role('role_id', 'Role to ping (optional)')
+            ], { itemCheck: (e) => (!/^[A-Za-z0-9_]{3,25}$/.test(e.login) ? 'a Twitch username is 3-25 letters, numbers or _' : !e.channel_id ? 'pick a channel' : null) }),
+            int('poll_minutes', 'Check every (minutes)', 10, 5, 1440)
+        ]
+    },
     security: {
         label: 'Security+',
         fields: [
@@ -313,6 +339,10 @@ FEATURE_SECTIONS.security.checks = [
     (s) => (s.known_scam_quarantine && !s.threat_intel_use ? { key: 'known_scam_quarantine', error: 'Switch on the shared scam list first.' } : null)
 ];
 FEATURE_SECTIONS.voice.checks = [needs('tempvoice_enabled', 'tempvoice_hub_channel_id', 'Pick the "join to create" voice channel.')];
+FEATURE_SECTIONS.social.checks = [
+    needs('feeds_enabled', 'feeds', 'Add at least one feed.'),
+    needs('twitch_enabled', 'twitch', 'Add at least one Twitch channel.')
+];
 FEATURE_SECTIONS.automation.checks = [
     needs('scheduled_messages_enabled', 'scheduled_messages', 'Add at least one scheduled message.'),
     needs('auto_purge_enabled', 'auto_purge', 'Add at least one channel to purge.'),
