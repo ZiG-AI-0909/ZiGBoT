@@ -19,11 +19,24 @@ Status: WORKING (a named test exercises it), PARTIAL, MISSING, NOT AVAILABLE (ne
 | Separation from ZiGBoT | WORKING | test `ZiGBoT and Studio stay separate: nothing in src/ imports Studio code` |
 | Payments for plans | BLOCKED | No Studio payment provider; plans are flags set by the service role only |
 
+## Phase 2: Framework support
+
+| Feature | Status | Proof |
+|---|---|---|
+| discord.js (JavaScript) generator | WORKING | `dashboard/lib/studio/generators/js.js`: entry point, `src/commands/`, `src/events/`, config (fails only when connecting, not on import), `settings.json`, `package.json`, `.env.example`, README, tests, error handling. All 5 templates compile (`vm.Script`, nothing executed) and their own tests passed locally (17 tests over 5 projects) |
+| discord.js (TypeScript, strict) generator | WORKING | `generators/ts.js` with typed `settings.ts` and a command registry; all 5 templates passed `tsc --noEmit`, build and their own tests locally against discord.js 14.28.1. Also checked in CI (`studio-generators` job) |
+| discord.py generator | WORKING | `generators/py.js`: `bot.py`, `commands/`, `events/`, `config.py`, `requirements.txt`, tests; all 5 templates passed `py_compile` and `python -m unittest` locally (53 files). Also checked in CI |
+| Templates: Blank, Moderation, Community, AI Assistant, Ticket Support | WORKING | test `every framework x template generates the required project structure`; moderation commands check the moderator's role hierarchy; no generated mass pings (test `generated bots handle errors, never mass-ping, ...`) |
+| Templates: Gaming, Security, Music, Custom | MISSING | Deferred to a later phase by the owner's Phase 2 defaults ("others = later") |
+| Files stored per project | WORKING | `supabase/migrations/20261115000001_studio_files.sql`: owner-only RLS, a file can only be added to a project the user owns, path traversal and > 500 KB refused in the database; test `files: owner-only, cannot be planted in someone else's project, no traversal paths, 500 KB cap` |
+| Generate on create, copy on duplicate | WORKING | Create stores the generated files or rolls the project back; duplicate copies files; route test `routes: export and file list are owner-only; create stores the generated files or rolls back` |
+| Export as .zip | WORKING | `GET /api/studio/projects/[id]/export` (owner-only) with a dependency-free zip writer (`lib/studio/zip.js`, CRC-32 verified); `.env`, keys and `.pem` files are never exported; test `zip export: valid archive with every file intact, secrets left out` |
+| Generated-project syntax checks in CI | WORKING (CI) | `.github/workflows/ci.yml` job `studio-generators`: `tsc --noEmit`, `python -m py_compile`, and each project's own tests. Not yet run on GitHub (commits are not pushed): NOT VERIFIED there |
+
 ## Later phases
 
 | Phase | Status |
 |---|---|
-| 2 Framework generators, templates, zip export | MISSING |
 | 3 Customization, token validation | MISSING |
 | 4 Code Studio | MISSING |
 | 5 Visual builder | MISSING |

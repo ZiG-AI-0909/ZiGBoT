@@ -63,3 +63,32 @@ jobs:
       - name: Dashboard build
         run: npx next build
         working-directory: dashboard
+
+  studio-generators:
+    name: Studio generated projects (tsc, py_compile, their tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Generate every framework x template
+        run: node scripts/studio-generate-samples.js studio-samples
+      - name: Install the generated projects' Node dependencies once
+        working-directory: studio-samples
+        run: |
+          npm init -y > /dev/null
+          npm install --ignore-scripts --no-audit --no-fund typescript@^5.6.3 @types/node@^22.9.0 discord.js@^14.28.0 dotenv@^16.4.5
+      - name: JavaScript projects (their own tests)
+        working-directory: studio-samples
+        run: for d in discordjs-*; do case "$d" in discordjs-ts-*) continue;; esac; echo "== $d"; (cd "$d" && node --test) || exit 1; done
+      - name: TypeScript projects (tsc --noEmit, build, tests)
+        working-directory: studio-samples
+        run: for d in discordjs-ts-*; do echo "== $d"; (cd "$d" && ../node_modules/.bin/tsc --noEmit -p . && ../node_modules/.bin/tsc -p . && node --test dist/tests/commands.test.js) || exit 1; done
+      - name: Python projects (py_compile and their tests)
+        working-directory: studio-samples
+        run: for d in discordpy-*; do echo "== $d"; (cd "$d" && python -m py_compile $(find . -name '*.py') && python -m unittest) || exit 1; done

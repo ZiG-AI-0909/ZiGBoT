@@ -164,3 +164,21 @@ test('ZiGBoT and Studio stay separate: nothing in src/ imports Studio code', () 
     for (const file of walk(path.join(ROOT, 'src'))) assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /require\([^)]*studio[^)]*\)|from\s+['"][^'"]*studio|studio_projects/i, file);
     assert.match(read('supabase', 'migrations', '20261115000000_studio_projects.sql'), /create table if not exists public\.studio_projects/);
 });
+
+// Phase 2 table: project files.
+test('files: owner-only, cannot be planted in someone else\'s project, no traversal paths, 500 KB cap', async () => {
+    await as(A);
+    const { rows: [{ id }] } = await db.query("select id from public.studio_projects where name = 'Alpha bot'");
+    await db.query("insert into public.studio_project_files (project_id, owner_id, path, content) values ($1, $2, 'src/index.js', 'x')", [id, A]);
+    await as(B);
+    assert.equal((await db.query('select * from public.studio_project_files where project_id = $1', [id])).rows.length, 0, 'B cannot read A\'s files');
+    await assert.rejects(db.query("insert into public.studio_project_files (project_id, owner_id, path, content) values ($1, $2, 'evil.js', 'x')", [id, B]), /row-level security/, 'B cannot add a file to A\'s project');
+    assert.equal((await db.query("update public.studio_project_files set content = 'hacked' where project_id = $1 returning id", [id])).rows.length, 0);
+    await as(A);
+    for (const bad of ['../etc/passwd', 'a/../../b', '/abs', 'a\b', 'has space.js']) {
+        await assert.rejects(db.query('insert into public.studio_project_files (project_id, owner_id, path, content) values ($1, $2, $3, \'x\')', [id, A, bad]), /check constraint/, bad);
+    }
+    await assert.rejects(db.query("insert into public.studio_project_files (project_id, owner_id, path, content) values ($1, $2, 'big.txt', repeat('x', 512001))", [id, A]), /check constraint/);
+    await db.query('delete from public.studio_projects where id = $1', [id]);
+    assert.equal((await db.query('select count(*)::int as n from public.studio_project_files where project_id = $1', [id])).rows[0].n, 0, 'files go with the project');
+});
