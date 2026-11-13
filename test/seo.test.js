@@ -127,3 +127,13 @@ test('brand structured data: ZiGBoT as the site name, with its real profiles', (
     assert.deepEqual(app.author.sameAs, ['https://linktr.ee/Zignamite', 'https://www.youtube.com/@yourboyzig', 'https://www.instagram.com/_yourboyzig/']);
     assert.match(read('dashboard/app/page.js'), /seo\.websiteJsonLd\(\)/);
 });
+
+test('social links are visible in the footer and match the structured data exactly', () => {
+    const links = seo.socialLinks().map((l) => l.url);
+    assert.deepEqual(links, [...seo.SAME_AS, ...seo.CREATOR.sameAs], 'same profiles as sameAs');
+    assert.ok(seo.socialLinks().every((l) => l.label && l.icon));
+    const footer = read('dashboard/components/SiteFooter.js');
+    assert.match(footer, /seo\.socialLinks\(\)/);
+    assert.match(footer, /rel="me noopener noreferrer"/);
+    assert.match(footer, /aria-label=\{s\.label\}/);
+});

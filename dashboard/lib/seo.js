@@ -67,6 +67,25 @@ const PRIVATE_PATHS = Object.freeze(['/dashboard', '/owner', '/admin', '/api', '
 // ChatGPT Search. Everyone else falls under '*', with the same rules.
 const NAMED_CRAWLERS = Object.freeze(['Googlebot', 'Bingbot', 'OAI-SearchBot', 'GPTBot']);
 
+/**
+ * Visible social links for the site footer: the SAME profiles the
+ * structured data lists (SAME_AS + the creator's), so what people see and
+ * what search engines read never drift apart. Label by host.
+ */
+const SOCIAL_LABELS = Object.freeze([
+    [/discord\.com\/discovery/, 'Discord App Directory', 'discord'],
+    [/discordbotlist\.com/, 'Discord Bot List', 'list'],
+    [/youtube\.com/, 'YouTube', 'youtube'],
+    [/instagram\.com/, 'Instagram', 'instagram'],
+    [/linktr\.ee/, 'Linktree', 'link']
+]);
+function socialLinks() {
+    return [...SAME_AS, ...CREATOR.sameAs].map((url) => {
+        const hit = SOCIAL_LABELS.find(([re]) => re.test(url));
+        return { url, label: hit ? hit[1] : new URL(url).hostname, icon: hit ? hit[2] : 'link' };
+    });
+}
+
 const absolute = (path = '/') => `${CANONICAL_ORIGIN}${path === '/' ? '/' : path}`;
 
 /** Next.js metadata for one public page: title, description, canonical, Open Graph, Twitter. */
@@ -153,6 +172,8 @@ module.exports = {
     SITE_NAME,
     ALTERNATE_NAMES,
     SAME_AS,
+    CREATOR,
+    socialLinks,
     SITE_VERIFICATION,
     OG_IMAGE,
     PUBLIC_PAGES,

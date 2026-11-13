@@ -577,3 +577,7 @@ textarea:disabled, input:disabled { opacity: 0.55; cursor: not-allowed; }
     .studio-mode, .studio-theme .card { transition: none; }
     .studio-mode:hover { transform: none; }
 }
+.footer-social { gap: 6px; flex-wrap: wrap; }
+.footer-social a { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--border); text-decoration: none; transition: color 0.15s ease, border-color 0.15s ease; }
+.footer-social a:hover { border-color: var(--accent); color: var(--text); }
+@media (max-width: 720px) { .footer-social-label { display: none; } .footer-social a { padding: 6px; } }
