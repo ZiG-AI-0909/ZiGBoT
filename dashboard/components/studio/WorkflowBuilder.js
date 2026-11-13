@@ -66,6 +66,7 @@ function Canvas({ base, workflow, catalog, onSaved }) {
     const [selected, setSelected] = useState(null);
     const [problems, setProblems] = useState(workflow.problems || []);
     const [result, setResult] = useState(null);
+    const [testing, setTesting] = useState(false);
     const [runs, setRuns] = useState(workflow.runs || []);
     const [message, setMessage] = useState(null);
     const [dirty, setDirty] = useState(false);
@@ -164,11 +165,12 @@ function Canvas({ base, workflow, catalog, onSaved }) {
     async function test() {
         const p = await save();
         if (p === null) return;
+        setTesting(true);
         try {
             const { result: r } = await call(`${base}/${workflow.id}/simulate`, { method: 'POST', body: JSON.stringify({}) });
             setResult(r);
             setRuns((await call(`${base}/${workflow.id}`)).runs);
-        } catch (e) { setMessage({ error: e.message }); }
+        } catch (e) { setMessage({ error: e.message }); } finally { setTesting(false); }
     }
     async function exportCode(write) {
         const p = await save();
@@ -281,12 +283,12 @@ function Canvas({ base, workflow, catalog, onSaved }) {
                 </aside>
             </div>
             <div className="card">
-                <h2 style={{ marginTop: 0 }}>Simulator</h2>
+                <h2 style={{ marginTop: 0 }}><span className={`live-dot ${testing ? 'is-busy' : result ? (result.ok ? 'is-ok' : 'is-bad') : ''}`} aria-hidden="true" /> Execution console</h2>
                 <p className="help">Runs on a pretend Discord: nothing is sent, no web requests, AI answers are simulated. Loops stop at 50, runs at 1000 steps or 5 seconds.</p>
                 {result ? (
                     <div aria-live="polite">
                         <strong>{result.ok ? 'Finished ✓' : `Stopped: ${result.error}`}</strong>
-                        <ol style={{ fontSize: 13 }}>{result.steps.slice(0, 200).map((s, i) => <li key={i}><code>{s.block}</code> {s.did}</li>)}</ol>
+                        <pre className="sim-console" style={{ maxHeight: 320, overflow: 'auto' }}>{result.steps.slice(0, 200).map((s, i) => `${String(i + 1).padStart(3, ' ')}  ${s.block.padEnd(22, ' ')} ${s.did}`).join('\n') || '(no steps)'}</pre>
                         {result.actions.length ? <><strong>What the bot would do</strong><ul style={{ fontSize: 13 }}>{result.actions.slice(0, 100).map((a, i) => <li key={i}>{a.did}{a.content ? `: “${a.content}”` : ''}</li>)}</ul></> : null}
                     </div>
                 ) : <p className="help">Press “Test in simulator”.</p>}

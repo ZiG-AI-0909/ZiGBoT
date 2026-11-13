@@ -527,3 +527,53 @@ textarea:disabled, input:disabled { opacity: 0.55; cursor: not-allowed; }
     .spec-card, .spec-icon, .spec-check, .spec-tool { animation: none; transition: none; }
     .spec-card:hover, .spec-card.is-selected, .spec-tool:hover { transform: none; }
 }
+
+/* ===== ZiGBoT Studio: futuristic theme (Platform Phase 2) =====
+   Dark base, slow neon orbs and a faint grid behind glass panels. Purely
+   decorative layers are aria-hidden, pointer-events:none, GPU-friendly
+   (transform/opacity only) and stop under prefers-reduced-motion. */
+.studio-theme { position: relative; isolation: isolate; min-height: 100vh; --neon-a: #22d3ee; --neon-b: #a855f7; --neon-c: #f472b6; --glass: color-mix(in srgb, var(--panel) 72%, transparent); }
+.studio-bg { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.studio-bg .orb { position: absolute; width: 520px; height: 520px; border-radius: 50%; filter: blur(80px); opacity: 0.22; will-change: transform; }
+.studio-bg .orb-a { background: var(--neon-a); top: -160px; right: -120px; animation: studio-drift 26s ease-in-out infinite alternate; }
+.studio-bg .orb-b { background: var(--neon-b); bottom: -200px; left: 10%; animation: studio-drift 32s ease-in-out infinite alternate-reverse; }
+.studio-bg .orb-c { background: var(--neon-c); top: 35%; right: 25%; width: 360px; height: 360px; opacity: 0.12; animation: studio-drift 40s ease-in-out infinite alternate; }
+.studio-bg .grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(168, 85, 247, 0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(168, 85, 247, 0.06) 1px, transparent 1px); background-size: 44px 44px; mask-image: radial-gradient(ellipse at 50% 0%, #000 30%, transparent 75%); }
+@keyframes studio-drift { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(-60px, 40px, 0) scale(1.08); } }
+.studio-content { position: relative; }
+.studio-theme .card { background: var(--glass); backdrop-filter: blur(14px) saturate(1.2); border-color: color-mix(in srgb, var(--neon-b) 22%, var(--border)); transition: border-color 0.2s ease, box-shadow 0.2s ease; }
+.studio-theme .card:hover { border-color: color-mix(in srgb, var(--neon-b) 42%, var(--border)); }
+.studio-theme h1 { letter-spacing: -0.02em; }
+.studio-theme .btn-primary { background: linear-gradient(135deg, var(--neon-b), var(--neon-c)); border: 0; box-shadow: 0 0 18px rgba(168, 85, 247, 0.35); }
+.studio-theme .btn-primary:hover:not(:disabled) { box-shadow: 0 0 28px rgba(244, 114, 182, 0.45); }
+
+/* Studio home hero */
+.studio-hero { position: relative; overflow: hidden; border-radius: 22px; padding: 28px; margin: 4px 0 20px; border: 1px solid color-mix(in srgb, var(--neon-b) 35%, var(--border)); background: linear-gradient(135deg, rgba(34, 211, 238, 0.10), rgba(168, 85, 247, 0.14) 45%, rgba(244, 114, 182, 0.10)); }
+.studio-hero h1 { font-family: var(--font-display), sans-serif; font-weight: 400; font-size: clamp(36px, 6vw, 58px); letter-spacing: 0.03em; margin: 0; background: linear-gradient(90deg, var(--neon-a), var(--neon-b), var(--neon-c)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.studio-modes { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); margin-top: 16px; }
+.studio-mode { display: grid; gap: 4px; padding: 14px 16px; border-radius: 14px; text-decoration: none; background: color-mix(in srgb, var(--panel) 60%, transparent); border: 1px solid color-mix(in srgb, var(--spec) 40%, var(--border)); transition: transform 0.18s ease, box-shadow 0.18s ease; }
+.studio-mode:hover { transform: translateY(-3px); box-shadow: 0 0 26px color-mix(in srgb, var(--spec) 35%, transparent); }
+.studio-mode strong { color: var(--spec); }
+
+/* IDE workspace (Code): explorer | editor | AI assistant, console below */
+.ide { display: grid; gap: 10px; grid-template-columns: minmax(190px, 240px) minmax(0, 1fr) minmax(240px, 300px); grid-template-areas: "explorer editor assistant" "console console console"; }
+.ide-explorer { grid-area: explorer; } .ide-editor { grid-area: editor; min-width: 0; } .ide-assistant { grid-area: assistant; } .ide-console { grid-area: console; }
+.ide-pane-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin: 0 0 8px; }
+.ide-status { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 6px 12px; border-radius: 10px; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted); background: color-mix(in srgb, #000 35%, var(--panel)); border: 1px solid var(--border); }
+.ide-console pre, .sim-console { background: #05030a; color: #d8ccef; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--neon-a) 25%, var(--border)); padding: 10px 12px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+@media (max-width: 1100px) { .ide { grid-template-columns: minmax(170px, 220px) minmax(0, 1fr); grid-template-areas: "explorer editor" "assistant assistant" "console console"; } }
+@media (max-width: 720px) { .ide { grid-template-columns: 1fr; grid-template-areas: "editor" "explorer" "assistant" "console"; } }
+
+/* Live / running indicators */
+.live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); vertical-align: middle; }
+.live-dot.is-ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.live-dot.is-busy { background: var(--neon-a); box-shadow: 0 0 10px var(--neon-a); animation: live-pulse 1s ease-in-out infinite; }
+.live-dot.is-warn { background: var(--warn); }
+.live-dot.is-bad { background: var(--danger); }
+@keyframes live-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.6); opacity: 0.5; } }
+
+@media (prefers-reduced-motion: reduce) {
+    .studio-bg .orb, .live-dot.is-busy { animation: none; }
+    .studio-mode, .studio-theme .card { transition: none; }
+    .studio-mode:hover { transform: none; }
+}

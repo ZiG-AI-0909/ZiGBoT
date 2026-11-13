@@ -20,6 +20,41 @@ async function call(url, options = {}) {
     return body;
 }
 
+/**
+ * AI assistant pane (right side of the IDE): ask the AI creator for a change
+ * to this project. It creates a pending proposal (plan + diffs) that is only
+ * written after you approve it on the AI page; nothing changes here.
+ */
+function AssistantPane({ base, openPath, projectId }) {
+    const [text, setText] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [note, setNote] = useState(null);
+    async function ask(e) {
+        e.preventDefault();
+        setBusy(true); setNote(null);
+        try {
+            const request = openPath ? `${text}\n(The owner is looking at ${openPath}.)` : text;
+            await call(`${base}/ai`, { method: 'POST', body: JSON.stringify({ request }) });
+            setText('');
+            setNote({ ok: true });
+        } catch (err) { setNote({ error: err.message }); } finally { setBusy(false); }
+    }
+    return (
+        <aside className="card ide-assistant stack" aria-label="AI assistant">
+            <p className="ide-pane-title">AI assistant <span className={`live-dot ${busy ? 'is-busy' : 'is-ok'}`} aria-hidden="true" /></p>
+            <form className="stack" onSubmit={ask}>
+                <label className="sr-only" htmlFor="ide-ask">Ask the AI for a change</label>
+                <textarea id="ide-ask" rows={5} maxLength={1900} value={text} onChange={(e) => setText(e.target.value)} disabled={busy}
+                    placeholder={openPath ? `Change something in ${openPath.split('/').pop()}…` : 'Describe a change…'} />
+                <button className="btn btn-primary" type="submit" disabled={busy || !text.trim()} aria-busy={busy}>{busy ? 'Thinking…' : 'Propose change'}</button>
+            </form>
+            {note?.ok ? <p className="help" role="status">Proposal ready. <a href={`/studio/${projectId}/ai`}>Review the diff and approve →</a></p> : null}
+            {note?.error ? <p className="error" role="alert">{note.error}</p> : null}
+            <p className="help" style={{ margin: 0 }}>Nothing is written until you approve. For your own Claude or OpenAI agent, open the <a href={`/studio/${projectId}/ai`}>AI page</a>.</p>
+        </aside>
+    );
+}
+
 export default function CodeStudio({ projectId }) {
     const base = `/api/studio/projects/${projectId}`;
     const [files, setFiles] = useState([]);
@@ -34,6 +69,7 @@ export default function CodeStudio({ projectId }) {
     const [newVar, setNewVar] = useState({ name: '', value: '' });
     const [checkInfo, setCheckInfo] = useState({ checks: [], notAvailable: [] });
     const [checkResult, setCheckResult] = useState(null);
+    const [busyCheck, setBusyCheck] = useState(false);
 
     const say = (ok, error) => setMessage(error ? { error } : { ok });
     const loadFiles = useCallback(() => call(`${base}/files`).then((b) => setFiles(b.files)).catch((e) => say(null, e.message)), [base]);
@@ -87,7 +123,8 @@ export default function CodeStudio({ projectId }) {
         } catch (e) { say(null, e.message); }
     }
     async function runCheck(id) {
-        try { setCheckResult((await call(`${base}/checks`, { method: 'POST', body: JSON.stringify({ check: id }) })).result); } catch (e) { say(null, e.message); }
+        setBusyCheck(true);
+        try { setCheckResult((await call(`${base}/checks`, { method: 'POST', body: JSON.stringify({ check: id }) })).result); setPanel('checks'); } catch (e) { say(null, e.message); } finally { setBusyCheck(false); }
     }
     async function saveVar(e) {
         e.preventDefault();
@@ -104,8 +141,15 @@ export default function CodeStudio({ projectId }) {
         <div className="stack">
             {message?.error ? <p className="error" role="alert">{message.error}</p> : null}
             {message?.ok ? <p className="help" role="status">{message.ok}</p> : null}
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 260px) 1fr', gap: 12 }}>
-                <nav className="card" aria-label="Files" style={{ overflow: 'auto', maxHeight: '75vh' }}>
+            <div className="ide-status" role="status" aria-label="Workspace status">
+                <span><span className={`live-dot ${busyCheck ? 'is-busy' : dirty ? 'is-warn' : 'is-ok'}`} /> {busyCheck ? 'Checking…' : dirty ? 'Unsaved changes' : 'All changes saved'}</span>
+                <span>{files.length} files</span>
+                {open ? <span>{open.path} · {LANGUAGE(open.path)}</span> : null}
+                {checkResult ? <span>{checkResult.label}: {checkResult.ok ? 'ok ✓' : `${checkResult.problems.length} problem(s)`}</span> : null}
+            </div>
+            <div className="ide">
+                <nav className="card ide-explorer" aria-label="Files" style={{ overflow: 'auto', maxHeight: '75vh' }}>
+                    <p className="ide-pane-title">Explorer</p>
                     <form onSubmit={search} className="row" style={{ gap: 6 }}>
                         <label className="sr-only" htmlFor="cs-search">Search files</label>
                         <input id="cs-search" type="search" placeholder="Search" value={query} onChange={(e) => setQuery(e.target.value)} style={{ minWidth: 0, flex: 1 }} />
@@ -124,8 +168,9 @@ export default function CodeStudio({ projectId }) {
                         ))}
                     </ul>
                 </nav>
-                <div className="stack" style={{ minWidth: 0 }}>
-                    <div className="card" style={{ padding: 8 }}>
+                <AssistantPane base={base} openPath={open?.path} projectId={projectId} />
+                <div className="ide-editor-wrap" style={{ display: 'contents' }}>
+                    <div className="card ide-editor" style={{ padding: 8 }}>
                         <div className="row" style={{ justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
                             <strong>{open ? `${open.path}${dirty ? ' •' : ''}` : 'Pick a file'}</strong>
                             {open ? <button className="btn btn-primary" type="button" onClick={save} disabled={!dirty}>Save</button> : null}
@@ -135,7 +180,8 @@ export default function CodeStudio({ projectId }) {
                                 onChange={(value) => setOpen((o) => ({ ...o, content: value ?? '' }))} options={{ minimap: { enabled: false }, fontSize: 14, tabSize: 4 }} />
                         ) : <p className="help">Choose a file on the left.</p>}
                     </div>
-                    <div className="card">
+                    <div className="card ide-console">
+                        <p className="ide-pane-title">Output &amp; tools</p>
                         <div className="tabs" role="tablist" aria-label="Panels">
                             {[['checks', 'Checks'], ['history', 'History'], ['search', 'Search'], ['env', 'Environment']].map(([id, label]) => (
                                 <button key={id} type="button" role="tab" className="tab" aria-selected={panel === id} onClick={() => setPanel(id)}>{label}</button>
