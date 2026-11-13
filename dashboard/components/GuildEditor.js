@@ -8,6 +8,7 @@ import LanguageSelect from './LanguageSelect';
 import PersonaTemplates from './PersonaTemplates';
 import AddonsTab from './AddonsTab';
 import AnalyticsTab from './AnalyticsTab';
+import { useSectionNav } from './AppShell';
 
 const TABS = [
     { id: 'behaviour', label: 'AI behaviour' },
@@ -27,6 +28,9 @@ const TABS = [
     { id: 'premium', label: '💎 Premium' },
     { id: 'history', label: 'History' }
 ];
+// Sidebar icons for the sections (components/AppShell.js icon names).
+const TAB_ICONS = { behaviour: 'ai', roles: 'staff', channels: 'hash', utilities: 'tool', features: 'studio', moderation: 'shield', tickets: 'ticket', addons: 'plus', analytics: 'chart', antinuke: 'shield', music: 'music', voice: 'mic', identity: 'card', test: 'play', premium: 'gem', history: 'clock' };
+const plainLabel = (label) => label.replace(/^[^\p{L}\p{N}]+/u, '');
 
 const TONE_LABELS = { gentle: 'Gentle', savage: 'Savage roast', neutral: 'Neutral helper' };
 const TONE_HELP = {
@@ -142,6 +146,18 @@ export default function GuildEditor({ initial, meta }) {
     const withLanguage = (config) => (languageValues.includes(config.language) ? config : { ...config, language: meta.defaultLanguage });
     const formOf = (config) => withLanguage(stripMeta(config));
     const [tab, setTab] = useState('behaviour');
+    // The sections live in the app sidebar; #section in the URL keeps the
+    // open one across reloads and makes it linkable.
+    const visibleTabs = TABS.filter((t) => t.id !== 'identity' || meta.identityEnabled);
+    useEffect(() => {
+        const fromHash = window.location.hash.slice(1);
+        if (visibleTabs.some((t) => t.id === fromHash)) setTab(fromHash);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    useEffect(() => {
+        if (window.location.hash.slice(1) !== tab) window.history.replaceState(null, '', `#${tab}`);
+    }, [tab]);
+    const inSidebar = useSectionNav({ label: 'Settings', active: tab, onSelect: setTab, items: visibleTabs.map((t) => ({ id: t.id, label: plainLabel(t.label), icon: TAB_ICONS[t.id] })) });
     const [saved, setSaved] = useState(initial.config);
     const [draft, setDraft] = useState(formOf(initial.config));
     const [savedMappings, setSavedMappings] = useState(initial.mappings);
@@ -266,12 +282,13 @@ export default function GuildEditor({ initial, meta }) {
                 </p>
             ) : null}
 
-            <div className="tabs" role="tablist" aria-label="Settings sections">
+            <div className="tabs" role="tablist" aria-label="Settings sections" hidden={inSidebar}>
                 {TABS.filter((t) => t.id !== 'identity' || meta.identityEnabled).map((t) => (
                     <button key={t.id} role="tab" className="tab" aria-selected={tab === t.id} aria-controls={`panel-${t.id}`} id={`tab-${t.id}`} onClick={() => setTab(t.id)}>{t.label}</button>
                 ))}
             </div>
 
+            {inSidebar ? <h2 className="section-title">{plainLabel(TABS.find((t) => t.id === tab)?.label || '')}</h2> : null}
             <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
                 {tab === 'behaviour' ? <BehaviourTab draft={draft} saved={saved} set={set} errors={fieldErrors} meta={meta} premium={premium} channels={channels} staleLanguage={staleLanguage} updateDraft={setDraft} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'roles' ? <ServerSetupCard draft={draft} set={set} errors={fieldErrors} roles={roles} /> : null}

@@ -49,3 +49,14 @@ test('context groups only appear for real ids (UUID project, snowflake server)',
     assert.match(shell, /parts\[0\] === 'dashboard' && SNOWFLAKE\.test\(parts\[1\] \|\| ''\)/);
     assert.doesNotMatch(shell, /supabase|fetch\(/, 'navigation only: no data access in the shell');
 });
+
+test('server settings sections live in the sidebar (old tab bar hidden, same tabs, #section links)', () => {
+    const editor = read('components', 'GuildEditor.js');
+    assert.match(editor, /useSectionNav\(\{ label: 'Settings', active: tab, onSelect: setTab, items: visibleTabs\.map/);
+    assert.match(editor, /const visibleTabs = TABS\.filter\(\(t\) => t\.id !== 'identity' \|\| meta\.identityEnabled\)/, 'identity only when enabled');
+    assert.match(editor, /role="tablist" aria-label="Settings sections" hidden=\{inSidebar\}/);
+    assert.match(editor, /visibleTabs\.some\(\(t\) => t\.id === fromHash\)/, 'only known sections from the URL');
+    assert.match(read('app', 'globals.css'), /\.tabs\[hidden\] \{ display: none; \}/);
+    assert.match(shell, /item\.sectionsHere && sections && pathname === item\.href/);
+    assert.match(shell, /sections\.onSelect\(s\.id\); setOpen\(false\);/, 'picking a section closes the mobile drawer');
+});

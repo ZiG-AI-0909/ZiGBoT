@@ -464,3 +464,5 @@ textarea:disabled, input:disabled { opacity: 0.55; cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
     .app-shell, .app-sidebar, .nav-link, .app-collapse-btn .nav-icon { transition: none; }
 }
+.section-title { font-family: var(--font-display), sans-serif; font-weight: 400; font-size: 28px; letter-spacing: 0.04em; margin: 18px 0 12px; }
+.tabs[hidden] { display: none; }

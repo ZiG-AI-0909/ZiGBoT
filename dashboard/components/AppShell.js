@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -29,8 +29,38 @@ const ICONS = {
     collapse: 'M15 6l-6 6 6 6',
     menu: 'M4 6h16M4 12h16M4 18h16',
     close: 'M6 6l12 12M18 6L6 18',
-    logout: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10'
+    logout: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10',
+    hash: 'M5 9h14M5 15h14M10 4L8 20M16 4l-2 16',
+    tool: 'M14 6a4 4 0 00-5 5l-5 5 3 3 5-5a4 4 0 005-5l-2 2-3-1-1-3z',
+    shield: 'M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z',
+    ticket: 'M4 7h16v3a2 2 0 000 4v3H4v-3a2 2 0 000-4zM14 7v10',
+    chart: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
+    music: 'M9 18V5l11-2v13M9 18a3 3 0 11-6 0 3 3 0 016 0zM20 16a3 3 0 11-6 0 3 3 0 016 0z',
+    mic: 'M12 3a3 3 0 013 3v6a3 3 0 01-6 0V6a3 3 0 013-3zM5 11a7 7 0 0014 0M12 18v3',
+    card: 'M3 6h18v12H3zM7 10h4M7 14h6M15 10h2',
+    play: 'M7 4l13 8-13 8z',
+    gem: 'M6 4h12l3 5-9 11L3 9zM3 9h18M9 4l3 16 3-16',
+    clock: 'M12 3a9 9 0 110 18 9 9 0 010-18zM12 7v5l3 2'
 };
+
+/**
+ * In-page sections a page can put in the sidebar (e.g. the server settings
+ * tabs). The page registers { label, items: [{ id, label, icon }], active,
+ * onSelect }; the sidebar shows them as a group and calls onSelect.
+ */
+const SectionNavContext = createContext(null);
+
+export function useSectionNav(config) {
+    const set = useContext(SectionNavContext);
+    const key = config ? `${config.label}|${config.active}|${config.items.map((i) => i.id).join(',')}` : '';
+    useEffect(() => {
+        if (!set) return undefined;
+        set(config);
+        return () => set(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [set, key]);
+    return Boolean(set);
+}
 
 function Icon({ name }) {
     return (
@@ -68,7 +98,7 @@ export function navFor(pathname) {
     if (parts[0] === 'dashboard' && SNOWFLAKE.test(parts[1] || '')) {
         const base = `/dashboard/${parts[1]}`;
         groups.push({ label: 'This server', items: [
-            { href: base, label: 'Settings', icon: 'overview', exact: true },
+            { href: base, label: 'Settings', icon: 'overview', exact: true, sectionsHere: true },
             { href: `${base}/staff`, label: 'Staff access', icon: 'staff' }
         ] });
     }
@@ -84,6 +114,7 @@ export default function AppShell({ children, contactUrl }) {
     const pathname = usePathname() || '';
     const [collapsed, setCollapsed] = useState(false);
     const [open, setOpen] = useState(false);
+    const [sections, setSections] = useState(null);
 
     useEffect(() => { try { setCollapsed(window.localStorage.getItem(STORAGE_KEY) === '1'); } catch { /* storage unavailable */ } }, []);
     useEffect(() => { setOpen(false); }, [pathname]);
@@ -121,6 +152,20 @@ export default function AppShell({ children, contactUrl }) {
                             <div className="nav-group-label">{g.label}</div>
                             <ul>
                                 {g.items.map((item) => {
+                                    // The page's own sections replace its single "Settings" link.
+                                    if (item.sectionsHere && sections && pathname === item.href) {
+                                        return sections.items.map((s) => {
+                                            const on = s.id === sections.active;
+                                            return (
+                                                <li key={`section-${s.id}`}>
+                                                    <button type="button" className={`nav-link nav-button${on ? ' is-active' : ''}`} aria-current={on ? 'page' : undefined} title={collapsed ? s.label : undefined}
+                                                        onClick={() => { sections.onSelect(s.id); setOpen(false); }}>
+                                                        <Icon name={ICONS[s.icon] ? s.icon : 'overview'} /><span className="nav-label">{s.label}</span>
+                                                    </button>
+                                                </li>
+                                            );
+                                        });
+                                    }
                                     const active = isActive(pathname, item);
                                     return (
                                         <li key={item.href}>
@@ -144,7 +189,9 @@ export default function AppShell({ children, contactUrl }) {
                     </button>
                 </div>
             </aside>
-            <main id="app-main" className="app-main">{children}</main>
+            <main id="app-main" className={`app-main${sections ? ' has-section-nav' : ''}`}>
+                <SectionNavContext.Provider value={setSections}>{children}</SectionNavContext.Provider>
+            </main>
         </div>
     );
 }
