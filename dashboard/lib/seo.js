@@ -33,14 +33,14 @@ const CREATOR = Object.freeze({
 // Search engine ownership checks (public tokens, not secrets). Google also
 // has the HTML-file method: public/google4f033dbcc41e6d42.html.
 const SITE_VERIFICATION = Object.freeze({ google: 'cWplGzZ-DLyFscyRzBmgugKqMVFaMEkEy8cwa4Zx33o' });
-const OG_IMAGE = Object.freeze({ path: '/opengraph-image', width: 1200, height: 630, alt: 'ZiGBoT, the ZiG mascot, a Discord bot with a personality and memory you control' });
+const OG_IMAGE = Object.freeze({ path: '/opengraph-image', width: 1200, height: 630, alt: 'ZiGBoT, your AI-powered Discord command center' });
 
 /** Indexable pages, each with a unique title and description. */
 const PUBLIC_PAGES = Object.freeze([
     Object.freeze({
         path: '/',
-        title: 'ZiGBoT · the Discord bot with a personality and memory you control',
-        description: 'ZiGBoT chats, roasts (nicely), plays music and helps moderate your Discord server — and lets you see, fix and delete anything it remembers about you.'
+        title: 'ZiGBoT · Your AI-Powered Discord Command Center',
+        description: 'More than a chatbot: an AI platform to chat, code your own Discord bot, design automations and manage your server, with memory you control.'
     }),
     Object.freeze({
         path: '/commands',
@@ -60,7 +60,7 @@ const PUBLIC_PAGES = Object.freeze([
 ]);
 
 /** Never indexed: signed-in areas, the owner's tools, the API and login steps. */
-const PRIVATE_PATHS = Object.freeze(['/dashboard', '/owner', '/admin', '/api', '/auth']);
+const PRIVATE_PATHS = Object.freeze(['/dashboard', '/owner', '/admin', '/api', '/auth', '/studio']);
 
 // Search crawlers we name explicitly. GPTBot (OpenAI model training) is
 // allowed on public pages only, by the owner's decision; OAI-SearchBot is
@@ -116,7 +116,7 @@ function softwareApplicationJsonLd({ description, features = [] }) {
         image: absolute(OG_IMAGE.path),
         sameAs: [...SAME_AS],
         author: { '@type': 'Person', name: CREATOR.name, alternateName: CREATOR.alternateName, url: CREATOR.url, sameAs: [...CREATOR.sameAs] },
-        applicationCategory: 'CommunicationApplication',
+        applicationCategory: 'DeveloperApplication',
         operatingSystem: 'Discord',
         description,
         featureList: features.map((f) => `${f.title}${f.badge ? ` (${f.badge})` : ''}`)

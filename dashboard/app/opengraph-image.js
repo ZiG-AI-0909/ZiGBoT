@@ -18,7 +18,8 @@ export default async function OpenGraphImage() {
                 <img src={src} width={380} height={380} style={{ borderRadius: 190, boxShadow: '0 0 80px rgba(192, 132, 252, 0.6)' }} alt="" />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 620 }}>
                     <div style={{ fontSize: 88, fontWeight: 800, letterSpacing: 2, color: '#e879f9' }}>ZiGBoT</div>
-                    <div style={{ fontSize: 40, lineHeight: 1.2 }}>The Discord bot with a personality and memory you control.</div>
+                    <div style={{ fontSize: 40, lineHeight: 1.2 }}>Your AI-powered Discord command center.</div>
+                    <div style={{ fontSize: 30, lineHeight: 1.25, color: '#e9d5ff' }}>Build. Automate. Create. All with AI.</div>
                     <div style={{ fontSize: 28, color: '#c4b5fd' }}>zigbot.in</div>
                 </div>
             </div>

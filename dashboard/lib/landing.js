@@ -22,8 +22,9 @@ const OPT_IN_LABEL = 'Opt-in · when enabled';
 const PREMIUM_LABEL = 'Premium';
 
 const hero = {
-    headline: 'Your server\'s main character just dropped.',
-    pitch: 'ZiGBoT chats, roasts (nicely), remembers what you let it — and lets you delete it anytime.',
+    headline: 'Build. Automate. Create. All with AI.',
+    kicker: 'Your AI-powered Discord command center',
+    pitch: 'More than a chatbot: ZiGBoT chats, remembers only what you allow, plays music and helps moderate — and ZiGBoT Studio lets you code bots, design automations and build with AI, all from one place.',
     note: 'Never asks for Administrator.'
 };
 
@@ -214,6 +215,77 @@ function freeAnswer({ customIdentity = false } = {}) {
     return `Yes. Chat, memory, moderation and setup are free (with up to ${FREE_LIMITS.roleMappings} role mappings). Premium, per server, adds ${perks.join(', ')}, and ${features}.`;
 }
 
+// What ZiGBoT is, in one paragraph (product introduction).
+const intro = {
+    title: 'One platform for your Discord community',
+    text: 'Add the ZiGBoT bot for AI chat, memory you control, music and moderation. Open ZiGBoT Studio when you want your own bot: write the code, wire up automations visually, and let AI propose changes you review before anything is saved.'
+};
+
+/**
+ * ZiGBoT Studio's modes. status 'available' = shipped and linked to its code;
+ * 'coming_soon' = planned, shown as such (never as a working feature).
+ */
+const studioModes = [
+    {
+        id: 'coding',
+        icon: '⌨️',
+        title: 'AI Coding Studio',
+        status: 'available',
+        text: 'A real code editor for your own Discord bot, with an AI creator that proposes changes you approve.',
+        points: [
+            'Starter projects for discord.js (JavaScript or TypeScript) and discord.py',
+            'Monaco editor with file tree, search and version history',
+            'AI creator: describe a change, review the plan and diffs, then approve',
+            'Static checks for structure, syntax and lint',
+            'Run it on your own machine with the self-hosted runner'
+        ],
+        sources: ['dashboard/components/studio/CodeStudio.js', 'dashboard/lib/studio/generators/index.js', 'dashboard/lib/studio/aiCreator.js', 'dashboard/lib/studio/checks.js', 'dashboard/public/runner/zigbot-runner.mjs']
+    },
+    {
+        id: 'workflows',
+        icon: '🔀',
+        title: 'Visual Workflow Automation',
+        status: 'available',
+        text: 'Drag blocks onto a canvas to describe what your bot should do, and test it safely before it goes anywhere.',
+        points: [
+            'Triggers, conditions, actions, AI, logic and integration blocks',
+            'Validation catches cycles, unreachable steps and bad settings',
+            'Test runs in a simulator: nothing is sent to Discord',
+            'Export a workflow as discord.js code',
+            'Designing is free; activating workflows is Premium'
+        ],
+        sources: ['dashboard/components/studio/WorkflowBuilder.js', 'dashboard/lib/studio/workflows.js', 'dashboard/lib/studio/entitlements.js']
+    },
+    {
+        id: 'prompt',
+        icon: '✨',
+        title: 'Prompt Engineering Studio',
+        status: 'coming_soon',
+        text: 'Turn plain-language instructions into prompts, agent setups and project plans.',
+        points: ['Prompt writing and optimisation', 'Multi-step instructions and project planning', 'Connect supported AI coding agents'],
+        sources: ['ZIGBOT_STUDIO_MASTER.md']
+    }
+];
+
+// Product updates: newest first, each tied to what shipped.
+const updates = [
+    { date: '2026-11', title: 'Self-hosted runner', text: 'Pair your own VPS or PC and deploy, start, stop and watch logs from the Deployments page.', sources: ['dashboard/public/runner/zigbot-runner.mjs', 'dashboard/app/api/runner/pair/route.js'] },
+    { date: '2026-11', title: 'Premium automations', text: 'Design and test workflows for free; activate them with Premium.', sources: ['dashboard/lib/studio/entitlements.js'] },
+    { date: '2026-11', title: 'New dashboard navigation', text: 'A sidebar for servers, Studio and every server setting.', sources: ['dashboard/components/AppShell.js'] },
+    { date: '2026-11', title: 'ZiGBoT Studio', text: 'Code editor, visual builder, AI creator and template marketplace for your own bots.', sources: ['dashboard/app/studio/page.js', 'dashboard/app/studio/marketplace/page.js'] }
+];
+
+const studioFaq = [
+    {
+        q: 'What is ZiGBoT Studio?',
+        a: 'A workspace in the dashboard for building your own Discord bot: generate a starter project, edit the code, design automations visually and ask the AI creator for changes you approve. Sign in with Discord to open it.'
+    },
+    {
+        q: 'Where does my Studio bot run?',
+        a: 'On a machine you control: pair the ZiGBoT runner on your VPS or PC and deploy from the Deployments page. Hosting by ZiGBoT is coming soon.'
+    }
+];
+
 const faq = [
     {
         q: 'Is it free?',
@@ -234,7 +306,8 @@ const faq = [
     {
         q: 'Does it work in voice?',
         a: 'Yes — on Premium servers it can join your voice channel, listen, and talk back. Music works there too.'
-    }
+    },
+    ...studioFaq
 ];
 
 /**
@@ -260,6 +333,9 @@ module.exports = {
     IDENTITY_OWNER_STEP,
     PERK_ROW_LABELS,
     hero,
+    intro,
+    studioModes,
+    updates,
     demoScenes,
     steps,
     features,

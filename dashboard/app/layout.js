@@ -14,7 +14,7 @@ export const metadata = {
     // Google Search Console ownership (meta-tag method).
     verification: { google: seo.SITE_VERIFICATION.google },
     title: 'ZiGBoT Dashboard',
-    description: 'Configure ZiGBoT for your Discord servers: AI personality, role behaviour, and channels.'
+    description: 'ZiGBoT, your AI-powered Discord command center: configure the bot, build your own with ZiGBoT Studio, and automate your server.'
 };
 
 export const viewport = { width: 'device-width', initialScale: 1 };

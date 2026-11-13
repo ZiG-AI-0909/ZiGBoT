@@ -23,6 +23,8 @@ export const dynamic = 'force-dynamic';
 
 // ZiGBoT's public listing in Discord's App Directory.
 const APP_DIRECTORY_URL = 'https://discord.com/discovery/applications/1539530458390593576';
+// The feature grid shows the first few cards; the rest open on demand.
+const FEATURES_SHOWN = 6;
 
 const ERRORS = {
     login_failed: 'Discord login did not complete. Please try again.',
@@ -70,6 +72,7 @@ export default async function Home({ searchParams }) {
     }
     const servers = await publicServerCount();
     const dashboardHref = current ? '/dashboard' : '/auth/login';
+    const studioHref = current ? '/studio' : '/auth/login';
     // Custom bot identity is advertised only while it is on for every server
     // (no CUSTOM_IDENTITY_GUILDS pilot list), so "Premium servers can" is true.
     const { features, faq, ownerSteps, comparison } = landing.landingContent({
@@ -78,6 +81,19 @@ export default async function Home({ searchParams }) {
 
     // Structured data only for what this page shows: the site's name, the
     // product (pitch and the feature cards below) and the FAQ rendered below.
+    const featureCard = (feature, i) => (
+        <Reveal as="article" key={feature.id} className="l-feature card" delay={(i % 3) * 80}>
+            <div className="spread">
+                <span className="l-feature-icon" aria-hidden="true">{feature.icon}</span>
+                {feature.badge ? <span className={`pill ${feature.badge === landing.PREMIUM_LABEL ? 'pill-premium' : 'pill-optin'}`}>{feature.badge}</span> : null}
+            </div>
+            <h3>{feature.title}</h3>
+            {feature.preview === 'identity' ? <IdentitySwap /> : null}
+            <p className="muted small">{feature.text}</p>
+            {feature.attribution ? <p className="small l-attribution">{feature.attribution}</p> : null}
+        </Reveal>
+    );
+
     const jsonLd = [
         seo.websiteJsonLd(),
         seo.softwareApplicationJsonLd({ description: landing.hero.pitch, features }),
@@ -97,7 +113,7 @@ export default async function Home({ searchParams }) {
             {/* 1. Hero */}
             <section className="l-hero" aria-labelledby="hero-title">
                 <div className="l-hero-copy">
-                    <p className="l-kicker">Discord bot · chat · memory · music · moderation</p>
+                    <p className="l-kicker">{landing.hero.kicker}</p>
                     <h1 id="hero-title" className="l-title">
                         {/* The space goes BETWEEN the inline-block words: a trailing
                             space inside an inline-block is dropped by the browser. */}
@@ -112,7 +128,8 @@ export default async function Home({ searchParams }) {
                     <div className="row l-ctas">
                         {invite ? <a className="btn btn-primary btn-lg l-glow" href={invite} target="_blank" rel="noreferrer">➕ Add to Discord</a> : null}
                         <a className="btn btn-lg" href={APP_DIRECTORY_URL} target="_blank" rel="noreferrer">View in App Directory ↗</a>
-                        <Link className="btn btn-lg" href="/commands">See commands →</Link>
+                        <a className="btn btn-lg" href={studioHref}>Open ZiGBoT Studio →</a>
+                        <Link className="btn btn-ghost btn-lg" href="/commands">See commands</Link>
                         {current ? <Link className="btn btn-ghost btn-lg" href="/dashboard">Open dashboard</Link> : null}
                     </div>
                     {servers > 0 ? <p className="l-servers"><strong>{servers.toLocaleString('en-IN')}</strong> {servers === 1 ? 'server uses' : 'servers use'} ZiGBoT</p> : null}
@@ -121,16 +138,46 @@ export default async function Home({ searchParams }) {
                 <HeroOrb />
             </section>
 
-            {/* 2. Live chat demo */}
+            {/* 2. Product introduction */}
+            <Reveal as="section" className="l-section l-intro" aria-labelledby="intro-title">
+                <h2 id="intro-title" className="l-h2">{landing.intro.title}</h2>
+                <p className="muted l-lead">{landing.intro.text}</p>
+            </Reveal>
+
+            {/* 3-5. ZiGBoT Studio: AI coding, visual workflows, prompt engineering */}
+            <section className="l-section" aria-labelledby="studio-title">
+                <Reveal>
+                    <h2 id="studio-title" className="l-h2">ZiGBoT <span className="l-grad">Studio</span></h2>
+                    <p className="muted l-lead">Build smarter. Automate faster. Your own bot, from first line to running on your server.</p>
+                </Reveal>
+                <div className="l-studio">
+                    {landing.studioModes.map((mode, i) => (
+                        <Reveal as="article" key={mode.id} id={`studio-${mode.id}`} className={`l-studio-card card${mode.status === 'coming_soon' ? ' is-soon' : ''}`} delay={i * 90}>
+                            <div className="spread">
+                                <span className="l-feature-icon" aria-hidden="true">{mode.icon}</span>
+                                {mode.status === 'coming_soon' ? <span className="pill">Coming soon</span> : <span className="pill pill-ok">Available</span>}
+                            </div>
+                            <h3>{mode.title}</h3>
+                            <p className="muted small">{mode.text}</p>
+                            <ul className="l-studio-points">{mode.points.map((p) => <li key={p}>{p}</li>)}</ul>
+                        </Reveal>
+                    ))}
+                </div>
+                <div className="row">
+                    <a className="btn btn-primary btn-lg l-glow" href={studioHref}>{current ? 'Open ZiGBoT Studio' : 'Sign in to open Studio'}</a>
+                </div>
+            </section>
+
+            {/* 7. Discord integration: live chat demo */}
             <Reveal as="section" className="l-section" aria-labelledby="demo-title">
                 <h2 id="demo-title" className="l-h2">See it in action</h2>
                 <p className="muted l-lead">Four quick scenes. It&apos;s a demo, but every reply format is the real thing.</p>
                 <ChatDemo scenes={landing.demoScenes} />
             </Reveal>
 
-            {/* 3. How it works */}
+            {/* How the bot works in Discord */}
             <section className="l-section" aria-labelledby="how-title">
-                <Reveal><h2 id="how-title" className="l-h2">How ZiGBoT works</h2></Reveal>
+                <Reveal><h2 id="how-title" className="l-h2">How ZiGBoT works in Discord</h2></Reveal>
                 <ol className="l-steps">
                     {landing.steps.map((step, i) => (
                         <Reveal as="li" key={step.title} className="l-step card" delay={i * 90}>
@@ -144,21 +191,16 @@ export default async function Home({ searchParams }) {
 
             {/* 4. Features */}
             <section className="l-section" aria-labelledby="features-title">
-                <Reveal><h2 id="features-title" className="l-h2">What it does</h2></Reveal>
+                <Reveal><h2 id="features-title" className="l-h2">The AI in your server</h2></Reveal>
                 <div className="l-features">
-                    {features.map((feature, i) => (
-                        <Reveal as="article" key={feature.id} className="l-feature card" delay={(i % 3) * 80}>
-                            <div className="spread">
-                                <span className="l-feature-icon" aria-hidden="true">{feature.icon}</span>
-                                {feature.badge ? <span className={`pill ${feature.badge === landing.PREMIUM_LABEL ? 'pill-premium' : 'pill-optin'}`}>{feature.badge}</span> : null}
-                            </div>
-                            <h3>{feature.title}</h3>
-                            {feature.preview === 'identity' ? <IdentitySwap /> : null}
-                            <p className="muted small">{feature.text}</p>
-                            {feature.attribution ? <p className="small l-attribution">{feature.attribution}</p> : null}
-                        </Reveal>
-                    ))}
+                    {features.slice(0, FEATURES_SHOWN).map(featureCard)}
                 </div>
+                {features.length > FEATURES_SHOWN ? (
+                    <details className="l-more">
+                        <summary>Show all {features.length} features</summary>
+                        <div className="l-features">{features.slice(FEATURES_SHOWN).map(featureCard)}</div>
+                    </details>
+                ) : null}
             </section>
 
             {/* 5. Why it's different */}
@@ -178,11 +220,11 @@ export default async function Home({ searchParams }) {
             </section>
 
             {/* Premium */}
-            <Reveal as="section" className="l-section" aria-labelledby="premium-title">
+            <Reveal as="section" id="pricing" className="l-section" aria-labelledby="premium-title">
                 <div className="l-premium">
                     <div className="l-premium-inner">
                         <h2 id="premium-title" className="l-h2">💎 ZiGBoT <span className="l-grad">Premium</span></h2>
-                        <p className="muted">Free does the vibes. Premium turns the volume up — per server.</p>
+                        <p className="muted">Free does the vibes. Premium turns the volume up — per server. Admins of a Premium server can also activate their ZiGBoT Studio automations.</p>
                         {prices.monthly || prices.yearly ? (
                             <p className="l-prices">
                                 {prices.monthly ? <span><strong>{prices.monthly}</strong> monthly</span> : null}
@@ -222,7 +264,20 @@ export default async function Home({ searchParams }) {
                 </div>
             </Reveal>
 
-            {/* 6. For server owners */}
+            {/* 9. Product updates */}
+            <section className="l-section" aria-labelledby="updates-title">
+                <Reveal><h2 id="updates-title" className="l-h2">What&apos;s new</h2></Reveal>
+                <ol className="l-updates">
+                    {landing.updates.map((u, i) => (
+                        <Reveal as="li" key={u.title} className="l-update" delay={i * 70}>
+                            <time className="pill" dateTime={u.date}>{new Date(`${u.date}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' })}</time>
+                            <div><h3>{u.title}</h3><p className="muted small">{u.text}</p></div>
+                        </Reveal>
+                    ))}
+                </ol>
+            </section>
+
+            {/* For server owners */}
             <section className="l-section" aria-labelledby="owners-title">
                 <Reveal><h2 id="owners-title" className="l-h2">For server owners</h2></Reveal>
                 <ol className="l-owner-steps">
@@ -258,9 +313,10 @@ export default async function Home({ searchParams }) {
 
             {/* 8. Final CTA */}
             <Reveal as="section" className="l-section l-final" aria-labelledby="final-title">
-                <h2 id="final-title" className="l-h2 l-big">Ready to give your server <span className="l-grad">a main character?</span></h2>
+                <h2 id="final-title" className="l-h2 l-big">Your server&apos;s <span className="l-grad">AI command center</span> is one click away.</h2>
                 <div className="row l-ctas">
                     {invite ? <a className="btn btn-primary btn-lg l-glow" href={invite} target="_blank" rel="noreferrer">➕ Add to Discord</a> : null}
+                    <a className="btn btn-lg" href={studioHref}>Open ZiGBoT Studio</a>
                     <a className="btn btn-lg" href={APP_DIRECTORY_URL} target="_blank" rel="noreferrer">View in App Directory ↗</a>
                     <Link className="btn btn-lg" href="/commands">See commands</Link>
                 </div>

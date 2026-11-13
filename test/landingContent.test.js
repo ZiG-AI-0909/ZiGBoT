@@ -284,3 +284,24 @@ test('feature cards have unique ids and every card is rendered by id', () => {
     assert.equal(new Set(ids).size, ids.length);
     for (const id of ['gifs', 'summary_channels', 'languages', 'summaries']) assert.ok(ids.includes(id), id);
 });
+
+// Platform positioning (Phase 4): Studio modes and updates are tied to real code; planned items say so.
+test('Studio modes and product updates name files that exist; unbuilt modes are "coming soon"', () => {
+    for (const item of [...landing.studioModes, ...landing.updates]) {
+        assert.ok(item.sources.length > 0, `${item.id || item.title} needs a source`);
+        for (const file of item.sources) assert.ok(fs.existsSync(path.join(root, file)), `${file} (for ${item.id || item.title}) does not exist`);
+    }
+    assert.deepEqual(landing.studioModes.map((m) => [m.id, m.status]), [['coding', 'available'], ['workflows', 'available'], ['prompt', 'coming_soon']]);
+    const page = read('dashboard/app/page.js');
+    assert.match(page, /mode\.status === 'coming_soon' \? <span className="pill">Coming soon<\/span>/);
+    assert.match(page, /landing\.updates\.map/);
+    assert.match(page, /id="pricing"/);
+    for (const u of landing.updates) assert.match(u.date, /^\d{4}-\d{2}$/);
+});
+
+test('positioning copy makes no unprovable superlatives ("first", "best", "#1", "only")', () => {
+    const copy = allCopy().join('\n') + read('dashboard/lib/seo.js') + read('dashboard/app/page.js');
+    for (const pattern of [/\bfirst[- ]of[- ]its[- ]kind\b/i, /\bfirst on Discord\b/i, /\bthe best\b/i, /\bbest (discord|bot|ai|platform)\b/i, /#1\b/, /\bthe only\b/i, /\bnumber one\b/i]) assert.doesNotMatch(copy, pattern);
+    assert.equal(landing.hero.headline, 'Build. Automate. Create. All with AI.');
+    assert.match(read('dashboard/lib/seo.js'), /Your AI-Powered Discord Command Center/);
+});

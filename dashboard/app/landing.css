@@ -263,3 +263,20 @@
     .l-feature, .landing .btn { transition: none; transform: none; }
     .demo-window { scroll-behavior: auto; }
 }
+
+/* Platform positioning: intro, Studio modes, updates (app/page.js). */
+.l-intro .l-lead { max-width: 760px; font-size: 17px; }
+.l-studio { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); margin: 18px 0; }
+.l-studio-card { position: relative; overflow: hidden; display: grid; gap: 8px; align-content: start; transition: transform 0.2s ease, box-shadow 0.2s ease; }
+.l-studio-card::after { content: ""; position: absolute; inset: auto -30% -60% auto; width: 260px; height: 260px; border-radius: 50%; background: radial-gradient(circle, rgba(168, 85, 247, 0.22), transparent 70%); pointer-events: none; }
+.l-studio-card:hover { transform: translateY(-3px); box-shadow: var(--shadow), 0 0 30px rgba(168, 85, 247, 0.25); }
+.l-studio-card.is-soon { opacity: 0.85; border-style: dashed; }
+.l-studio-points { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: 14px; }
+.l-studio-points li::marker { color: var(--accent); }
+.l-more { margin-top: 14px; }
+.l-more > summary { cursor: pointer; color: var(--focus); font-weight: 600; margin-bottom: 12px; }
+.l-updates { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 12px; }
+.l-update { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: start; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--border); background: var(--panel); }
+.l-update h3 { margin: 0 0 2px; }
+.l-update p { margin: 0; }
+@media (prefers-reduced-motion: reduce) { .l-studio-card { transition: none; } .l-studio-card:hover { transform: none; } }
