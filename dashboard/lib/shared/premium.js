@@ -25,7 +25,8 @@ const PREMIUM_PERKS = Object.freeze([
     { key: 'ai_limits', title: 'Higher AI reply limits', text: 'Members can talk to ZiGBoT far more often before hitting the rate limit.' },
     { key: 'custom_persona', title: 'Custom persona', text: 'Write your own personality prompt or replace ZiGBoT’s persona entirely.' },
     { key: 'role_mappings', title: 'Unlimited role mappings', text: `Free servers can map ${FREE_LIMITS.roleMappings} roles; Premium can map up to 50.` },
-    { key: 'voice_music', title: 'Voice & music', text: 'Voice conversations and music playback in your voice channels.' }
+    { key: 'voice_music', title: 'Voice & music', text: 'Voice conversations and music playback in your voice channels.' },
+    { key: 'adult_chat', title: '18+ chat', text: 'Adult humour and swearing for 18+ members, only in age-restricted channels. The 18+ only gate itself is free.' }
 ]);
 
 // Custom bot identity (lib/shared/identity.js). Kept out of PREMIUM_PERKS

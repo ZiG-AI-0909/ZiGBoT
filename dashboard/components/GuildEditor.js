@@ -292,7 +292,7 @@ export default function GuildEditor({ initial, meta }) {
             {inSidebar ? <h2 className="section-title">{plainLabel(TABS.find((t) => t.id === tab)?.label || '')}</h2> : null}
             <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
                 {tab === 'behaviour' ? <BehaviourTab draft={draft} saved={saved} set={set} errors={fieldErrors} meta={meta} premium={premium} channels={channels} staleLanguage={staleLanguage} updateDraft={setDraft} onUpgrade={() => setTab('premium')} /> : null}
-                {tab === 'roles' ? <ServerSetupCard draft={draft} set={set} errors={fieldErrors} roles={roles} /> : null}
+                {tab === 'roles' ? <ServerSetupCard draft={draft} set={set} errors={fieldErrors} roles={roles} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'roles' ? <div style={{ marginTop: 16 }}><RolesTab roles={roles} roleById={roleById} mappings={mappings} setMappings={setMappings} errors={mappingErrors} meta={meta} premium={premium} onUpgrade={() => setTab('premium')} /></div> : null}
                 {tab === 'roles' ? <div style={{ marginTop: 16 }}><GreetingsCard guildId={initial.guild.id} toast={toast} /></div> : null}
                 {tab === 'voice' ? <VoiceTab draft={draft} set={set} errors={fieldErrors} meta={meta} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
@@ -964,7 +964,7 @@ function RoleChecklist({ id, label, help, roles, selected, onChange, error }) {
 }
 
 // The same answers the bot's /setup command asks for, editable here too.
-function ServerSetupCard({ draft, set, errors, roles }) {
+function ServerSetupCard({ draft, set, errors, roles, premium, onUpgrade }) {
     return (
         <div className="card stack">
             <h2>Server setup</h2>
@@ -985,8 +985,9 @@ function ServerSetupCard({ draft, set, errors, roles }) {
                 <RoleChecklist id="adult-roles" label="18+ roles" help="Members with these get roast mode, and are the only ones ZiGBoT chats with when 18+ only is on." roles={roles} selected={draft.adult_role_ids} onChange={set('adult_role_ids')} error={errors.adult_role_ids} />
                 <RoleChecklist id="minor-roles" label="Under-18 roles" help="Always gentle and clean, never roasted — beats every other setting." roles={roles} selected={draft.minor_role_ids} onChange={set('minor_role_ids')} error={errors.minor_role_ids} />
             </div>
-            <Switch id="adults-only" checked={draft.adults_only} onChange={set('adults_only')} label="18+ only" help="On: ZiGBoT chats only with the server owner and members who have an 18+ role, and silently ignores everyone else. Adult humour and swearing also unlock, but only in age-restricted channels." />
+            <Switch id="adults-only" checked={draft.adults_only} onChange={set('adults_only')} label="18+ only" help="On: ZiGBoT chats only with the server owner and members who have an 18+ role, and silently ignores everyone else (free). With Premium, 18+ chat also unlocks: adult humour and swearing, only in age-restricted channels." />
             {errors.adults_only ? <span className="error">{errors.adults_only}</span> : null}
+            {draft.adults_only && !premium ? <PremiumNote onUpgrade={onUpgrade}>18+ chat (adult humour and swearing) is a Premium feature. On the free plan, 18+ only still limits who ZiGBoT talks to, but replies stay clean.</PremiumNote> : null}
         </div>
     );
 }

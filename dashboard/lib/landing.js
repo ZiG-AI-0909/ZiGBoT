@@ -166,7 +166,8 @@ const IDENTITY_OWNER_STEP = {
 // Comparison rows for perks that are a simple Free ✗ / Premium ✓ line.
 // Every perk premiumPerks() can return must have a row (or a label here).
 const PERK_ROW_LABELS = {
-    custom_identity: 'Custom bot name & avatar'
+    custom_identity: 'Custom bot name & avatar',
+    adult_chat: '18+ chat (age-restricted channels)'
 };
 
 // Free vs Premium, built from the plan rules the bot and dashboard enforce.

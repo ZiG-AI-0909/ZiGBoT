@@ -325,6 +325,14 @@ test('18+ only: a thread takes the age gate of its parent', () => {
     assert.equal(isAgeRestrictedChannel({}), false);
 });
 
+test('18+ chat (adult content) is Premium; the 18+ only gate stays free', () => {
+    const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '../src/index.js'), 'utf8');
+    assert.match(src, /const adultContent = Boolean\(guildCtx\?\.premium && guildCtx\?\.config\?\.adults_only/);
+    assert.match(src, /blockedByAdultsOnly\(guildCtx\?\.config, behavior\)/, 'the gate does not check premium');
+    const { PREMIUM_PERKS } = require('../dashboard/lib/shared/premium');
+    assert.ok(PREMIUM_PERKS.some((p) => p.key === 'adult_chat'));
+});
+
 test('18+ only: cannot be switched on without an 18+ role', () => {
     const result = validateGuildConfig({ ...defaultGuildConfig({ guildId: G }), adults_only: true }, { guildId: G });
     assert.match(result.errors.adults_only, /18\+ role/);

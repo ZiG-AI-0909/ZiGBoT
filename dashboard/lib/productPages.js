@@ -175,7 +175,7 @@ const PRICING = Object.freeze({
     title: 'Pricing · ZiGBoT Free and Premium',
     description: 'ZiGBoT is free for chat, memory, moderation and Anti-Nuke. Premium adds music, voice chat, custom personas, live automations and higher limits.',
     free: ['AI chat with personalities', 'Memory you control', 'Moderation and opt-in auto-moderation', 'Anti-Nuke', 'Tickets, welcome messages, AFK, community add-ons', `Up to ${FREE_LIMITS.roleMappings} role mappings`, 'Studio: design workflows, edit code, 1 runner, 10 AI agent runs a day', 'Server analytics: last 7 days'],
-    premium: ['Everything in Free', 'Music in voice channels and voice chat', 'Custom persona and ready-made persona templates', `Up to ${LIMITS.roleMappingsPerGuild} role mappings`, 'Higher AI reply limits', 'Live Studio automations (events and schedules)', 'Studio: 3 runners, 100 AI agent runs a day, 50 variables', 'Full analytics history and CSV export'],
+    premium: ['Everything in Free', 'Music in voice channels and voice chat', 'Custom persona and ready-made persona templates', `Up to ${LIMITS.roleMappingsPerGuild} role mappings`, 'Higher AI reply limits', '18+ chat in age-restricted channels', 'Live Studio automations (events and schedules)', 'Studio: 3 runners, 100 AI agent runs a day, 50 variables', 'Full analytics history and CSV export'],
     premiumFeatures: PREMIUM_ONLY_FEATURES,
     sources: ['dashboard/lib/shared/premium.js', 'dashboard/lib/studio/marketplace.js']
 });

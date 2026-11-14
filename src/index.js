@@ -850,7 +850,8 @@ client.on(Events.MessageCreate, async (message) => {
     const isGentle = !isOwner && tone !== 'savage';
     // Adult limits need the server switch, an 18+ member AND a Discord age gate:
     // under-18s can read a normal channel even if ZiGBoT never answers them.
-    const adultContent = Boolean(guildCtx?.config?.adults_only && behavior?.isAdult) && isAgeRestrictedChannel(message.channel);
+    // 18+ chat (the adult humour unlock) is Premium; the "18+ only" gate itself stays free.
+    const adultContent = Boolean(guildCtx?.premium && guildCtx?.config?.adults_only && behavior?.isAdult) && isAgeRestrictedChannel(message.channel);
     const guildPrompt = guildPromptFor(guildCtx, behavior, { adultContent });
 
     // If a user just mentions @ZiGBoT without any text
