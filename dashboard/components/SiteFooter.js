@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { PORTFOLIO_CONTACT_URL } from '@/lib/discord';
 import seo from '@/lib/seo';
+import productPages from '@/lib/productPages';
 
 // Small monochrome icons (inline SVG: no external requests, CSP-safe).
 const ICONS = {
@@ -23,6 +24,10 @@ export default function SiteFooter() {
                         <span className="footer-social-label">{s.label}</span>
                     </a>
                 ))}
+            </nav>
+            <nav className="row footer-products" aria-label="Products">
+                {productPages.PRODUCT_PAGES.map((p) => <Link key={p.slug} href={p.path}>{p.nav}</Link>)}
+                <Link href="/pricing">Pricing</Link>
             </nav>
             <nav className="row" aria-label="Site">
                 <Link href="/commands">Commands</Link>

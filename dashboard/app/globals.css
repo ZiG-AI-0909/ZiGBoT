@@ -581,3 +581,16 @@ textarea:disabled, input:disabled { opacity: 0.55; cursor: not-allowed; }
 .footer-social a { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--border); text-decoration: none; transition: color 0.15s ease, border-color 0.15s ease; }
 .footer-social a:hover { border-color: var(--accent); color: var(--text); }
 @media (max-width: 720px) { .footer-social-label { display: none; } .footer-social a { padding: 6px; } }
+
+/* Public product pages and pricing (components/ProductPage.js, app/pricing). */
+.product-page { max-width: 880px; padding: 8px 0 32px; display: grid; gap: 18px; }
+.product-page h1 { font-family: var(--font-display), sans-serif; font-weight: 400; font-size: clamp(36px, 6vw, 54px); letter-spacing: 0.03em; margin: 6px 0 0; }
+.product-lead { font-size: 17px; color: var(--muted); max-width: 720px; margin: 0; }
+.product-section h2 { margin-top: 0; }
+.product-section ul, .pricing-card ul { padding-left: 20px; display: grid; gap: 6px; }
+.product-more { border-top: 1px solid var(--border); padding-top: 16px; }
+.pricing-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+.pricing-card { display: grid; gap: 10px; align-content: start; }
+.pricing-card.is-best { border-color: var(--accent); box-shadow: var(--shadow), 0 0 32px rgba(168, 85, 247, 0.22); }
+.pricing-price { font-size: 28px; font-weight: 800; margin: 0; }
+.footer-products { gap: 12px; flex-wrap: wrap; }

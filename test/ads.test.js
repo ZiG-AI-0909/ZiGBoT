@@ -7,7 +7,7 @@ const ads = require('../dashboard/lib/ads');
 const seo = require('../dashboard/lib/seo');
 
 const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
-const PAGE_FILES = { '/': 'dashboard/app/page.js', '/commands': 'dashboard/app/commands/page.js', '/privacy': 'dashboard/app/privacy/page.js', '/terms': 'dashboard/app/terms/page.js' };
+const PAGE_FILES = { '/': 'dashboard/app/page.js', '/commands': 'dashboard/app/commands/page.js', '/privacy': 'dashboard/app/privacy/page.js', '/terms': 'dashboard/app/terms/page.js', '/features/discord-bot': 'dashboard/app/features/discord-bot/page.js', '/features/ai-memory': 'dashboard/app/features/ai-memory/page.js', '/features/anti-nuke': 'dashboard/app/features/anti-nuke/page.js', '/features/studio': 'dashboard/app/features/studio/page.js', '/features/automation': 'dashboard/app/features/automation/page.js', '/pricing': 'dashboard/app/pricing/page.js' };
 
 test('ads.txt names our AdSense publisher', () => {
     assert.equal(read('dashboard/public/ads.txt').trim(), 'google.com, pub-6170894801860429, DIRECT, f08c47fec0942fa0');

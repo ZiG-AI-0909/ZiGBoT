@@ -26,6 +26,8 @@ export const dynamic = 'force-dynamic';
 const APP_DIRECTORY_URL = 'https://discord.com/discovery/applications/1539530458390593576';
 // The feature grid shows the first few cards; the rest open on demand.
 const FEATURES_SHOWN = 6;
+// Studio cards → their public product pages (lib/productPages.js).
+const STUDIO_PAGE = { coding: '/features/studio', workflows: '/features/automation', prompt: '/features/studio' };
 
 const ERRORS = {
     login_failed: 'Discord login did not complete. Please try again.',
@@ -162,6 +164,7 @@ export default async function Home({ searchParams }) {
                             <h3>{mode.title}</h3>
                             <p className="muted small">{mode.text}</p>
                             <ul className="l-studio-points">{mode.points.map((p) => <li key={p}>{p}</li>)}</ul>
+                            {STUDIO_PAGE[mode.id] ? <Link className="l-link small" href={STUDIO_PAGE[mode.id]}>Learn more →</Link> : null}
                         </Reveal>
                     ))}
                 </div>

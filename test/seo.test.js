@@ -11,7 +11,7 @@ const landing = require('../dashboard/lib/landing');
 const root = path.join(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const ORIGIN = 'https://www.zigbot.in';
-const PAGE_FILES = { '/': 'dashboard/app/page.js', '/commands': 'dashboard/app/commands/page.js', '/privacy': 'dashboard/app/privacy/page.js', '/terms': 'dashboard/app/terms/page.js' };
+const PAGE_FILES = { '/': 'dashboard/app/page.js', '/commands': 'dashboard/app/commands/page.js', '/privacy': 'dashboard/app/privacy/page.js', '/terms': 'dashboard/app/terms/page.js', '/features/discord-bot': 'dashboard/app/features/discord-bot/page.js', '/features/ai-memory': 'dashboard/app/features/ai-memory/page.js', '/features/anti-nuke': 'dashboard/app/features/anti-nuke/page.js', '/features/studio': 'dashboard/app/features/studio/page.js', '/features/automation': 'dashboard/app/features/automation/page.js', '/pricing': 'dashboard/app/pricing/page.js' };
 
 test('one canonical origin, and no placeholder domain anywhere in the site code', () => {
     assert.equal(seo.CANONICAL_ORIGIN, ORIGIN);
@@ -54,7 +54,7 @@ test('robots.txt: search crawlers (and GPTBot) get public pages only; private ar
 
 test('sitemap: only canonical, indexable public pages', () => {
     const urls = seo.sitemapEntries(new Date(0)).map((e) => e.url);
-    assert.deepEqual(urls, [`${ORIGIN}/`, `${ORIGIN}/commands`, `${ORIGIN}/privacy`, `${ORIGIN}/terms`]);
+    assert.deepEqual(urls, [`${ORIGIN}/`, `${ORIGIN}/commands`, `${ORIGIN}/privacy`, `${ORIGIN}/terms`, ...['discord-bot', 'ai-memory', 'anti-nuke', 'studio', 'automation'].map((s) => `${ORIGIN}/features/${s}`), `${ORIGIN}/pricing`]);
     for (const url of urls) assert.ok(!seo.PRIVATE_PATHS.some((p) => new URL(url).pathname.startsWith(p)));
 });
 

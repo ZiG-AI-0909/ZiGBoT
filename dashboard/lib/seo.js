@@ -56,7 +56,10 @@ const PUBLIC_PAGES = Object.freeze([
         path: '/terms',
         title: 'Terms of Service · ZiGBoT',
         description: 'The rules for using the ZiGBoT Discord bot and its dashboard.'
-    })
+    }),
+    // Product pages and pricing (content: lib/productPages.js).
+    ...require('./productPages').PRODUCT_PAGES.map((p) => Object.freeze({ path: p.path, title: p.title, description: p.description })),
+    Object.freeze({ path: require('./productPages').PRICING.path, title: require('./productPages').PRICING.title, description: require('./productPages').PRICING.description })
 ]);
 
 /** Never indexed: signed-in areas, the owner's tools, the API and login steps. */

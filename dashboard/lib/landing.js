@@ -217,8 +217,8 @@ function freeAnswer({ customIdentity = false } = {}) {
 
 // What ZiGBoT is, in one paragraph (product introduction).
 const intro = {
-    title: 'One platform for your Discord community',
-    text: 'Add the ZiGBoT bot for AI chat, memory you control, music and moderation. Open ZiGBoT Studio when you want your own bot: write the code, wire up automations visually, and let AI propose changes you review before anything is saved.'
+    title: 'An AI-powered Discord ecosystem',
+    text: 'For server owners, moderators and bot builders: manage your community, build custom bots and automate server operations. Add the ZiGBoT bot for AI chat, memory you control, moderation and free Anti-Nuke. Open ZiGBoT Studio when you want your own bot: write the code, wire up automations visually, and let AI propose changes you review before anything is saved.'
 };
 
 /**
