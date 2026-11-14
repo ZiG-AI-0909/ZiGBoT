@@ -995,8 +995,17 @@ async function executeTool(message, settings, intent, context = {}) {
             case 'delete_messages': {
                 const count = Number(intent.count);
                 if (!Number.isInteger(count) || count < 1 || count > 100) return '❌ Message count must be between 1 and 100.';
-                const deleted = await message.channel.bulkDelete(count, true);
-                result = `✅ Deleted ${deleted.size} messages.`;
+                // Delete the N messages BEFORE the command, so the confirmation
+                // and result message are never swept up; then remove the command.
+                let deleted;
+                if (message.id && message.channel.messages?.fetch) {
+                    const before = await message.channel.messages.fetch({ before: message.id, limit: count });
+                    deleted = await message.channel.bulkDelete(before, true);
+                    await message.delete?.().catch(() => {});
+                } else {
+                    deleted = await message.channel.bulkDelete(count, true);
+                }
+                result = `✅ Deleted ${deleted.size} message${deleted.size === 1 ? '' : 's'}.`;
                 target = `#${message.channel.name}`;
                 caseTargetId = message.channel.id;
                 break;
@@ -1074,4 +1083,12 @@ async function executeTool(message, settings, intent, context = {}) {
     }
 }
 
-module.exports = { memberToDescribe, executeTool, adminActions, destructiveActions, actionCatalog, actionAliases, normalizeAction, isAuthorizedActor };
+// "purge 10", "clear 25 messages", "delete 5 msgs" -> 10 / 25 / 5; else null.
+function parsePurgeCommand(text) {
+    const match = /^\s*(?:purge|prune|clear|delete)\s+(\d{1,3})(?:\s+(?:messages?|msgs?|chats?))?\s*$/i.exec(String(text || ''));
+    if (!match) return null;
+    const count = Number(match[1]);
+    return count >= 1 && count <= 100 ? count : null;
+}
+
+module.exports = { parsePurgeCommand, memberToDescribe, executeTool, adminActions, destructiveActions, actionCatalog, actionAliases, normalizeAction, isAuthorizedActor };

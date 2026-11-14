@@ -98,6 +98,27 @@ function fixture({ config = {}, botHas = () => true, targetOverrides = {} } = {}
     };
 }
 
+test('purge text is parsed without the AI, and only deletes messages before the command', async () => {
+    const { parsePurgeCommand } = require('../src/tools/router');
+    assert.equal(parsePurgeCommand('purge 10'), 10);
+    assert.equal(parsePurgeCommand('Clear 25 messages'), 25);
+    assert.equal(parsePurgeCommand('delete 5 msgs'), 5);
+    assert.equal(parsePurgeCommand('purge 0'), null);
+    assert.equal(parsePurgeCommand('purge 500'), null);
+    assert.equal(parsePurgeCommand('please purge my sadness'), null);
+
+    const f = fixture();
+    const fetched = [];
+    let commandDeleted = false;
+    f.message.id = 'cmd1';
+    f.message.delete = async () => { commandDeleted = true; };
+    f.message.channel.messages = { fetch: async (opts) => { fetched.push(opts); return { size: 3, ids: ['a', 'b', 'c'] }; } };
+    f.message.channel.bulkDelete = async (coll) => coll;
+    assert.match(await executeTool(f.message, f.settings, { action: 'delete_messages', count: 3 }, { moderationStore: f.moderationStore }), /Deleted 3 messages/);
+    assert.deepEqual(fetched, [{ before: 'cmd1', limit: 3 }]);
+    assert.ok(commandDeleted);
+});
+
 test('existing ban, unban, and purge actions still call Discord with their original arguments', async () => {
     const f = fixture();
     const context = { moderationStore: f.moderationStore };

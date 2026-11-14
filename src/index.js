@@ -23,7 +23,7 @@ const { isGentleMember, getMemberGender, isNonGentleMember } = require('./ai/rol
 const { isServerOwner } = require('./security/authorization');
 const { getOwnerRoastTarget, getOwnerMemoryTarget } = require('./security/ownerCommands');
 const { requestConfirmation } = require('./security/confirmation');
-const { executeTool, destructiveActions, isAuthorizedActor, memberToDescribe } = require('./tools/router');
+const { executeTool, destructiveActions, isAuthorizedActor, memberToDescribe, parsePurgeCommand } = require('./tools/router');
 const { auditLog } = require('./logging/auditLog');
 const { auditSecurityEvent } = require('./security/audit/logger');
 const { buildVoiceTranscriptRoute } = require('./routing/voiceRoute');
@@ -968,6 +968,18 @@ client.on(Events.MessageCreate, async (message) => {
     // Router path: classify the message into a tool intent. On any AI failure
     // the intent degrades to chat, so the persona reply below still answers.
     let intent = null;
+    // "purge 10" / "clear 20 messages" is always the delete tool, never chat:
+    // decided here without the AI, so a purge can never turn into an AI reply.
+    const purgeCount = parsePurgeCommand(userMessage);
+    if (purgeCount) {
+        try {
+            const toolResult = await runIntent(message, gSettings, { action: 'delete_messages', count: purgeCount }, { warnStore });
+            if (toolResult) await message.reply(toolResult).catch(() => {});
+        } catch (error) {
+            logAiError(error);
+        }
+        return;
+    }
     try {
         intent = await classifyIntent(
             ai.client,
