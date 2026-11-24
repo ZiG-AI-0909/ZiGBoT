@@ -294,7 +294,6 @@ function validateGuildConfig(input, ctx = {}) {
     if (value.ticketing_enabled) {
         if (!value.ticket_category_ids.length) errors.ticket_category_ids = 'Choose at least one ticket category.';
         if (!value.ticket_staff_role_ids.length) errors.ticket_staff_role_ids = 'Choose at least one staff role.';
-        if (!value.ticket_log_channel_id) errors.ticket_log_channel_id = 'Choose a transcript log channel.';
     }
     if (input.music_channel_id !== undefined && input.music_channel_id !== null && input.music_channel_id !== '') {
         const [id] = checkIdList(errors, 'music_channel_id', [input.music_channel_id], channels);
@@ -414,7 +413,7 @@ function sanitizeStoredConfig(row, { guildId } = {}) {
     out.ticket_staff_role_ids = [...new Set(out.ticket_staff_role_ids)].filter((id) => id !== everyoneId).slice(0, 10);
     if (out.ticket_senior_role_id === everyoneId) out.ticket_senior_role_id = null;
     if (out.ticket_log_channel_id === everyoneId) out.ticket_log_channel_id = null;
-    if (out.ticketing_enabled && (!out.ticket_category_ids.length || !out.ticket_staff_role_ids.length || !out.ticket_log_channel_id)) {
+    if (out.ticketing_enabled && (!out.ticket_category_ids.length || !out.ticket_staff_role_ids.length)) {
         out.ticketing_enabled = false;
     }
     out.voice_pace = Math.min(200, Math.max(50, Math.round(out.voice_pace) || 100));

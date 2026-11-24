@@ -260,9 +260,8 @@ function createTicketCommands({
     async function showCategoryPicker(interaction, context) {
         await ensureBotReady(context.guild, context.config, interaction.member);
         if (!interaction.member || interaction.user?.bot) throw new TicketError('A server member must open a ticket.', { denied: true });
-        for (const categoryId of context.config.ticket_category_ids || []) {
-            const open = await store.findOpenTicket(String(context.guild.id), String(interaction.user.id), String(categoryId));
-            if (!open) continue;
+        const open = await store.findOpenTicket(String(context.guild.id), String(interaction.user.id));
+        if (open) {
             const existingChannel = await getChannel(context.guild, open.channel_id);
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setLabel('View open ticket').setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${context.guild.id}/${open.channel_id}`)
@@ -299,8 +298,8 @@ function createTicketCommands({
             throw new TicketError('Choose a ticket category configured for this server.', { denied: true });
         }
         const userId = String(interaction.user.id);
-        if (await store.findOpenTicket(String(guild.id), userId, String(category.id))) {
-            throw new TicketError('You already have an open ticket in this category.', { denied: true });
+        if (await store.findOpenTicket(String(guild.id), userId)) {
+            throw new TicketError('You already have an open ticket in this server. Continue in that ticket or close it before opening another.', { denied: true });
         }
         const allowed = [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AttachFiles];
         const overwrites = [
@@ -333,7 +332,7 @@ function createTicketCommands({
                 logger.error?.(`[ZiGBoT TICKETS] Failed to remove unrecorded channel ${channel.id}: ${deleteError?.message || deleteError}`);
             });
             if (error?.code === 'TICKET_OPEN_EXISTS' || /23505|409|duplicate/i.test(String(error?.message || ''))) {
-                throw new TicketError('You already have an open ticket in this category.', { denied: true });
+                throw new TicketError('You already have an open ticket in this server. Continue in that ticket or close it before opening another.', { denied: true });
             }
             throw error;
         }
@@ -528,15 +527,6 @@ function createTicketCommands({
             const messages = await collectMessages(interaction.channel);
             const transcript = buildTranscript(messages);
             const filename = `ticket-${ticket.id}.txt`;
-            const logChannel = await getChannel(context.guild, context.config.ticket_log_channel_id);
-            if (!logChannel || String(logChannel.guildId || context.guild.id) !== String(context.guild.id) || typeof logChannel.send !== 'function') {
-                throw new TicketError('The configured ticket transcript log channel is unavailable.');
-            }
-            await logChannel.send({
-                content: `Transcript for ticket ${ticket.id} (opened by <@${ticket.opener_id}>).`,
-                files: [new AttachmentBuilder(transcript, { name: filename })],
-                allowedMentions: { parse: [] }
-            });
             const opener = await context.guild.members.fetch(String(ticket.opener_id));
             if (!opener?.send) throw new TicketError('The ticket opener could not be reached to deliver the transcript.');
             await opener.send({
@@ -545,32 +535,36 @@ function createTicketCommands({
                 components: ratingComponents(String(context.guild.id), String(ticket.id)),
                 allowedMentions: { parse: [] }
             });
+            const channel = interaction.channel;
+            try {
+                await channel.send({
+                    embeds: [new EmbedBuilder()
+                        .setColor(0x8b5cf6)
+                        .setTitle('Ticket closed')
+                        .setDescription(`This ticket was closed by <@${interaction.user.id}>. The transcript has been sent privately to <@${ticket.opener_id}>.`)
+                        .addFields(
+                            { name: 'Opened by', value: `<@${ticket.opener_id}>`, inline: true },
+                            { name: 'Ticket ID', value: String(ticket.id), inline: true }
+                        )
+                        .setFooter({ text: 'This channel will be deleted in 10 seconds.' })
+                        .setTimestamp(new Date(now()))],
+                    allowedMentions: { users: [String(interaction.user.id), String(ticket.opener_id)], roles: [], parse: [] }
+                });
+            } catch (error) {
+                logger.error?.(`[ZiGBoT TICKETS] Closing embed failed for ${ticket.id}: ${error?.message || error}`);
+            }
             const closed = await store.updateTicket(String(context.guild.id), ticket.id, {
                 status: 'closed',
                 closed_at: new Date(now()).toISOString()
             }, { expectedStatus: 'closing' });
             if (!closed) throw new TicketError('The ticket transcript was sent, but its closed state could not be saved.');
-            const channel = interaction.channel;
-            await channel.send({
-                embeds: [new EmbedBuilder()
-                    .setColor(0x8b5cf6)
-                    .setTitle('Ticket closed')
-                    .setDescription(`This ticket was closed by <@${interaction.user.id}>. The transcript has been sent to <@${ticket.opener_id}>.`)
-                    .addFields(
-                        { name: 'Opened by', value: `<@${ticket.opener_id}>`, inline: true },
-                        { name: 'Ticket ID', value: String(ticket.id), inline: true }
-                    )
-                    .setFooter({ text: 'This channel will be deleted in 10 seconds.' })
-                    .setTimestamp(new Date(now()))],
-                allowedMentions: { users: [String(interaction.user.id), String(ticket.opener_id)], roles: [], parse: [] }
-            });
             const timer = setTimeoutFn(() => {
                 Promise.resolve(channel.delete('Ticket closed; transcript sent')).catch((error) => {
                     logger.error?.(`[ZiGBoT TICKETS] Delayed channel deletion failed for ${ticket.id}: ${error?.message || error}`);
                 });
             }, 10_000);
             timer?.unref?.();
-            return 'Ticket closed. The transcript was sent to the ticket log and opener; this channel will be deleted in 10 seconds.';
+            return 'Ticket closed. The transcript was sent privately to the ticket opener; this channel will be deleted in 10 seconds.';
         } catch (error) {
             await store.updateTicket(String(context.guild.id), ticket.id, { status: 'open' }, { expectedStatus: 'closing' })
                 .catch((restoreError) => logger.error?.(`[ZiGBoT TICKETS] Could not restore ${ticket.id} after close failure: ${restoreError?.message || restoreError}`));

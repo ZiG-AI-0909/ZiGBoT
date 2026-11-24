@@ -797,7 +797,7 @@ function TicketsTab({ draft, set, errors, channels, roles, categories }) {
         <div className="stack">
             <div className="card stack">
                 <h2>Tickets and support</h2>
-                <p className="help">Tickets are off until enabled. Choose category channels, staff roles and a transcript log channel before turning them on.</p>
+                <p className="help">Tickets are off until enabled. Choose category channels and staff roles before turning them on. Closed ticket transcripts are sent privately to the opener.</p>
                 <Switch id="tickets-enabled" checked={draft.ticketing_enabled} onChange={set('ticketing_enabled')} label="Enable tickets in this server" help="Members can open one private ticket per category. ZiGBoT requires Manage Channels." />
                 <div className="field">
                     <span className="label">Ticket categories</span>
@@ -835,7 +835,7 @@ function TicketsTab({ draft, set, errors, channels, roles, categories }) {
                     {errors.ticket_senior_role_id ? <span className="error" role="alert">{errors.ticket_senior_role_id}</span> : null}
                 </div>
                 <div className="field">
-                    <label htmlFor="ticket-log-channel">Transcript log channel</label>
+                    <label htmlFor="ticket-log-channel">Transcript log channel (optional)</label>
                     <select id="ticket-log-channel" value={draft.ticket_log_channel_id || ''} onChange={(e) => set('ticket_log_channel_id')(e.target.value || null)} aria-invalid={errors.ticket_log_channel_id ? 'true' : undefined}>
                         <option value="">Choose a channel</option>
                         {channels.filter((channel) => [0, 5].includes(channel.type)).map((channel) => <option key={channel.id} value={channel.id}>#{channel.name}</option>)}

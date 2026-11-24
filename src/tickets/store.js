@@ -50,17 +50,17 @@ class SupabaseTicketStore {
         return text ? JSON.parse(text) : null;
     }
 
-    async findOpenTicket(guildId, openerId, categoryId) {
+    async findOpenTicket(guildId, openerId, categoryId = null) {
         const guild = this.assertGuild(guildId);
-        if (!SNOWFLAKE.test(String(openerId)) || !SNOWFLAKE.test(String(categoryId))) throw new Error('Invalid ticket owner or category.');
+        if (!SNOWFLAKE.test(String(openerId)) || (categoryId != null && !SNOWFLAKE.test(String(categoryId)))) throw new Error('Invalid ticket owner or category.');
         const query = new URLSearchParams({
             select: '*',
             guild_id: `eq.${guild}`,
             opener_id: `eq.${openerId}`,
-            category_id: `eq.${categoryId}`,
             status: 'in.(open,closing)',
             limit: '1'
         });
+        if (categoryId != null) query.set('category_id', `eq.${categoryId}`);
         const rows = await this.request(`zb_tickets?${query}`);
         const row = Array.isArray(rows) ? rows[0] : null;
         return row && String(row.guild_id) === guild ? row : null;
