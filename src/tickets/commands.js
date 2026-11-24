@@ -4,6 +4,7 @@ const {
     ButtonBuilder,
     ButtonStyle,
     ChannelType,
+    EmbedBuilder,
     PermissionFlagsBits,
     StringSelectMenuBuilder
 } = require('discord.js');
@@ -259,6 +260,20 @@ function createTicketCommands({
     async function showCategoryPicker(interaction, context) {
         await ensureBotReady(context.guild, context.config, interaction.member);
         if (!interaction.member || interaction.user?.bot) throw new TicketError('A server member must open a ticket.', { denied: true });
+        for (const categoryId of context.config.ticket_category_ids || []) {
+            const open = await store.findOpenTicket(String(context.guild.id), String(interaction.user.id), String(categoryId));
+            if (!open) continue;
+            const existingChannel = await getChannel(context.guild, open.channel_id);
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setLabel('View open ticket').setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${context.guild.id}/${open.channel_id}`)
+            );
+            return {
+                content: existingChannel
+                    ? `You already have an open ticket in <#${open.channel_id}>. You can continue there or close it before opening another ticket in this category.`
+                    : 'You already have an open ticket in this category, but its channel is unavailable. Please contact the server staff.',
+                components: existingChannel ? [row] : []
+            };
+        }
         const categories = await configuredCategories(context);
         if (categories.length === 0) throw new TicketError('No valid ticket categories are configured. Ask an administrator to check the dashboard.');
         const menu = new StringSelectMenuBuilder()
@@ -536,6 +551,19 @@ function createTicketCommands({
             }, { expectedStatus: 'closing' });
             if (!closed) throw new TicketError('The ticket transcript was sent, but its closed state could not be saved.');
             const channel = interaction.channel;
+            await channel.send({
+                embeds: [new EmbedBuilder()
+                    .setColor(0x8b5cf6)
+                    .setTitle('Ticket closed')
+                    .setDescription(`This ticket was closed by <@${interaction.user.id}>. The transcript has been sent to <@${ticket.opener_id}>.`)
+                    .addFields(
+                        { name: 'Opened by', value: `<@${ticket.opener_id}>`, inline: true },
+                        { name: 'Ticket ID', value: String(ticket.id), inline: true }
+                    )
+                    .setFooter({ text: 'This channel will be deleted in 10 seconds.' })
+                    .setTimestamp(new Date(now()))],
+                allowedMentions: { users: [String(interaction.user.id), String(ticket.opener_id)], roles: [], parse: [] }
+            });
             const timer = setTimeoutFn(() => {
                 Promise.resolve(channel.delete('Ticket closed; transcript sent')).catch((error) => {
                     logger.error?.(`[ZiGBoT TICKETS] Delayed channel deletion failed for ${ticket.id}: ${error?.message || error}`);

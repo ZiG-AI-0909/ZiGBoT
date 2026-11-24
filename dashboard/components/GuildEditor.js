@@ -168,6 +168,8 @@ export default function GuildEditor({ initial, meta }) {
     const [busy, setBusy] = useState(null);
     const [toasts, setToasts] = useState([]);
     const [confirmReset, setConfirmReset] = useState(false);
+    const [showQuickSetup, setShowQuickSetup] = useState(false);
+    const [quickSetupStep, setQuickSetupStep] = useState(0);
     const [plan, setPlan] = useState(initial.plan);
     const premium = Boolean(plan?.premium);
     const roles = initial.roles;
@@ -180,6 +182,25 @@ export default function GuildEditor({ initial, meta }) {
     // Saved language not on the list (old free text, "English-Hinglish mix", or never set).
     const staleLanguage = languageValues.includes(saved.language) ? null : (saved.language || '');
     const canSave = dirty || staleLanguage !== null;
+
+    useEffect(() => {
+        try {
+            const key = `zigbot-quick-setup:${initial.guild.id}`;
+            if (!window.localStorage.getItem(key)) setShowQuickSetup(true);
+        } catch {
+            setShowQuickSetup(true);
+        }
+    }, [initial.guild.id]);
+
+    function dismissQuickSetup() {
+        try { window.localStorage.setItem(`zigbot-quick-setup:${initial.guild.id}`, 'done'); } catch { /* storage may be unavailable */ }
+        setShowQuickSetup(false);
+    }
+
+    function openQuickSetup() {
+        setQuickSetupStep(0);
+        setShowQuickSetup(true);
+    }
 
     useEffect(() => {
         const warn = (e) => {
@@ -262,6 +283,55 @@ export default function GuildEditor({ initial, meta }) {
             <div className="toasts" aria-live="polite">
                 {toasts.map((t) => <div key={t.id} className={`toast ${t.kind === 'err' ? 'err' : ''}`} role={t.kind === 'err' ? 'alert' : 'status'}>{t.text}</div>)}
             </div>
+
+            <div className="spread" style={{ justifyContent: 'flex-end', marginTop: 10 }}>
+                <button type="button" className="btn" onClick={openQuickSetup}>Quick setup</button>
+            </div>
+
+            {showQuickSetup ? (
+                <div className="quick-setup-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) dismissQuickSetup(); }}>
+                    <section className="quick-setup card stack" role="dialog" aria-modal="true" aria-labelledby="quick-setup-title">
+                        <div className="spread">
+                            <div>
+                                <span className="pill">Quick setup · {quickSetupStep + 1} of 3</span>
+                                <h2 id="quick-setup-title" style={{ marginTop: 10 }}>{['Welcome to ZiGBoT', 'Choose your starting setup', 'Set up tickets'][quickSetupStep]}</h2>
+                            </div>
+                            <button className="btn btn-ghost" type="button" onClick={dismissQuickSetup} aria-label="Close quick setup">Close</button>
+                        </div>
+                        {quickSetupStep === 0 ? (
+                            <>
+                                <p className="muted">Let’s configure the basics for {initial.guild.name}. You can change every setting later from the dashboard.</p>
+                                <div className="notice">ZiGBoT starts in a friendly mode and replies when mentioned. Role and language setup can also be completed in Discord with <code>/setup</code>.</div>
+                            </>
+                        ) : null}
+                        {quickSetupStep === 1 ? (
+                            <>
+                                <p className="muted">Choose a tone and language. Mention-only replies are a safe default; change that in Channels whenever you want.</p>
+                                <div className="field">
+                                    <label htmlFor="quick-tone">Bot tone</label>
+                                    <select id="quick-tone" value={draft.default_tone} onChange={(e) => set('default_tone')(e.target.value)}>
+                                        {meta.tones.map((tone) => <option key={tone} value={tone}>{TONE_LABELS[tone]}</option>)}
+                                    </select>
+                                </div>
+                                <LanguageSelect id="quick-language" label="Language" value={draft.language} options={meta.languages} onChange={set('language')} />
+                            </>
+                        ) : null}
+                        {quickSetupStep === 2 ? (
+                            <>
+                                <p className="muted">Optional: configure support tickets now. Pick a ticket category, staff role, senior escalation role, and transcript channel in the Tickets section. Then save and run <code>/ticket panel</code> in Discord to post the embed with its Create Ticket button.</p>
+                                <button type="button" className="btn" onClick={() => { dismissQuickSetup(); setTab('tickets'); }}>Open ticket settings</button>
+                                <p className="help">You can finish this later. Save any changes with the Save button at the bottom of the dashboard.</p>
+                            </>
+                        ) : null}
+                        <div className="spread">
+                            <button type="button" className="btn" onClick={() => quickSetupStep === 0 ? dismissQuickSetup() : setQuickSetupStep((step) => step - 1)}>{quickSetupStep === 0 ? 'Skip for now' : 'Back'}</button>
+                            {quickSetupStep < 2
+                                ? <button type="button" className="btn btn-primary" onClick={() => setQuickSetupStep((step) => step + 1)}>Continue</button>
+                                : <button type="button" className="btn btn-primary" onClick={dismissQuickSetup}>Finish</button>}
+                        </div>
+                    </section>
+                </div>
+            ) : null}
 
             <div className="spread" style={{ marginTop: 16 }}>
                 <div className="row">
