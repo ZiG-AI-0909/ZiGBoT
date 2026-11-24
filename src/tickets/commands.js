@@ -191,7 +191,7 @@ function createTicketCommands({
 
     async function currentTicket(interaction, guild) {
         const ticket = await store.getTicketByChannel(String(guild.id), String(interaction.channelId || interaction.channel?.id || ''));
-        if (!ticket || String(ticket.guild_id) !== String(guild.id) || !['open', 'closing'].includes(ticket.status)) {
+        if (!ticket || String(ticket.guild_id) !== String(guild.id) || !['open', 'closing', 'closed'].includes(ticket.status)) {
             throw new TicketError('This channel is not an open ticket in this server.', { denied: true });
         }
         return ticket;
@@ -520,6 +520,12 @@ function createTicketCommands({
     async function closeTicket(interaction, context) {
         const ticket = await currentTicket(interaction, context.guild);
         if (String(ticket.opener_id) !== String(interaction.user.id)) requireStaff(interaction, context.config);
+        // Recover channels left behind when an older bot version marked the
+        // record closed before a later Discord API call failed.
+        if (ticket.status === 'closed') {
+            await interaction.channel.delete('Ticket was already closed; removing leftover channel');
+            return 'This ticket was already closed. The leftover channel has been removed.';
+        }
         if (ticket.status !== 'open') throw new TicketError('This ticket is already closing or closed.', { denied: true });
         const closing = await store.updateTicket(String(context.guild.id), ticket.id, { status: 'closing' }, { expectedStatus: 'open' });
         if (!closing) throw new TicketError('This ticket was already closed by someone else.', { denied: true });
@@ -548,7 +554,7 @@ function createTicketCommands({
                         )
                         .setFooter({ text: 'This channel will be deleted in 10 seconds.' })
                         .setTimestamp(new Date(now()))],
-                    allowedMentions: { users: [String(interaction.user.id), String(ticket.opener_id)], roles: [], parse: [] }
+                    allowedMentions: { users: [...new Set([String(interaction.user.id), String(ticket.opener_id)])], roles: [], parse: [] }
                 });
             } catch (error) {
                 logger.error?.(`[ZiGBoT TICKETS] Closing embed failed for ${ticket.id}: ${error?.message || error}`);
