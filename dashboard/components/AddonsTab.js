@@ -135,6 +135,7 @@ export default function AddonsTab({ draft, set, errors, channels, roles, guildId
     const all = draft.feature_settings || {};
     const update = (section, key) => (value) => set('feature_settings')({ ...all, [section]: { ...(all[section] || {}), [key]: value } });
     const errorCount = (section) => Object.keys(errors || {}).filter((k) => k.startsWith(`feature_settings.${section}.`)).length;
+    const sectionErrors = Object.entries(errors || {}).filter(([key]) => key.startsWith(`feature_settings.${open}.`));
 
     return (
         <>
@@ -149,6 +150,12 @@ export default function AddonsTab({ draft, set, errors, channels, roles, guildId
                     </button>
                 ))}
             </div>
+            {sectionErrors.length ? <div className="notice" role="alert" style={{ marginBottom: 14 }}>
+                <strong>Fix these {FEATURE_SECTIONS[open].label} settings:</strong>
+                <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
+                    {sectionErrors.map(([key, message]) => <li key={key}>{key.slice(`feature_settings.${open}.`.length)}: {message}</li>)}
+                </ul>
+            </div> : null}
             {errors?.feature_settings ? <span className="error" role="alert">{errors.feature_settings}</span> : null}
             <div className="grid" style={{ gap: 14 }}>
                 {FEATURE_SECTIONS[open].fields.map((field) => (
