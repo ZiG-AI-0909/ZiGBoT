@@ -238,6 +238,10 @@ export default function GuildEditor({ initial, meta }) {
             }
             toast('Saved. ZiGBoT picks up the changes within about 30 seconds.');
         } catch (error) {
+            if (error.status === 409 && Number.isInteger(error.data?.currentVersion)) {
+                // Preserve the user's draft while rebasing its concurrency token.
+                setSaved((current) => ({ ...current, version: error.data.currentVersion, updated_at: error.data.updatedAt }));
+            }
             if (error.data?.fieldErrors) setFieldErrors(error.data.fieldErrors);
             if (error.data?.mappingErrors) {
                 setMappingErrors(error.data.mappingErrors);

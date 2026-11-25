@@ -59,7 +59,11 @@ export const PUT = handler(async (request, { params }) => {
         throw failure;
     }
     if (!data || data.length === 0) {
-        throw new HttpError(409, 'Someone else saved changes to this server in the meantime. Reload to see the latest settings.');
+        const { data: current } = await supabase.from('zb_guild_configs').select('version, updated_at').eq('guild_id', String(guild.id)).maybeSingle();
+        throw new HttpError(409, 'Someone else saved changes to this server in the meantime. Your draft is still here; review it and save again.', {
+            currentVersion: current?.version ?? null,
+            updatedAt: current?.updated_at ?? null
+        });
     }
     const row = data[0];
     return json({ config: { ...sanitizeStoredConfig(row, { guildId: String(guild.id) }), version: row.version, updated_at: row.updated_at } });
