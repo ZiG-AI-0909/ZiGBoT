@@ -13,15 +13,20 @@
  * shared scheduler deletes empty ones, so nothing is left behind after a
  * restart. Each member owns at most one, each server at most 50.
  */
-const { PermissionFlagsBits, ChannelType } = require('discord.js');
+const {
+    PermissionFlagsBits, ChannelType, ButtonStyle, ActionRowBuilder, ButtonBuilder,
+    EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, UserSelectMenuBuilder
+} = require('discord.js');
 const { sectionOf, safeText, botCan, reply, makeAudit } = require('./common');
 
 const MAX_PER_GUILD = 50;
 const CREATE_COOLDOWN_MS = 10_000;
+const PANEL_PREFIX = 'zbtv:';
 
 function createTempVoice({ store, scheduler, resolveContext, auditLog, getClient = () => null, now = () => Date.now(), logger = console }) {
     const audit = makeAudit({ auditLog, logger, event: 'TEMP_VOICE' });
     const lastCreate = new Map();
+    const creating = new Map();
     const fail = (what, error) => logger.error?.(`[ZiGBoT TEMP VOICE] ${what} failed: ${error?.code || error?.message || error}`);
 
     async function ctxFor(guild) {
@@ -31,6 +36,190 @@ function createTempVoice({ store, scheduler, resolveContext, auditLog, getClient
     }
 
     const humans = (channel) => [...(channel?.members?.values?.() || [])].filter((m) => !m.user?.bot).length;
+
+    function panelEmbed(channel, record) {
+        const data = record.data;
+        return new EmbedBuilder().setColor(data.locked ? 0xe74c3c : 0x8b5cf6)
+            .setTitle('🎮 VOICE CHANNEL CONTROL CENTER')
+            .setDescription('Welcome to your personal voice channel!\n\nManage your channel, control access, invite friends and customize your experience using the controls below.')
+            .addFields(
+                { name: 'Channel', value: `<#${channel.id}>`, inline: true },
+                { name: 'Owner', value: `<@${data.ownerId}>`, inline: true },
+                { name: 'Members', value: `${channel.members?.size || 0}${channel.userLimit ? ` / ${channel.userLimit}` : ' (unlimited)'}`, inline: true },
+                { name: 'Privacy', value: data.locked ? 'Private' : 'Public', inline: true },
+                { name: 'Created', value: `<t:${Math.floor((data.createdAt || now()) / 1000)}:R>`, inline: true }
+            ).setFooter({ text: 'Only the channel owner can use these controls.' });
+    }
+
+    const button = (action, label, style = ButtonStyle.Secondary, emoji = null, channelId = null) => {
+        const b = new ButtonBuilder().setCustomId(`${PANEL_PREFIX}${action}:${channelId}`).setLabel(label).setStyle(style);
+        if (emoji) b.setEmoji(emoji);
+        return b;
+    };
+
+    function panelRows(channelId) {
+        return [
+            new ActionRowBuilder().addComponents(
+                button('lock', 'Lock Channel', ButtonStyle.Secondary, '🔒', channelId),
+                button('unlock', 'Unlock Channel', ButtonStyle.Secondary, '🔓', channelId),
+                button('limit', 'Set User Limit', ButtonStyle.Secondary, '👥', channelId),
+                button('rename', 'Rename Channel', ButtonStyle.Secondary, '✏️', channelId)
+            ),
+            new ActionRowBuilder().addComponents(
+                button('invite', 'Invite Member', ButtonStyle.Primary, '➕', channelId),
+                button('remove', 'Remove Member', ButtonStyle.Secondary, '➖', channelId),
+                button('kick', 'Kick Member', ButtonStyle.Secondary, '🥾', channelId),
+                button('members', 'View Members', ButtonStyle.Secondary, '📋', channelId)
+            ),
+            new ActionRowBuilder().addComponents(
+                button('access', 'Toggle Voice Access', ButtonStyle.Secondary, '🎙️', channelId),
+                button('mute', 'Toggle Channel Mute', ButtonStyle.Secondary, '🔇', channelId),
+                button('refresh', 'Refresh Dashboard', ButtonStyle.Secondary, '🔄', channelId),
+                button('delete', 'Delete Channel', ButtonStyle.Danger, '🗑️', channelId)
+            )
+        ];
+    }
+
+    async function updatePanel(channel, record) {
+        if (!record.data.dashboardMessageId) return;
+        const message = await channel.messages?.fetch?.(record.data.dashboardMessageId).catch(() => null);
+        if (message) await message.edit({ embeds: [panelEmbed(channel, record)], components: panelRows(channel.id) }).catch((error) => fail('dashboard update', error));
+    }
+
+    async function postPanel(channel, record) {
+        if (typeof channel.send !== 'function') return record;
+        const message = await channel.send({ embeds: [panelEmbed(channel, record)], components: panelRows(channel.id) })
+            .catch((error) => { fail('dashboard post', error); return null; });
+        if (!message) return record;
+        return store.put(channel.guild.id, 'temp_voice', channel.id, { ...record.data, dashboardMessageId: message.id });
+    }
+
+    async function getChannel(guild, channelId) {
+        return guild?.channels?.cache?.get?.(channelId) || await guild?.channels?.fetch?.(channelId).catch(() => null);
+    }
+
+    async function panelError(interaction, message) {
+        const payload = { content: message, ephemeral: true };
+        if (interaction.deferred || interaction.replied) return interaction.followUp(payload);
+        return interaction.reply(payload);
+    }
+
+    async function ownerRecord(interaction, channelId) {
+        const guild = interaction.guild;
+        if (!guild || interaction.channelId !== channelId && interaction.message?.channelId !== channelId) return { error: 'This dashboard does not belong to this channel.' };
+        const record = await store.get(guild.id, 'temp_voice', channelId);
+        const channel = await getChannel(guild, channelId);
+        if (!record || !channel) return { error: 'This temporary channel no longer exists.' };
+        if (record.data.ownerId !== interaction.user.id) return { error: 'Only the owner of this temporary voice channel can use these controls.' };
+        return { guild, channel, record };
+    }
+
+    async function showUserPicker(interaction, action, channelId) {
+        const menu = new UserSelectMenuBuilder().setCustomId(`${PANEL_PREFIX}select:${action}:${channelId}`)
+            .setPlaceholder(action === 'invite' ? 'Choose a member to invite' : action === 'remove' ? 'Choose an invited member to remove' : 'Choose a member to kick')
+            .setMinValues(1).setMaxValues(1);
+        return interaction.reply({ content: 'Choose a server member:', components: [new ActionRowBuilder().addComponents(menu)], ephemeral: true });
+    }
+
+    async function handlePanelComponent(interaction) {
+        const parts = interaction.customId.split(':');
+        const action = parts[1] === 'select' ? parts[2] : parts[1];
+        const channelId = parts.at(-1);
+        const base = await ownerRecord(interaction, channelId);
+        if (base.error) return panelError(interaction, `❌ ${base.error}`);
+        const { guild, channel } = base;
+        let record = base.record;
+
+        if (interaction.isModalSubmit?.()) {
+            if (action === 'limit') {
+                const raw = interaction.fields.getTextInputValue('limit').trim();
+                if (!/^\d{1,2}$/.test(raw) || Number(raw) > 99) return panelError(interaction, 'Enter a whole number from 0 to 99 (0 means unlimited).');
+                await channel.setUserLimit(Number(raw));
+                record = await store.put(guild.id, 'temp_voice', channelId, { ...record.data, userLimit: Number(raw) });
+            } else if (action === 'rename') {
+                const name = safeText(interaction.fields.getTextInputValue('name'), 100).replace(/@​/g, '').trim();
+                if (!name) return panelError(interaction, 'Enter a channel name.');
+                await channel.setName(name);
+                record = await store.put(guild.id, 'temp_voice', channelId, { ...record.data, channelName: name });
+            }
+            await updatePanel(channel, record);
+            return interaction.reply({ content: '✅ Channel updated.', ephemeral: true });
+        }
+
+        if (interaction.isUserSelectMenu?.()) {
+            const selected = interaction.values[0];
+            if (action === 'invite') {
+                await channel.permissionOverwrites.edit(selected, { ViewChannel: true, Connect: true });
+                record = await store.put(guild.id, 'temp_voice', channelId, { ...record.data, invited: [...new Set([...(record.data.invited || []), selected])] });
+                await interaction.update({ content: `✅ <@${selected}> can join this channel.`, components: [] });
+            } else if (action === 'remove') {
+                if (!(record.data.invited || []).includes(selected)) return panelError(interaction, 'That member is not on this channel’s invite list.');
+                await channel.permissionOverwrites.delete(selected).catch(() => channel.permissionOverwrites.edit(selected, { Connect: false }));
+                record = await store.put(guild.id, 'temp_voice', channelId, { ...record.data, invited: record.data.invited.filter((id) => id !== selected) });
+                await interaction.update({ content: `✅ <@${selected}> no longer has channel access.`, components: [] });
+            } else if (action === 'kick') {
+                const target = await guild.members.fetch(selected).catch(() => null);
+                if (!target || selected === record.data.ownerId || target.permissions.has(PermissionFlagsBits.Administrator)) return panelError(interaction, 'The owner and server administrators cannot be kicked from this channel.');
+                if (target.voice.channelId !== channelId) return panelError(interaction, 'That member is not in this channel.');
+                if (!botCan(guild, PermissionFlagsBits.MoveMembers)) return panelError(interaction, 'I need the Move Members permission to disconnect that member.');
+                await target.voice.disconnect('Removed by temporary channel owner');
+                await interaction.update({ content: `✅ <@${selected}> was disconnected.`, components: [] });
+            } else if (action === 'mute') {
+                const target = await guild.members.fetch(selected).catch(() => null);
+                if (!target || target.voice.channelId !== channelId) return panelError(interaction, 'Choose a member currently in this channel.');
+                if (selected === record.data.ownerId || target.permissions.has(PermissionFlagsBits.Administrator)) return panelError(interaction, 'The owner and server administrators cannot be muted here.');
+                if (!botCan(guild, PermissionFlagsBits.MuteMembers)) return panelError(interaction, 'I need the Mute Members permission to server-mute members.');
+                if (!target.manageable) return panelError(interaction, 'Discord role hierarchy prevents me from muting that member.');
+                const mute = !target.voice.serverMute;
+                await target.voice.setMute(mute, 'Temporary channel owner control');
+                await interaction.update({ content: `✅ ${mute ? 'Muted' : 'Unmuted'} <@${selected}>.`, components: [] });
+            }
+            record = await store.get(guild.id, 'temp_voice', channelId);
+            await updatePanel(channel, record);
+            return;
+        }
+
+        if (action === 'limit' || action === 'rename') {
+            const input = new TextInputBuilder().setCustomId(action === 'limit' ? 'limit' : 'name')
+                .setLabel(action === 'limit' ? 'User limit (0–99, 0 = unlimited)' : 'New channel name')
+                .setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(action === 'limit' ? 2 : 100)
+                .setValue(action === 'limit' ? String(channel.userLimit || 0) : channel.name);
+            const modal = new ModalBuilder().setCustomId(`${PANEL_PREFIX}${action}:${channelId}`).setTitle(action === 'limit' ? 'Set user limit' : 'Rename channel')
+                .addComponents(new ActionRowBuilder().addComponents(input));
+            await interaction.showModal(modal);
+            return;
+        }
+        if (['invite', 'remove', 'kick', 'mute'].includes(action)) return showUserPicker(interaction, action, channelId);
+        await interaction.deferReply({ ephemeral: true });
+        if (action === 'members') {
+            const members = [...channel.members.values()].map((m) => `• ${m.user.username}${m.id === record.data.ownerId ? ' (owner)' : ''}`).join('\n') || 'No members currently connected.';
+            return interaction.editReply({ content: members.slice(0, 1900) });
+        }
+        if (action === 'delete') {
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`${PANEL_PREFIX}delete-yes:${channelId}`).setLabel('Delete channel').setStyle(ButtonStyle.Danger),
+                new ButtonBuilder().setCustomId(`${PANEL_PREFIX}delete-no:${channelId}`).setLabel('Cancel').setStyle(ButtonStyle.Secondary)
+            );
+            return interaction.editReply({ content: 'Delete this temporary voice channel? This cannot be undone.', components: [row] });
+        }
+        if (action === 'delete-no') return interaction.editReply({ content: 'Deletion cancelled.', components: [] });
+        if (action === 'delete-yes') {
+            await channel.delete('Temporary channel deleted by its owner');
+            await store.remove(guild.id, 'temp_voice', channelId);
+            return interaction.editReply({ content: '✅ Temporary channel deleted.', components: [] });
+        }
+        if (action === 'lock' || action === 'unlock' || action === 'access') {
+            const locked = action === 'access' ? !record.data.locked : action === 'lock';
+            await channel.permissionOverwrites.edit(guild.id, { Connect: locked ? false : null });
+            record = await store.put(guild.id, 'temp_voice', channelId, { ...record.data, locked });
+            await updatePanel(channel, record);
+            return interaction.editReply({ content: locked ? '🔒 Channel locked. Invited members retain access.' : '🔓 Channel is public again.' });
+        }
+        if (action === 'refresh') {
+            await updatePanel(channel, record);
+            return interaction.editReply({ content: '🔄 Dashboard refreshed.' });
+        }
+    }
 
     async function removeIfEmpty(guild, channelId, settings) {
         const record = await store.get(guild.id, 'temp_voice', channelId);
@@ -46,7 +235,7 @@ function createTempVoice({ store, scheduler, resolveContext, auditLog, getClient
         return true;
     }
 
-    async function create(member, v, settings) {
+    async function createOnce(member, v, settings) {
         const guild = member.guild;
         const hub = guild.channels?.cache?.get?.(v.tempvoice_hub_channel_id);
         if (!hub) return;
@@ -76,9 +265,21 @@ function createTempVoice({ store, scheduler, resolveContext, auditLog, getClient
             reason: `Temporary voice channel for ${member.id}`
         }).catch((error) => { fail('create', error); return null; });
         if (!channel) return;
-        await store.put(guild.id, 'temp_voice', channel.id, { ownerId: member.id, createdAt: t });
+        let record = await store.put(guild.id, 'temp_voice', channel.id, {
+            ownerId: member.id, createdAt: t, dashboardMessageId: null, locked: false,
+            userLimit: channel.userLimit || 0, channelName: channel.name, invited: []
+        });
         await member.voice.setChannel(channel, 'Temporary voice channel').catch((error) => fail('move', error));
+        record = await postPanel(channel, record);
         await audit({ guild, id: member.id }, settings, { action: 'tempvoice_create', target: channel.id });
+    }
+
+    async function create(member, v, settings) {
+        const key = `${member.guild.id}:${member.id}`;
+        if (creating.has(key)) return creating.get(key);
+        const pending = createOnce(member, v, settings).finally(() => creating.delete(key));
+        creating.set(key, pending);
+        return pending;
     }
 
     /** From the existing VoiceStateUpdate listener. Never throws. */
@@ -132,9 +333,10 @@ function createTempVoice({ store, scheduler, resolveContext, auditLog, getClient
             if (sub === 'claim') {
                 if (record.data.ownerId === userId) return reply(interaction, 'You already own this channel.');
                 if (channel.members?.has?.(record.data.ownerId)) return reply(interaction, '❌ The owner is still here.');
-                await store.put(guild.id, 'temp_voice', channel.id, { ...record.data, ownerId: userId });
+                const claimed = await store.put(guild.id, 'temp_voice', channel.id, { ...record.data, ownerId: userId });
                 await channel.permissionOverwrites.delete(record.data.ownerId).catch(() => {});
                 await channel.permissionOverwrites.edit(userId, { ManageChannels: true, MoveMembers: true, Connect: true });
+                await updatePanel(channel, claimed);
                 await audit(interaction, ctx.settings, { action: 'tempvoice_claim', target: channel.id });
                 return reply(interaction, '✅ You own this channel now.');
             }
@@ -162,6 +364,7 @@ function createTempVoice({ store, scheduler, resolveContext, auditLog, getClient
             } else {
                 return reply(interaction, '❌ Unknown option.');
             }
+            await updatePanel(channel, await store.get(guild.id, 'temp_voice', channel.id));
             await audit(interaction, ctx.settings, { action: `tempvoice_${sub}`, target: channel.id });
             return reply(interaction, '✅ Done.');
         } catch (error) {
@@ -173,6 +376,8 @@ function createTempVoice({ store, scheduler, resolveContext, auditLog, getClient
     return {
         onVoiceState,
         sweep,
+        isComponent: (interaction) => typeof interaction.customId === 'string' && interaction.customId.startsWith(PANEL_PREFIX),
+        handleComponent: handlePanelComponent,
         handlesSlash: (interaction) => interaction.commandName === 'tempvoice',
         handleSlash
     };
