@@ -231,7 +231,7 @@ test('welcome: message with the member tagged once, image card, auto-role (bots 
     const [welcome, milestone] = f.sent.get(CH);
     assert.equal(welcome.content, `Welcome <@${U}> to Chill Zone! You are member #100.`);
     assert.deepEqual(welcome.allowedMentions, { parse: [], users: [U] });
-    assert.equal(welcome.files[0].name, 'welcome.png');
+    assert.equal(welcome.files[0].name, 'welcome.gif');
     assert.match(milestone.content, /100 members/);
     assert.deepEqual(f.roleCalls, [['add', U, R1]], 'the staff role is never auto-assigned');
     assert.ok(f.audits.some((a) => a.action === 'autorole' && a.result === 'SKIPPED' && a.target === ADMIN_ROLE));
@@ -467,6 +467,16 @@ test('welcome image is a real PNG of the expected size', () => {
     assert.equal(png.subarray(1, 4).toString(), 'PNG');
     assert.equal(png.readUInt32BE(16), WIDTH);
     assert.equal(png.readUInt32BE(20), HEIGHT);
+});
+
+test('welcome GIF is a looping animated image with multiple frames', async () => {
+    const { renderWelcomeGif, WIDTH, HEIGHT } = require('../src/features/welcomeImage');
+    const gif = await renderWelcomeGif({ name: 'Demi', server: 'Savage GNG', memberCount: 7 });
+    assert.equal(gif.subarray(0, 6).toString(), 'GIF89a');
+    assert.ok(gif.length > 1000);
+    assert.ok(gif.includes(Buffer.from([0x21, 0xf9, 0x04])), 'GIF has animation frame control blocks');
+    assert.equal(gif.readUInt16LE(6), WIDTH);
+    assert.equal(gif.readUInt16LE(8), HEIGHT);
 });
 
 test('createFeatures routes events and commands, and a failing module never throws', async () => {

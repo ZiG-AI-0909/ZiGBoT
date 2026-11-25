@@ -19,7 +19,7 @@ function createFeatures({ settings = {}, resolveContext, auditLog, getClient, st
     const supabase = new SupabaseFeatureStore({ supabaseUrl: settings.supabaseUrl, serviceRoleKey: settings.supabaseServiceRoleKey });
     const featureStore = store || (supabase.enabled ? supabase : new MemoryFeatureStore({ now }));
     const scheduler = createScheduler({ store: featureStore, now, logger });
-    const image = renderWelcomeImage === undefined ? (input) => require('./welcomeImage').renderWelcomeImage(input) : renderWelcomeImage;
+    const image = renderWelcomeImage === undefined ? (input) => require('./welcomeImage').renderWelcomeGif(input) : renderWelcomeImage;
     const shared = { store: featureStore, scheduler, resolveContext, auditLog, getClient, now, logger };
     const rankCard = renderRankCard === undefined ? (input) => require('./rankCard').renderRankCard(input) : renderRankCard;
     const modules = [

@@ -2,7 +2,8 @@
  * Welcome image card (Section C), drawn with @napi-rs/canvas: no network
  * access and no member data beyond the name shown. Returns a PNG Buffer.
  */
-const { createCanvas } = require('@napi-rs/canvas');
+const { createCanvas, loadImage } = require('@napi-rs/canvas');
+const { GIFEncoder, quantize, applyPalette } = require('gifenc');
 
 const WIDTH = 800;
 const HEIGHT = 250;
@@ -44,4 +45,33 @@ function renderWelcomeImage({ name, server, memberCount }) {
     return canvas.toBuffer('image/png');
 }
 
-module.exports = { renderWelcomeImage, WIDTH, HEIGHT };
+/** Encode a subtle animated version of the welcome card as a short looping GIF. */
+async function renderWelcomeGif(input, { durationSeconds = 2.4, fps = 8 } = {}) {
+    const canvas = createCanvas(WIDTH, HEIGHT);
+    const ctx = canvas.getContext('2d');
+    const image = await loadImage(renderWelcomeImage(input));
+    for (let frame = 0; frame < Math.ceil(durationSeconds * fps); frame++) {
+        const phase = frame / fps;
+        // Keep the original card artwork and subtly animate a soft sheen across it.
+        ctx.clearRect(0, 0, WIDTH, HEIGHT);
+        ctx.drawImage(image, 0, 0, WIDTH, HEIGHT);
+        const x = ((phase / durationSeconds) * (WIDTH + 220)) - 110;
+        const sheen = ctx.createLinearGradient(x - 90, 0, x + 90, 0);
+        sheen.addColorStop(0, 'rgba(255,255,255,0)');
+        sheen.addColorStop(0.5, `rgba(255,255,255,${0.10 + 0.04 * Math.sin(phase * Math.PI * 2 / durationSeconds)})`);
+        sheen.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = sheen;
+        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        const rgba = ctx.getImageData(0, 0, WIDTH, HEIGHT).data;
+        const palette = quantize(rgba, 64);
+        const indexed = applyPalette(rgba, palette);
+        if (frame === 0) {
+            var encoder = GIFEncoder();
+        }
+        encoder.writeFrame(indexed, WIDTH, HEIGHT, { palette, delay: 1000 / fps, repeat: 0 });
+    }
+    encoder.finish();
+    return Buffer.from(encoder.bytes());
+}
+
+module.exports = { renderWelcomeImage, renderWelcomeGif, WIDTH, HEIGHT };

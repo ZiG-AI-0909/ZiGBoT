@@ -101,8 +101,8 @@ function createCommunity({ store, scheduler, resolveContext, auditLog, getClient
                 if (channel) {
                     const payload = { content: renderTemplate(c.welcome_message, { userId: member.id, guild }), allowedMentions: { parse: [], users: [member.id] } };
                     if (c.welcome_image_enabled && renderWelcomeImage) {
-                        const png = await Promise.resolve().then(() => renderWelcomeImage({ name: member.displayName || member.user?.username || 'New member', server: guild.name, memberCount: guild.memberCount })).catch((error) => { fail('welcome image', error); return null; });
-                        if (png) payload.files = [{ attachment: png, name: 'welcome.png' }];
+                        const image = await Promise.resolve().then(() => renderWelcomeImage({ name: member.displayName || member.user?.username || 'New member', server: guild.name, memberCount: guild.memberCount })).catch((error) => { fail('welcome image', error); return null; });
+                        if (image) payload.files = [{ attachment: image, name: 'welcome.gif' }];
                     }
                     await channel.send(payload).catch((error) => fail('welcome', error));
                 }
