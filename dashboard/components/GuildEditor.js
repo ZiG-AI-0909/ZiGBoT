@@ -262,7 +262,7 @@ export default function GuildEditor({ initial, meta }) {
     async function reset() {
         setBusy('reset');
         try {
-            const { config } = await api(`/api/guilds/${initial.guild.id}/config/reset`, { method: 'POST' });
+            const { config } = await api(`/api/guilds/${initial.guild.id}/config/reset`, { method: 'POST', body: { expectedVersion: saved.version } });
             if (config) {
                 setSaved(config);
                 setDraft(formOf(config));
