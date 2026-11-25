@@ -27,7 +27,15 @@ export const PUT = handler(async (request, { params }) => {
     const channelTypes = new Map(channels.map((channel) => [String(channel.id), channel.type]));
     // DJ roles: real, non-managed roles of THIS guild (from Discord, not the request).
     const roleIds = new Set((guild.roles || []).filter((r) => !r.managed).map((r) => String(r.id)));
-    const result = validateGuildConfig(body?.config, { channelIds, categoryIds, channelTypes, roleIds, guildId: String(guild.id) });
+    // Older dashboard builds offered voice channels in this optional category
+    // picker. If the hub itself was selected there, treat it as the default:
+    // newly-created channels inherit the hub's parent category in tempVoice.js.
+    const submittedConfig = body?.config && typeof body.config === 'object' ? { ...body.config } : body?.config;
+    const voiceSettings = submittedConfig?.feature_settings?.voice;
+    if (voiceSettings?.tempvoice_category_id && String(voiceSettings.tempvoice_category_id) === String(voiceSettings.tempvoice_hub_channel_id)) {
+        submittedConfig.feature_settings = { ...submittedConfig.feature_settings, voice: { ...voiceSettings, tempvoice_category_id: null } };
+    }
+    const result = validateGuildConfig(submittedConfig, { channelIds, categoryIds, channelTypes, roleIds, guildId: String(guild.id) });
     if (!result.ok) throw new HttpError(422, 'Some settings need fixing.', { fieldErrors: result.errors });
 
     // Free servers cannot add or change Premium settings. Values saved while
