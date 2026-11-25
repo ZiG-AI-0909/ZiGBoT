@@ -379,7 +379,7 @@ export default function GuildEditor({ initial, meta }) {
                 {tab === 'addons' ? <AddonsTab draft={draft} set={set} errors={fieldErrors} channels={channels} categories={initial.ticketCategories || []} roles={roles} guildId={initial.guild.id} /> : null}
                 {tab === 'music' ? <MusicTab guildId={initial.guild.id} draft={draft} set={set} errors={fieldErrors} roles={roles} channels={channels} premium={premium} onUpgrade={() => setTab('premium')} /> : null}
                 {tab === 'premium' ? <PremiumTab guildId={initial.guild.id} plan={plan} setPlan={setPlan} perks={meta.perks} contactUrl={meta.contactUrl} toast={toast} /> : null}
-                {tab === 'identity' && meta.identityEnabled ? <IdentityTab guildId={initial.guild.id} guildName={initial.guild.name} premium={premium} onUpgrade={() => setTab('premium')} toast={toast} /> : null}
+                {tab === 'identity' ? <IdentityTab guildId={initial.guild.id} guildName={initial.guild.name} premium={premium} onUpgrade={() => setTab('premium')} toast={toast} /> : null}
                 {tab === 'antinuke' ? <AntiNukeTab guildId={initial.guild.id} channels={channels} roles={roles} inviteUrl={meta.inviteUrl} toast={toast} /> : null}
                 {tab === 'test' ? <TestTab guildId={initial.guild.id} draft={draft} tones={meta.tones} toast={toast} /> : null}
                 {tab === 'history' ? <HistoryTab guildId={initial.guild.id} /> : null}
