@@ -347,7 +347,10 @@ client.on(Events.WebhooksUpdate, securityEventHandlers.webhookUpdate);
 // revert-only sync puts any applied identity back to default ZiGBoT.
 const identityStore = createIdentityStore({ guildStore });
 const identityContext = (guild) => guildStore.getGuildContext(guild);
-const identityOptions = { store: identityStore, getContext: identityContext, enabled: settings.customIdentityEnabled, guilds: settings.customIdentityGuilds };
+const identityOptions = {
+    store: identityStore, getContext: identityContext, enabled: settings.customIdentityEnabled,
+    guilds: settings.customIdentityGuilds, freeGuilds: settings.customIdentityFreeGuilds
+};
 const identitySync = createIdentitySync({ client, ...identityOptions });
 const identityCommands = createIdentityCommands(identityOptions);
 console.log(`[ZiGBoT IDENTITY] Custom bot identity: ${identitySync.mode === 'full'

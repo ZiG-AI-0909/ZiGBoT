@@ -21,6 +21,7 @@ const {
     IDENTITY_LIMITS,
     DEFAULT_IDENTITY,
     identityAllowedInGuild,
+    identityFreeInGuild,
     identityImagePath,
     identityDesired,
     identityApplied,
@@ -42,7 +43,7 @@ const auditView = (row) => (row ? {
     reverted_at: row.reverted_at, revert_reason: row.revert_reason
 } : null);
 
-function createIdentitySync({ client, store, getContext, enabled, guilds = [], logger = console, now = () => Date.now(), intervalMs = SYNC_INTERVAL_MS }) {
+function createIdentitySync({ client, store, getContext, enabled, guilds = [], freeGuilds = [], logger = console, now = () => Date.now(), intervalMs = SYNC_INTERVAL_MS }) {
     const mode = !store?.enabled ? 'off' : enabled ? 'full' : 'revert-only';
     const active = mode !== 'off';
     const revertOnly = mode === 'revert-only';
@@ -96,6 +97,7 @@ function createIdentitySync({ client, store, getContext, enabled, guilds = [], l
                 blocked = isBlocked;
             }
             const allowed = !revertOnly && identityAllowedInGuild(guildId, guilds);
+            const freeAccess = identityFreeInGuild(guildId, freeGuilds);
             let applied = identityApplied(row);
 
             // Premium lapsed / blocked for 30 days (and nothing left on Discord): delete it.
@@ -115,7 +117,7 @@ function createIdentitySync({ client, store, getContext, enabled, guilds = [], l
                 await store.updateRow(guildId, { applied_nick: null, applied_bio: null, applied_avatar_sha256: null, applied_at: new Date(now()).toISOString() });
             }
 
-            const desired = revertOnly ? DEFAULT_IDENTITY : identityDesired({ row, premium, blocked, allowed });
+            const desired = revertOnly ? DEFAULT_IDENTITY : identityDesired({ row, premium, freeAccess, blocked, allowed });
             const patch = identityPatch(desired, applied);
             if (Object.keys(patch).length === 0) return 'ok';
 

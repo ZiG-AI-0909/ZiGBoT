@@ -155,7 +155,8 @@ function loadSettings() {
         // Custom bot identity (Premium; src/identity/). OFF unless explicitly
         // 'true': then no /identity command and a revert-only sync that puts
         // any applied identity back to default ZiGBoT. CUSTOM_IDENTITY_GUILDS
-        // (server ids) limits it to those servers; others are reverted.
+        // (server ids) limits it to those servers; CUSTOM_IDENTITY_FREE_GUILDS
+        // grants the listed servers an explicit free pilot exception.
         // The dashboard reads the same variables.
         customIdentityEnabled: process.env.CUSTOM_IDENTITY_ENABLED === 'true',
         // Public dashboard address, for links in Anti-Nuke alerts.
@@ -168,6 +169,7 @@ function loadSettings() {
         // discordbotlist.com API token: posts the server count hourly. Empty = off.
         dblToken: (process.env.DBL_TOKEN || '').trim(),
         customIdentityGuilds: parseIdentityGuilds(process.env.CUSTOM_IDENTITY_GUILDS),
+        customIdentityFreeGuilds: parseIdentityGuilds(process.env.CUSTOM_IDENTITY_FREE_GUILDS),
         // Groq retired llama-3.1-8b-instant for free/developer keys on
         // 2026-08-16; gpt-oss-20b is its listed replacement and supports JSON mode.
         groqSummaryModel: process.env.GROQ_SUMMARY_MODEL || 'openai/gpt-oss-20b',

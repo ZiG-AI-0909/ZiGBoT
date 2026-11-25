@@ -49,13 +49,13 @@ function fakeGuild({ joinedTimestamp = NOW - 365 * DAY, failWith = null } = {}) 
     };
 }
 
-function makeSync({ store, guild, premium = true, enabled = true, guilds = [], onContext = () => {} }) {
+function makeSync({ store, guild, premium = true, enabled = true, guilds = [], freeGuilds = [], onContext = () => {} }) {
     const client = { guilds: { cache: new Map(guild ? [[G, guild]] : []) }, isReady: () => true };
     const getContext = async () => {
         onContext();
         return { premium };
     };
-    return createIdentitySync({ client, store, getContext, enabled, guilds, logger: { log() {}, error() {} }, now: () => NOW });
+    return createIdentitySync({ client, store, getContext, enabled, guilds, freeGuilds, logger: { log() {}, error() {} }, now: () => NOW });
 }
 
 const appliedRow = (extra = {}) => savedRow({ applied_nick: 'Zed', applied_bio: 'chai bot', applied_avatar_sha256: SHA, applied_at: new Date(NOW - DAY).toISOString(), ...extra });
@@ -189,6 +189,13 @@ test('CUSTOM_IDENTITY_GUILDS empty: every Premium server qualifies', async () =>
     const store = fakeStore({ rows: [savedRow()] });
     const guild = fakeGuild();
     assert.equal(await makeSync({ store, guild, guilds: [] }).reconcile(guild), 'applied');
+});
+
+test('a listed free pilot server keeps its identity without Premium', async () => {
+    const store = fakeStore({ rows: [savedRow()] });
+    const guild = fakeGuild();
+    assert.equal(await makeSync({ store, guild, premium: false, freeGuilds: [G] }).reconcile(guild), 'applied');
+    assert.equal(guild.edits[0].nick, 'Zed');
 });
 
 test('re-added after our last change: the identity is applied again', async () => {

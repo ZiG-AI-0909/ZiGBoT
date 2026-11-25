@@ -86,10 +86,14 @@ export default function IdentityTab({ guildId, guildName, premium, onUpgrade, to
     if (state.loading) return <div className="stack"><div className="skeleton" /><div className="skeleton" /></div>;
     if (state.error) return <div className="notice" role="alert">{state.error}</div>;
     const data = state.data;
-    if (!data?.enabled) return <div className="card empty"><p className="muted" style={{ margin: 0 }}>Custom bot identity isn’t available yet.</p></div>;
+    if (!data?.enabled) return <div className="card empty">
+        <h2>Custom identity is disabled</h2>
+        <p className="muted" style={{ margin: 0 }}>The ZiGBoT owner must enable <code>CUSTOM_IDENTITY_ENABLED=true</code> in both the dashboard deployment and bot service. Add this server to <code>CUSTOM_IDENTITY_GUILDS</code> if using the feature allowlist. The owner can grant a free pilot with <code>CUSTOM_IDENTITY_FREE_GUILDS</code>; other servers need Premium.</p>
+    </div>;
     const identity = data.identity;
     const limits = data.limits;
-    const locked = !premium || data.blocked;
+    const freeAccess = Boolean(data.freeAccess);
+    const locked = (!premium && !freeAccess) || data.blocked;
 
     function pickFile(event) {
         const picked = event.target.files?.[0] || null;
@@ -156,12 +160,13 @@ export default function IdentityTab({ guildId, guildName, premium, onUpgrade, to
 
     return (
         <div className="stack">
-            {!premium ? (
+            {!premium && !freeAccess ? (
                 <div className="premium-note">
                     <span>💎 Custom bot identity is a Premium feature. Without Premium, ZiGBoT keeps its default name and picture here.</span>
                     <button type="button" className="btn btn-primary" onClick={onUpgrade}>See Premium</button>
                 </div>
             ) : null}
+            {!premium && freeAccess ? <div className="notice">This server has free pilot access to custom bot identity.</div> : null}
             {data.blocked ? <div className="notice" role="alert">Custom bot identity has been turned off for this server or your account. Contact ZiGBoT support if you think this is a mistake.</div> : null}
             {identity?.revertedAt && REVERT_REASONS[identity.revertReason] ? (
                 <div className="notice">ZiGBoT went back to its default profile on {new Date(identity.revertedAt).toLocaleDateString()} because {REVERT_REASONS[identity.revertReason]}. Your saved identity comes back when that changes.</div>

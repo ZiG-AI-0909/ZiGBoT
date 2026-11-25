@@ -9,17 +9,18 @@ import {
     pushIdentity, resetIdentity, writeAudit, auditView, notifyOwnerOfPending, identityDiscordError, identityEnabledFor
 } from '@/lib/identity';
 
-const { IDENTITY_LIMITS, validateIdentityName, validateIdentityBio, decideIdentitySave, identityImagePath } = shared;
+const { IDENTITY_LIMITS, validateIdentityName, validateIdentityBio, decideIdentitySave, identityImagePath, identityFreeInGuild } = shared;
 
 export const dynamic = 'force-dynamic';
 
 // The multipart body: a 2 MB picture plus two short text fields.
 const MAX_BODY_BYTES = IDENTITY_LIMITS.imageMaxBytes + 64 * 1024;
 
-function view(row, { premium, blocks }) {
+function view(row, { premium, freeAccess, blocks }) {
     return {
         enabled: true,
         premium,
+        freeAccess,
         // false: uploaded pictures go live straight away (no owner review).
         avatarReview: env.identityAvatarReview,
         blocked: blocks.guildBlocked || blocks.userBlocked,
@@ -46,7 +47,8 @@ export const GET = handler(async (_request, { params }) => {
     const { guild, discordId } = await requireGuildAdmin(guildId);
     if (!identityEnabledFor(guild.id)) return json({ enabled: false });
     const [row, plan, blocks] = await Promise.all([getIdentityRow(guild.id), loadPlan(guild), getBlocks({ guildId: guild.id, discordUserId: discordId })]);
-    return json(view(row, { premium: plan.premium, blocks }));
+    const freeAccess = identityFreeInGuild(guild.id, env.customIdentityFreeGuilds);
+    return json(view(row, { premium: plan.premium, freeAccess, blocks }));
 });
 
 // PUT (multipart): nick, bio, optional avatar file, optional remove_avatar=1.
@@ -76,8 +78,9 @@ export const PUT = handler(async (request, { params }) => {
     const [row, plan, blocks, recent] = await Promise.all([
         getIdentityRow(guild.id), loadPlan(guild), getBlocks({ guildId: guild.id, discordUserId: discordId }), countRecentSaves(guild.id)
     ]);
+    const freeAccess = identityFreeInGuild(guild.id, env.customIdentityFreeGuilds);
     const decision = decideIdentitySave({
-        enabled: true, premium: plan.premium, guildBlocked: blocks.guildBlocked, userBlocked: blocks.userBlocked,
+        enabled: true, premium: plan.premium, freeAccess, guildBlocked: blocks.guildBlocked, userBlocked: blocks.userBlocked,
         changesLastHour: recent.hour, changesLastDay: recent.day
     });
     if (!decision.allowed) throw new HttpError(decision.status, decision.reason, { code: decision.code });
@@ -143,7 +146,7 @@ export const PUT = handler(async (request, { params }) => {
     await removeAvatars(stale.filter((path) => path && path !== saved.avatar_path && path !== saved.pending_avatar_path));
     await writeAudit({ guildId: guild.id, action: row ? 'UPDATE' : 'INSERT', actorUserId: user.id, actorRole: 'authenticated', before: auditView(row), after: auditView(saved) });
     if (review && uploadedPath && uploadedPath !== row?.pending_avatar_path) await notifyOwnerOfPending(guild);
-    return json(view(saved, { premium: plan.premium, blocks }));
+    return json(view(saved, { premium: plan.premium, freeAccess, blocks }));
 });
 
 // DELETE: back to the default ZiGBoT profile; the saved identity and its

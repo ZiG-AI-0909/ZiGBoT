@@ -8,6 +8,7 @@ const {
     DEFAULT_IDENTITY,
     parseIdentityGuilds,
     identityAllowedInGuild,
+    identityFreeInGuild,
     validateIdentityName,
     validateIdentityBio,
     detectImageType,
@@ -104,6 +105,7 @@ test('desired state: untouched without a row; default when not Premium or blocke
     assert.equal(identityDesired({ row: null, premium: true, blocked: false }), null);
     assert.deepEqual(identityDesired({ row, premium: true, blocked: false }), { nick: 'Zed', bio: 'hi', avatarSha: SHA });
     assert.equal(identityDesired({ row, premium: false, blocked: false }), DEFAULT_IDENTITY);
+    assert.deepEqual(identityDesired({ row, premium: false, freeAccess: true, blocked: false }), { nick: 'Zed', bio: 'hi', avatarSha: SHA });
     assert.equal(identityDesired({ row, premium: true, blocked: true }), DEFAULT_IDENTITY);
     assert.deepEqual(identityDesired({ row: { guild_id: G, nick: 'Zed', pending_avatar_sha256: SHA }, premium: true, blocked: false }), { nick: 'Zed', bio: null, avatarSha: null });
     assert.equal(identityDesired({ row, premium: true, blocked: false, allowed: false }), DEFAULT_IDENTITY, 'not in CUSTOM_IDENTITY_GUILDS');
@@ -115,6 +117,8 @@ test('CUSTOM_IDENTITY_GUILDS: parsed strictly; empty means every server', () => 
     assert.equal(identityAllowedInGuild(G, []), true);
     assert.equal(identityAllowedInGuild(G, [G]), true);
     assert.equal(identityAllowedInGuild(G, ['999999999999999999']), false);
+    assert.equal(identityFreeInGuild(G, []), false, 'empty free list means nobody gets the exception');
+    assert.equal(identityFreeInGuild(G, [G]), true);
 });
 
 test('patch: only changed fields are sent; nothing when already in sync', () => {
@@ -138,6 +142,7 @@ test('save decision: feature flag, blocks, Premium and cooldown', () => {
     assert.equal(decideIdentitySave({ ...ok, guildBlocked: true }).status, 403);
     assert.equal(decideIdentitySave({ ...ok, userBlocked: true }).code, 'identity_blocked');
     assert.equal(decideIdentitySave({ ...ok, premium: false }).code, 'premium_required');
+    assert.deepEqual(decideIdentitySave({ ...ok, premium: false, freeAccess: true }), { allowed: true });
     assert.equal(decideIdentitySave({ ...ok, changesLastHour: IDENTITY_LIMITS.changesPerHour }).status, 429);
     assert.equal(decideIdentitySave({ ...ok, changesLastHour: IDENTITY_LIMITS.changesPerHour - 1 }).allowed, true);
     assert.equal(decideIdentitySave({ ...ok, changesLastDay: IDENTITY_LIMITS.changesPerDay }).status, 429);

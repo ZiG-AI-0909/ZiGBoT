@@ -6,7 +6,7 @@
  * mention nobody.
  */
 const { MessageFlags, PermissionFlagsBits, escapeMarkdown } = require('discord.js');
-const { identityAuditReason, identityAllowedInGuild } = require('../../dashboard/lib/shared');
+const { identityAuditReason, identityAllowedInGuild, identityFreeInGuild } = require('../../dashboard/lib/shared');
 
 const NO_MENTIONS = { parse: [] };
 const REVERT_REASONS = {
@@ -17,16 +17,17 @@ const REVERT_REASONS = {
     feature_disabled: 'custom identity is switched off for now'
 };
 
-function createIdentityCommands({ store, getContext, enabled, guilds = [], dashboardUrl = '' }) {
+function createIdentityCommands({ store, getContext, enabled, guilds = [], freeGuilds = [], dashboardUrl = '' }) {
     async function show(interaction) {
         const guild = interaction.guild;
         if (!identityAllowedInGuild(guild.id, guilds)) {
             const row = await store.getRow(guild.id);
             return `🪪 Custom bot identity isn’t available in this server yet, so ZiGBoT uses its default name, picture and bio here.${row ? '\nA saved identity is kept; `/identity reset confirm:True` deletes it.' : ''}`;
         }
+        const freeAccess = identityFreeInGuild(guild.id, freeGuilds);
         const [row, ctx, blocked] = await Promise.all([store.getRow(guild.id), getContext(guild), store.isGuildBlocked(guild.id)]);
         const link = dashboardUrl ? `\nChange it in the dashboard: ${dashboardUrl}/dashboard/${guild.id}` : '\nChange it in the ZiGBoT dashboard (🪪 Identity tab).';
-        if (!row) return `🪪 ZiGBoT uses its default name, picture and bio in this server.${ctx?.premium ? link : '\nCustom bot identity is a Premium feature.'}`;
+        if (!row) return `🪪 ZiGBoT uses its default name, picture and bio in this server.${ctx?.premium || freeAccess ? link : '\nCustom bot identity is a Premium feature.'}`;
         const picture = row.pending_avatar_path ? 'a new one is waiting for review' : row.avatar_path ? 'custom' : 'default';
         const lines = [
             '🪪 **ZiGBoT’s identity in this server**',
@@ -35,7 +36,7 @@ function createIdentityCommands({ store, getContext, enabled, guilds = [], dashb
             `Picture: ${picture}`
         ];
         if (blocked) lines.push('⛔ Custom identity has been turned off for this server, so the default profile is used.');
-        else if (!ctx?.premium) lines.push('💎 This server isn’t Premium right now, so the default profile is used.');
+        else if (!ctx?.premium && !freeAccess) lines.push('💎 This server isn’t Premium right now, so the default profile is used.');
         if (row.reverted_at && REVERT_REASONS[row.revert_reason]) lines.push(`Reverted to default on ${new Date(row.reverted_at).toDateString()} because ${REVERT_REASONS[row.revert_reason]}.`);
         return lines.join('\n') + link;
     }

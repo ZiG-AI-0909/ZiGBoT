@@ -10,7 +10,7 @@ const root = path.join(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const { loadSettings } = require('../src/config/settings');
 
-const KEYS = ['DISCORD_TOKEN', 'GROQ_API_KEY', 'NVIDIA_API_KEY', 'CUSTOM_IDENTITY_ENABLED', 'CUSTOM_IDENTITY_GUILDS'];
+const KEYS = ['DISCORD_TOKEN', 'GROQ_API_KEY', 'NVIDIA_API_KEY', 'CUSTOM_IDENTITY_ENABLED', 'CUSTOM_IDENTITY_GUILDS', 'CUSTOM_IDENTITY_FREE_GUILDS'];
 
 function withEnv(values, fn) {
     const saved = Object.fromEntries(KEYS.map((name) => [name, process.env[name]]));
@@ -45,6 +45,13 @@ test('CUSTOM_IDENTITY_GUILDS is read the same way by the bot and the dashboard',
     assert.match(read('dashboard/lib/identity.js'), /return env\.customIdentityEnabled && identityAllowedInGuild\(guildId, env\.customIdentityGuilds\);/);
     const index = read('src/index.js');
     assert.match(index, /guilds: settings\.customIdentityGuilds/);
+});
+
+test('CUSTOM_IDENTITY_FREE_GUILDS is read by the bot and dashboard as an explicit exception list', () => {
+    const settings = withEnv({ DISCORD_TOKEN: 'token', GROQ_API_KEY: 'groq-key', CUSTOM_IDENTITY_FREE_GUILDS: '123456789012345678, nope' }, () => loadSettings());
+    assert.deepEqual(settings.customIdentityFreeGuilds, ['123456789012345678']);
+    assert.match(read('dashboard/lib/env.js'), /customIdentityFreeGuilds\(\) \{ return identityRules\.parseIdentityGuilds\(process\.env\.CUSTOM_IDENTITY_FREE_GUILDS\); \}/);
+    assert.match(read('src/index.js'), /freeGuilds: settings\.customIdentityFreeGuilds/);
 });
 
 test('the invite asks for Change Nickname only while the feature is on, and never for Administrator', () => {
@@ -113,13 +120,14 @@ test('the audit log never stores picture bytes or paths, only hashes', () => {
     assert.ok(!botView.includes('avatar_path'));
 });
 
-test('the editor shows the Identity tab and the perk only while the feature is on', () => {
+test('the editor always shows Identity and the perk only while the feature is on', () => {
     const editor = read('dashboard/components/GuildEditor.js');
-    assert.match(editor, /TABS\.filter\(\(t\) => t\.id !== 'identity' \|\| meta\.identityEnabled\)/);
-    assert.match(editor, /tab === 'identity' && meta\.identityEnabled/);
+    assert.match(editor, /const visibleTabs = TABS;/);
+    assert.match(editor, /tab === 'identity' \? <IdentityTab/);
     const page = read('dashboard/app/dashboard/[guildId]/page.js');
     assert.match(page, /perks: premiumPerks\(\{ customIdentity: identityEnabledFor\(guildId\) \}\), identityEnabled: identityEnabledFor\(guildId\)/);
     assert.match(read('dashboard/components/IdentityTab.js'), /APP tag/);
+    assert.match(read('dashboard/components/IdentityTab.js'), /CUSTOM_IDENTITY_FREE_GUILDS/);
 });
 
 test('Privacy and Terms describe the feature as it works', () => {

@@ -179,6 +179,11 @@ function identityAllowedInGuild(guildId, guilds) {
     return !Array.isArray(guilds) || guilds.length === 0 || guilds.includes(String(guildId));
 }
 
+/** CUSTOM_IDENTITY_FREE_GUILDS is an explicit free-access exception list. */
+function identityFreeInGuild(guildId, guilds) {
+    return Array.isArray(guilds) && guilds.includes(String(guildId));
+}
+
 /**
  * What the bot's profile in this server should be.
  *  - null: leave the server alone (it never saved an identity).
@@ -187,9 +192,9 @@ function identityAllowedInGuild(guildId, guilds) {
  *  - otherwise the saved nickname/bio and the APPROVED avatar (a pending
  *    one is never applied).
  */
-function identityDesired({ row, premium, blocked, allowed = true }) {
+function identityDesired({ row, premium, freeAccess = false, blocked, allowed = true }) {
     if (!row) return null;
-    if (!premium || blocked || !allowed) return DEFAULT_IDENTITY;
+    if ((!premium && !freeAccess) || blocked || !allowed) return DEFAULT_IDENTITY;
     return {
         nick: row.nick || null,
         bio: row.bio || null,
@@ -217,11 +222,11 @@ function identityPatch(desired, applied) {
 const isDefaultIdentity = (state) => !state || (!state.nick && !state.bio && !state.avatarSha);
 
 /** May this admin save an identity for this server right now? */
-function decideIdentitySave({ enabled, premium, guildBlocked, userBlocked, changesLastHour = 0, changesLastDay = 0 }) {
+function decideIdentitySave({ enabled, premium, freeAccess = false, guildBlocked, userBlocked, changesLastHour = 0, changesLastDay = 0 }) {
     if (!enabled) return { allowed: false, status: 404, code: 'identity_disabled', reason: 'Custom bot identity isn’t available yet.' };
     if (guildBlocked) return { allowed: false, status: 403, code: 'identity_blocked', reason: 'Custom bot identity has been turned off for this server. Contact ZiGBoT support if you think this is a mistake.' };
     if (userBlocked) return { allowed: false, status: 403, code: 'identity_blocked', reason: 'Your account can’t change ZiGBoT’s identity. Contact ZiGBoT support if you think this is a mistake.' };
-    if (!premium) return { allowed: false, status: 403, code: 'premium_required', reason: 'Custom bot identity is a Premium feature.' };
+    if (!premium && !freeAccess) return { allowed: false, status: 403, code: 'premium_required', reason: 'Custom bot identity is a Premium feature.' };
     if (changesLastHour >= IDENTITY_LIMITS.changesPerHour) return { allowed: false, status: 429, code: 'identity_cooldown', reason: `That’s ${IDENTITY_LIMITS.changesPerHour} changes in the last hour. Please try again later.` };
     if (changesLastDay >= IDENTITY_LIMITS.changesPerDay) return { allowed: false, status: 429, code: 'identity_cooldown', reason: `That’s ${IDENTITY_LIMITS.changesPerDay} changes today. Please try again tomorrow.` };
     return { allowed: true };
@@ -240,6 +245,7 @@ module.exports = {
     DEFAULT_IDENTITY,
     parseIdentityGuilds,
     identityAllowedInGuild,
+    identityFreeInGuild,
     validateIdentityName,
     validateIdentityBio,
     detectImageType,
