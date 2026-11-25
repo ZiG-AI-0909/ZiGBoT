@@ -168,6 +168,8 @@ function detectImageType(bytes) {
 }
 
 const DEFAULT_IDENTITY = Object.freeze({ nick: null, bio: null, avatarSha: null });
+// ZiGBoT's own server receives the free pilot; all other servers need Premium.
+const FREE_IDENTITY_PILOT_GUILDS = Object.freeze(['1574375400904200193']);
 
 /** CUSTOM_IDENTITY_GUILDS: comma-separated server ids (invalid entries ignored). */
 function parseIdentityGuilds(value) {
@@ -181,7 +183,8 @@ function identityAllowedInGuild(guildId, guilds) {
 
 /** CUSTOM_IDENTITY_FREE_GUILDS is an explicit free-access exception list. */
 function identityFreeInGuild(guildId, guilds) {
-    return Array.isArray(guilds) && guilds.includes(String(guildId));
+    return FREE_IDENTITY_PILOT_GUILDS.includes(String(guildId))
+        || (Array.isArray(guilds) && guilds.includes(String(guildId)));
 }
 
 /**
@@ -243,6 +246,7 @@ module.exports = {
     IDENTITY_IMAGE_PATH,
     identityImagePath,
     DEFAULT_IDENTITY,
+    FREE_IDENTITY_PILOT_GUILDS,
     parseIdentityGuilds,
     identityAllowedInGuild,
     identityFreeInGuild,

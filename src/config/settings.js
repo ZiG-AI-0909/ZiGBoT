@@ -1,4 +1,4 @@
-const { parseIdentityGuilds } = require('../../dashboard/lib/shared/identity');
+const { parseIdentityGuilds, FREE_IDENTITY_PILOT_GUILDS } = require('../../dashboard/lib/shared/identity');
 
 const required = ['DISCORD_TOKEN'];
 // Chat AI providers (src/ai/providers.js). Each one runs only when its key is
@@ -152,13 +152,9 @@ function loadSettings() {
         // /summarychannels list. OFF unless explicitly 'true'; needs the
         // summaries switch above too.
         memorySummariesChannelsEnabled: process.env.MEMORY_SUMMARIES_CHANNELS_ENABLED === 'true',
-        // Custom bot identity (Premium; src/identity/). OFF unless explicitly
-        // 'true': then no /identity command and a revert-only sync that puts
-        // any applied identity back to default ZiGBoT. CUSTOM_IDENTITY_GUILDS
-        // (server ids) limits it to those servers; CUSTOM_IDENTITY_FREE_GUILDS
-        // grants the listed servers an explicit free pilot exception.
-        // The dashboard reads the same variables.
-        customIdentityEnabled: process.env.CUSTOM_IDENTITY_ENABLED === 'true',
+        // Custom identity is available by default; exact 'false' disables it.
+        // Premium is the access gate except for the configured free pilot.
+        customIdentityEnabled: process.env.CUSTOM_IDENTITY_ENABLED !== 'false',
         // Public dashboard address, for links in Anti-Nuke alerts.
         dashboardUrl: String(process.env.DASHBOARD_URL || 'https://www.zigbot.in').replace(/\/+$/, ''),
         // Emergency off switch for the security intelligence layer.
@@ -168,8 +164,8 @@ function loadSettings() {
         giphyApiKey: (process.env.GIPHY_API_KEY || '').trim(),
         // discordbotlist.com API token: posts the server count hourly. Empty = off.
         dblToken: (process.env.DBL_TOKEN || '').trim(),
-        customIdentityGuilds: parseIdentityGuilds(process.env.CUSTOM_IDENTITY_GUILDS),
-        customIdentityFreeGuilds: parseIdentityGuilds(process.env.CUSTOM_IDENTITY_FREE_GUILDS),
+        customIdentityGuilds: [], // Legacy rollout allowlist no longer restricts Premium servers.
+        customIdentityFreeGuilds: [...new Set([...FREE_IDENTITY_PILOT_GUILDS, ...parseIdentityGuilds(process.env.CUSTOM_IDENTITY_FREE_GUILDS)])],
         // Groq retired llama-3.1-8b-instant for free/developer keys on
         // 2026-08-16; gpt-oss-20b is its listed replacement and supports JSON mode.
         groqSummaryModel: process.env.GROQ_SUMMARY_MODEL || 'openai/gpt-oss-20b',

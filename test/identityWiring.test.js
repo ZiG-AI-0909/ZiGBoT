@@ -28,29 +28,27 @@ function withEnv(values, fn) {
     }
 }
 
-test('CUSTOM_IDENTITY_ENABLED is off unless exactly "true", in the bot and the dashboard', () => {
-    for (const [value, expected] of [[undefined, false], ['false', false], ['TRUE', false], ['1', false], ['true', true]]) {
+test('CUSTOM_IDENTITY_ENABLED defaults on and only exact "false" disables it, in bot and dashboard', () => {
+    for (const [value, expected] of [[undefined, true], ['false', false], ['TRUE', true], ['1', true], ['true', true]]) {
         const settings = withEnv({ DISCORD_TOKEN: 'token', GROQ_API_KEY: 'groq-key', CUSTOM_IDENTITY_ENABLED: value }, () => loadSettings());
         assert.equal(settings.customIdentityEnabled, expected, String(value));
     }
-    assert.match(read('dashboard/lib/env.js'), /customIdentityEnabled\(\) \{ return process\.env\.CUSTOM_IDENTITY_ENABLED === 'true'; \}/);
+    assert.match(read('dashboard/lib/env.js'), /customIdentityEnabled\(\) \{ return process\.env\.CUSTOM_IDENTITY_ENABLED !== 'false'; \}/);
 });
 
-test('CUSTOM_IDENTITY_GUILDS is read the same way by the bot and the dashboard', () => {
+test('Premium identity access is not restricted by the legacy rollout guild list', () => {
     const unset = withEnv({ DISCORD_TOKEN: 'token', GROQ_API_KEY: 'groq-key' }, () => loadSettings());
     assert.deepEqual(unset.customIdentityGuilds, []);
     const listed = withEnv({ DISCORD_TOKEN: 'token', GROQ_API_KEY: 'groq-key', CUSTOM_IDENTITY_GUILDS: '123456789012345678, nope' }, () => loadSettings());
-    assert.deepEqual(listed.customIdentityGuilds, ['123456789012345678']);
-    assert.match(read('dashboard/lib/env.js'), /customIdentityGuilds\(\) \{ return identityRules\.parseIdentityGuilds\(process\.env\.CUSTOM_IDENTITY_GUILDS\); \}/);
-    assert.match(read('dashboard/lib/identity.js'), /return env\.customIdentityEnabled && identityAllowedInGuild\(guildId, env\.customIdentityGuilds\);/);
-    const index = read('src/index.js');
-    assert.match(index, /guilds: settings\.customIdentityGuilds/);
+    assert.deepEqual(listed.customIdentityGuilds, []);
+    assert.match(read('dashboard/lib/env.js'), /customIdentityGuilds\(\) \{ return \[\]; \}/);
+    assert.match(read('dashboard/lib/identity.js'), /return env\.customIdentityEnabled;/);
 });
 
-test('CUSTOM_IDENTITY_FREE_GUILDS is read by the bot and dashboard as an explicit exception list', () => {
+test('the founder free pilot is included with optional custom free guild exceptions', () => {
     const settings = withEnv({ DISCORD_TOKEN: 'token', GROQ_API_KEY: 'groq-key', CUSTOM_IDENTITY_FREE_GUILDS: '123456789012345678, nope' }, () => loadSettings());
-    assert.deepEqual(settings.customIdentityFreeGuilds, ['123456789012345678']);
-    assert.match(read('dashboard/lib/env.js'), /customIdentityFreeGuilds\(\) \{ return identityRules\.parseIdentityGuilds\(process\.env\.CUSTOM_IDENTITY_FREE_GUILDS\); \}/);
+    assert.deepEqual(settings.customIdentityFreeGuilds, ['1574375400904200193', '123456789012345678']);
+    assert.match(read('dashboard/lib/env.js'), /customIdentityFreeGuilds\(\) \{ return \[\.\.\.new Set\(\[\.\.\.identityRules\.FREE_IDENTITY_PILOT_GUILDS/);
     assert.match(read('src/index.js'), /freeGuilds: settings\.customIdentityFreeGuilds/);
 });
 
@@ -120,14 +118,16 @@ test('the audit log never stores picture bytes or paths, only hashes', () => {
     assert.ok(!botView.includes('avatar_path'));
 });
 
-test('the editor always shows Identity and the perk only while the feature is on', () => {
+test('the editor shows Identity and applies pilot or Premium access', () => {
     const editor = read('dashboard/components/GuildEditor.js');
     assert.match(editor, /const visibleTabs = TABS;/);
     assert.match(editor, /tab === 'identity' \? <IdentityTab/);
     const page = read('dashboard/app/dashboard/[guildId]/page.js');
     assert.match(page, /perks: premiumPerks\(\{ customIdentity: identityEnabledFor\(guildId\) \}\), identityEnabled: identityEnabledFor\(guildId\)/);
     assert.match(read('dashboard/components/IdentityTab.js'), /APP tag/);
-    assert.match(read('dashboard/components/IdentityTab.js'), /CUSTOM_IDENTITY_FREE_GUILDS/);
+    assert.match(read('dashboard/components/IdentityTab.js'), /const freeAccess = Boolean\(data\.freeAccess\)/);
+    assert.match(read('dashboard/components/IdentityTab.js'), /const locked = \(!premium && !freeAccess\) \|\| data\.blocked/);
+    assert.match(read('dashboard/app/api/guilds/[guildId]/identity/route.js'), /identityFreeInGuild\(guild\.id, env\.customIdentityFreeGuilds\)/);
 });
 
 test('Privacy and Terms describe the feature as it works', () => {

@@ -1,11 +1,10 @@
 /**
  * Custom bot identity sync (bot worker). Keeps ZiGBoT's own profile in each
  * server in line with what was saved and paid for:
- *  - Premium, not blocked: the saved nickname/bio and the APPROVED avatar.
+ *  - Premium (or the free pilot), not blocked: saved name/bio/approved avatar.
  *  - Premium lapsed or server blocked: the default ZiGBoT profile (revert).
  *  - No saved identity: the server is never touched (admins may have
  *    nicknamed the bot themselves).
- *  - Not one of CUSTOM_IDENTITY_GUILDS (when that list is set): default.
  * Runs on startup, when the bot joins a server, and every 10 minutes. Only
  * changed fields are sent (Discord does not publish this route's rate limit;
  * discord.js waits out any 429). Deletes the stored identity when the bot is
@@ -20,7 +19,6 @@
 const {
     IDENTITY_LIMITS,
     DEFAULT_IDENTITY,
-    identityAllowedInGuild,
     identityFreeInGuild,
     identityImagePath,
     identityDesired,
@@ -96,7 +94,7 @@ function createIdentitySync({ client, store, getContext, enabled, guilds = [], f
                 premium = Boolean(ctx?.premium);
                 blocked = isBlocked;
             }
-            const allowed = !revertOnly && identityAllowedInGuild(guildId, guilds);
+            const allowed = !revertOnly;
             const freeAccess = identityFreeInGuild(guildId, freeGuilds);
             let applied = identityApplied(row);
 

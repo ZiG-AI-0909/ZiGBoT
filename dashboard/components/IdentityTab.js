@@ -88,7 +88,7 @@ export default function IdentityTab({ guildId, guildName, premium, onUpgrade, to
     const data = state.data;
     if (!data?.enabled) return <div className="card empty">
         <h2>Custom identity is disabled</h2>
-        <p className="muted" style={{ margin: 0 }}>The ZiGBoT owner must enable <code>CUSTOM_IDENTITY_ENABLED=true</code> in both the dashboard deployment and bot service. Add this server to <code>CUSTOM_IDENTITY_GUILDS</code> if using the feature allowlist. The owner can grant a free pilot with <code>CUSTOM_IDENTITY_FREE_GUILDS</code>; other servers need Premium.</p>
+        <p className="muted" style={{ margin: 0 }}>Custom identity is enabled by default. The ZiGBoT owner has switched it off with <code>CUSTOM_IDENTITY_ENABLED=false</code>. The configured pilot server gets free access; other servers need Premium.</p>
     </div>;
     const identity = data.identity;
     const limits = data.limits;

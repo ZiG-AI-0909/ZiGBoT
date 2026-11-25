@@ -1,4 +1,4 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const { PermissionFlagsBits } = require('discord.js');
 
@@ -171,18 +171,12 @@ test('CUSTOM_IDENTITY_GUILDS set: a listed server gets its identity', async () =
     assert.equal(guild.edits[0].nick, 'Zed');
 });
 
-test('CUSTOM_IDENTITY_GUILDS set: an unlisted server is reverted (data kept, no 30-day cleanup)', async () => {
-    const store = fakeStore({ rows: [appliedRow()] });
+test('legacy CUSTOM_IDENTITY_GUILDS does not block a Premium server', async () => {
+    const store = fakeStore({ rows: [savedRow()] });
     const guild = fakeGuild();
     const sync = makeSync({ store, guild, guilds: ['999999999999999999'] });
-    assert.equal(await sync.reconcile(guild), 'reverted');
-    assert.deepEqual({ ...guild.edits[0], reason: undefined }, { nick: null, bio: null, avatar: null, reason: undefined });
-    assert.match(guild.edits[0].reason, /not_enabled_here/);
-    assert.equal(store.state.rows.get(G).revert_reason, 'not_enabled_here');
-    // A Premium server that is merely unlisted keeps its saved identity indefinitely.
-    const later = fakeStore({ rows: [savedRow({ reverted_at: new Date(NOW - 90 * DAY).toISOString(), revert_reason: 'not_enabled_here' })] });
-    assert.equal(await makeSync({ store: later, guild, guilds: ['999999999999999999'] }).reconcile(guild), 'ok');
-    assert.ok(later.state.rows.has(G));
+    assert.equal(await sync.reconcile(guild), 'applied');
+    assert.equal(guild.edits[0].nick, 'Zed');
 });
 
 test('CUSTOM_IDENTITY_GUILDS empty: every Premium server qualifies', async () => {
@@ -255,12 +249,11 @@ function fakeInteraction({ subcommand, confirm = true, admin = true, guild = fak
 
 const commands = (store, { premium = true, enabled = true, guilds = [] } = {}) => createIdentityCommands({ store, getContext: async () => ({ premium }), enabled, guilds });
 
-test('/identity show in a server outside CUSTOM_IDENTITY_GUILDS; reset still works there', async () => {
+test('/identity show and reset work regardless of the legacy rollout list', async () => {
     const store = fakeStore({ rows: [savedRow()] });
     const show = fakeInteraction({ subcommand: 'show' });
     await commands(store, { guilds: ['999999999999999999'] }).handleSlash(show);
-    assert.match(show.replies[1].content, /isn’t available in this server yet/);
-    assert.match(show.replies[1].content, /\/identity reset confirm:True/);
+    assert.match(show.replies[1].content, /Name: Zed/);
     const reset = fakeInteraction({ subcommand: 'reset' });
     await commands(store, { guilds: ['999999999999999999'] }).handleSlash(reset);
     assert.equal(store.state.rows.has(G), false);

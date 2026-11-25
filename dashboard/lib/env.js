@@ -43,12 +43,12 @@ export const env = {
         const raw = process.env.SUPER_ADMIN_DISCORD_IDS || process.env.BOT_CREATOR_ID || '';
         return [...new Set(raw.split(',').map((s) => s.trim()).filter((s) => /^\d{17,20}$/.test(s)))];
     },
-    // Custom bot identity (Premium). Off unless exactly 'true'; the bot reads the same variable.
-    get customIdentityEnabled() { return process.env.CUSTOM_IDENTITY_ENABLED === 'true'; },
-    // Optional server allowlist (comma-separated ids); empty = every server.
-    get customIdentityGuilds() { return identityRules.parseIdentityGuilds(process.env.CUSTOM_IDENTITY_GUILDS); },
+    // Custom bot identity is available by default; exact 'false' is emergency off.
+    get customIdentityEnabled() { return process.env.CUSTOM_IDENTITY_ENABLED !== 'false'; },
+    // Legacy rollout allowlist is intentionally ignored: Premium is the access gate.
+    get customIdentityGuilds() { return []; },
     // Explicit servers that get custom identity without Premium.
-    get customIdentityFreeGuilds() { return identityRules.parseIdentityGuilds(process.env.CUSTOM_IDENTITY_FREE_GUILDS); },
+    get customIdentityFreeGuilds() { return [...new Set([...identityRules.FREE_IDENTITY_PILOT_GUILDS, ...identityRules.parseIdentityGuilds(process.env.CUSTOM_IDENTITY_FREE_GUILDS)])]; },
     // Uploaded identity pictures go live straight away unless this is exactly
     // 'true': then each one waits for the bot owner's review (/owner/identity).
     get identityAvatarReview() { return process.env.IDENTITY_AVATAR_REVIEW === 'true'; },
