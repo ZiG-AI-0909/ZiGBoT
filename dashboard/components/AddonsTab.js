@@ -133,7 +133,10 @@ export default function AddonsTab({ draft, set, errors, channels, roles, guildId
     const names = Object.keys(FEATURE_SECTIONS);
     const [open, setOpen] = useState(names[0]);
     const all = draft.feature_settings || {};
-    const update = (section, key) => (value) => set('feature_settings')({ ...all, [section]: { ...(all[section] || {}), [key]: value } });
+    const update = (section, key) => (value) => set('feature_settings')((current) => ({
+        ...(current || {}),
+        [section]: { ...((current || {})[section] || {}), [key]: value }
+    }));
     const errorCount = (section) => Object.keys(errors || {}).filter((k) => k.startsWith(`feature_settings.${section}.`)).length;
     const sectionErrors = Object.entries(errors || {}).filter(([key]) => key.startsWith(`feature_settings.${open}.`));
 

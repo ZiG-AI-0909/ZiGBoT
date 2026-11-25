@@ -218,7 +218,7 @@ export default function GuildEditor({ initial, meta }) {
         setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), kind === 'err' ? 7000 : 4000);
     }, []);
 
-    const set = (key) => (value) => setDraft((d) => ({ ...d, [key]: value }));
+    const set = (key) => (value) => setDraft((d) => ({ ...d, [key]: typeof value === 'function' ? value(d[key]) : value }));
 
 
     async function save() {
