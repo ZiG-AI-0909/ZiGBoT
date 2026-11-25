@@ -185,7 +185,7 @@ function checkUtilityCommands(errors, raw, fallback) {
 /**
  * Validate a full guild config submitted by an admin.
  * @param {object} input raw request body
- * @param {{channelIds?: Set<string>, guildId?: string}} ctx trusted, server-fetched context
+ * @param {{channelIds?: Set<string>, categoryIds?: Set<string>, guildId?: string}} ctx trusted, server-fetched context
  */
 function validateGuildConfig(input, ctx = {}) {
     const errors = {};
@@ -254,7 +254,7 @@ function validateGuildConfig(input, ctx = {}) {
         gif_settings: null,
         feature_settings: null
     };
-    const features = validateFeatureSettings(input.feature_settings, { channelIds: channels, roleIds: ctx.roleIds || null, guildId: ctx.guildId });
+    const features = validateFeatureSettings(input.feature_settings, { channelIds: channels, categoryIds: ctx.categoryIds || null, roleIds: ctx.roleIds || null, guildId: ctx.guildId });
     for (const [key, message] of Object.entries(features.errors)) errors[key === 'feature_settings' ? key : `feature_settings.${key}`] = message;
     value.feature_settings = features.value;
     const gifs = validateGifSettings(input.gif_settings, { channelIds: channels });

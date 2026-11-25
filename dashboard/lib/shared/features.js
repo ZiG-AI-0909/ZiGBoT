@@ -10,7 +10,7 @@
  *  - the GuildEditor "Features" tab, which renders the same descriptors.
  * CommonJS, shared by the bot, the dashboard and the tests.
  *
- * Field types: bool, int {min,max}, text {max}, enum {options}, channel,
+ * Field types: bool, int {min,max}, text {max}, enum {options}, channel, category,
  * role, channels {max}, roles {max}, list {max, item(value) -> clean|null}.
  */
 const SNOWFLAKE = /^\d{17,20}$/;
@@ -19,6 +19,7 @@ const bool = (key, label, extra = {}) => ({ key, label, type: 'bool', default: f
 const int = (key, label, def, min, max, extra = {}) => ({ key, label, type: 'int', default: def, min, max, ...extra });
 const text = (key, label, def, max, extra = {}) => ({ key, label, type: 'text', default: def, max, ...extra });
 const channel = (key, label, extra = {}) => ({ key, label, type: 'channel', default: null, ...extra });
+const category = (key, label, extra = {}) => ({ key, label, type: 'category', default: null, ...extra });
 const role = (key, label, extra = {}) => ({ key, label, type: 'role', default: null, ...extra });
 const roles = (key, label, max = 10, extra = {}) => ({ key, label, type: 'roles', default: [], max, ...extra });
 const channels = (key, label, max = 20, extra = {}) => ({ key, label, type: 'channels', default: [], max, ...extra });
@@ -143,7 +144,7 @@ const FEATURE_SECTIONS = {
         fields: [
             bool('tempvoice_enabled', 'Temporary voice channels ("join to create")'),
             channel('tempvoice_hub_channel_id', '"Join to create" voice channel'),
-            channel('tempvoice_category_id', 'Category for the new channels (default: the hub\'s category)'),
+            category('tempvoice_category_id', 'Category for the new channels (default: the hub\'s category)'),
             text('tempvoice_name', 'Channel name', "{user}'s channel", 80, { help: 'Placeholder: {user}' }),
             int('tempvoice_limit', 'User limit for new channels (0 = none)', 0, 0, 99)
         ]
@@ -242,10 +243,12 @@ function readField(field, raw, ids, guildId) {
         case 'enum':
             return field.options.includes(raw) ? { value: raw } : { error: `Pick one of: ${field.options.join(', ')}.` };
         case 'channel':
+        case 'category':
         case 'role': {
             if (raw === '') return { value: null };
             const id = String(raw);
-            return known(id, field.type === 'channel' ? ids?.channelIds : ids?.roleIds) ? { value: id } : { error: `That ${field.type} is not in this server.` };
+            const validSet = field.type === 'channel' ? ids?.channelIds : field.type === 'category' ? ids?.categoryIds : ids?.roleIds;
+            return known(id, validSet) ? { value: id } : { error: field.type === 'category' ? 'That category is not in this server.' : `That ${field.type} is not in this server.` };
         }
         case 'channels':
         case 'roles': {
@@ -283,7 +286,7 @@ function readField(field, raw, ids, guildId) {
 }
 
 /** Dashboard save. Returns { value, errors } with errors keyed "section.key". */
-function validateFeatureSettings(input, { channelIds = null, roleIds = null, guildId = null } = {}) {
+function validateFeatureSettings(input, { channelIds = null, categoryIds = null, roleIds = null, guildId = null } = {}) {
     const errors = {};
     const value = defaultFeatureSettings();
     if (input === undefined || input === null) return { value, errors };
@@ -296,7 +299,7 @@ function validateFeatureSettings(input, { channelIds = null, roleIds = null, gui
             continue;
         }
         for (const field of section.fields) {
-            const result = readField(field, given[field.key], { channelIds, roleIds }, guildId);
+            const result = readField(field, given[field.key], { channelIds, categoryIds, roleIds }, guildId);
             if (result.error) errors[`${name}.${field.key}`] = result.error;
             else value[name][field.key] = result.value;
         }

@@ -9,7 +9,7 @@ import features from '@/lib/shared/features';
 const { FEATURE_SECTIONS } = features;
 const CHANNEL_KIND = { 0: '#', 2: '🔊', 4: '📁', 5: '📢', 13: '🎤', 15: '💬' };
 
-function Control({ field, value, onChange, channels, roles, id, error }) {
+function Control({ field, value, onChange, channels, categories, roles, id, error }) {
     const describedBy = error ? `${id}-error` : undefined;
     let input;
     if (field.type === 'bool') {
@@ -29,8 +29,8 @@ function Control({ field, value, onChange, channels, roles, id, error }) {
             : <input id={id} type="text" maxLength={field.max} value={value ?? ''} aria-describedby={describedBy} onChange={(e) => onChange(e.target.value)} />;
     } else if (field.type === 'enum') {
         input = <select id={id} value={value ?? field.default} aria-describedby={describedBy} onChange={(e) => onChange(e.target.value)}>{field.options.map((o) => <option key={o} value={o}>{o}</option>)}</select>;
-    } else if (field.type === 'channel' || field.type === 'role') {
-        const list = field.type === 'channel' ? channels : roles;
+    } else if (field.type === 'channel' || field.type === 'category' || field.type === 'role') {
+        const list = field.type === 'channel' ? channels : field.type === 'category' ? categories : roles;
         input = (
             <select id={id} value={value ?? ''} aria-describedby={describedBy} onChange={(e) => onChange(e.target.value || null)}>
                 <option value="">Not set</option>
@@ -69,7 +69,7 @@ function Control({ field, value, onChange, channels, roles, id, error }) {
                     <div key={index} className="grid" style={{ gap: 8, padding: '10px 0', borderTop: index ? '1px solid var(--border)' : 'none' }}>
                         <strong>#{index + 1}</strong>
                         {field.itemFields.map((sub) => (
-                            <Control key={sub.key} field={sub} id={`${id}-${index}-${sub.key}`} value={row[sub.key]} onChange={(next) => change(index, sub.key, next)} channels={channels} roles={roles} />
+                            <Control key={sub.key} field={sub} id={`${id}-${index}-${sub.key}`} value={row[sub.key]} onChange={(next) => change(index, sub.key, next)} channels={channels} categories={categories} roles={roles} />
                         ))}
                         <button type="button" className="btn btn-danger" onClick={() => onChange(rows.filter((_, i) => i !== index))}>Remove #{index + 1}</button>
                     </div>
@@ -129,7 +129,7 @@ function BackupCard({ guildId }) {
     );
 }
 
-export default function AddonsTab({ draft, set, errors, channels, roles, guildId }) {
+export default function AddonsTab({ draft, set, errors, channels, categories, roles, guildId }) {
     const names = Object.keys(FEATURE_SECTIONS);
     const [open, setOpen] = useState(names[0]);
     const all = draft.feature_settings || {};
@@ -164,7 +164,7 @@ export default function AddonsTab({ draft, set, errors, channels, roles, guildId
                 {FEATURE_SECTIONS[open].fields.map((field) => (
                     <Control key={field.key} field={field} id={`addon-${open}-${field.key}`}
                         value={(all[open] || {})[field.key] ?? field.default}
-                        onChange={update(open, field.key)} channels={channels} roles={roles}
+                        onChange={update(open, field.key)} channels={channels} categories={categories} roles={roles}
                         error={errors?.[`feature_settings.${open}.${field.key}`]} />
                 ))}
             </div>
