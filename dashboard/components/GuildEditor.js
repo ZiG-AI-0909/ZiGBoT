@@ -149,7 +149,7 @@ export default function GuildEditor({ initial, meta }) {
     const [tab, setTab] = useState('behaviour');
     // The sections live in the app sidebar; #section in the URL keeps the
     // open one across reloads and makes it linkable.
-    const visibleTabs = TABS.filter((t) => t.id !== 'identity' || meta.identityEnabled);
+    const visibleTabs = TABS;
     useEffect(() => {
         const fromHash = window.location.hash.slice(1);
         if (visibleTabs.some((t) => t.id === fromHash)) setTab(fromHash);
