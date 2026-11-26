@@ -16,7 +16,7 @@
  * with a check, and the first side is refunded if the second check fails.
  */
 const crypto = require('node:crypto');
-const { PermissionFlagsBits } = require('discord.js');
+const { PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const { NO_PINGS, sectionOf, safeText, memberCan, roleProblem, reply, makeAudit } = require('./common');
 const rules = require('./engagementRules');
 
@@ -70,11 +70,14 @@ function createEngagement({ store, scheduler, resolveContext, auditLog, getClien
             return m;
         });
         if (levelUp !== null || earned.length) {
-            const lines = [];
-            if (levelUp !== null) lines.push(`🎉 <@${message.author.id}> reached **level ${levelUp}**!`);
-            for (const a of earned) lines.push(`${a.emoji} <@${message.author.id}> unlocked **${a.name}**!`);
+            const lines = earned.map((a) => `${a.emoji} Unlocked **${a.name}**`);
+            if (levelUp !== null) lines.unshift(`🎉 Reached **level ${levelUp}**!`);
+            const embed = new EmbedBuilder()
+                .setColor(0x5865f2)
+                .setAuthor({ name: message.member?.displayName || message.author.username, iconURL: message.author.displayAvatarURL?.() })
+                .setDescription(lines.join('\n'));
             const target = (ctx.e.levelup_channel_id && message.guild.channels?.cache?.get?.(ctx.e.levelup_channel_id)) || message.channel;
-            await target?.send?.({ content: lines.join('\n'), allowedMentions: { parse: [], users: [message.author.id] } }).catch((error) => fail('level-up', error));
+            await target?.send?.({ embeds: [embed], allowedMentions: { parse: [] } }).catch((error) => fail('level-up', error));
         }
         return false; // XP never stops the normal bot flow
     }
