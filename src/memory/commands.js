@@ -182,7 +182,15 @@ function createMemoryCommands({
             case 'correct': return { content: await correctText(ctx) };
             case 'forget': return { content: await forgetText(ctx) };
             case 'clear': return clearPrompt(ctx);
-            case 'on': return { content: await setPreferenceText(ctx, true) };
+            case 'on': {
+                const enabled = await setPreferenceText(ctx, true);
+                if (!enabled.startsWith('✅') || !ctx.summariesAvailable) return { content: enabled };
+                const automatic = await summariesText({
+                    ...ctx,
+                    options: { getString: () => 'on' }
+                });
+                return { content: `${enabled}\n\n${automatic}` };
+            }
             case 'off': return { content: await setPreferenceText(ctx, false) };
             case 'share': return { content: await shareText(ctx) };
             case 'summaries': return { content: await summariesText(ctx) };
@@ -240,7 +248,7 @@ function createMemoryCommands({
         lines.push(`• Your personal memory: ${preferenceLine}`);
         lines.push(`• Server setting: ${memoryAllowedByServer ? 'memory allowed' : 'memory is turned off by this server\'s admins or for your roles'}`);
         lines.push(`• Database: ${available ? '✅ connected' : '❌ unavailable'} · last successful write ${relativeTime(status.lastWriteOkAt)} · last successful read ${relativeTime(status.lastReadOkAt)}`);
-        lines.push('• Automatic saving: OFF — I only save what you add with `/memory remember`');
+        lines.push('• Automatic saving: controlled by your conversation summaries setting below');
         lines.push(`• Conversation summaries: ${summariesLine}`);
         if (channelsLine) lines.push(`• Channels read for your summaries: ${channelsLine}`);
         lines.push(`• Your stored memories here: ${countLine}`);
@@ -366,7 +374,7 @@ function createMemoryCommands({
         }
         onPreferenceChange(guildId, userId);
         if (enabled) {
-            return '✅ Memory is **ON** for you in this server. Automatic saving is off, so I only save what you add with `/memory remember`.';
+            return '✅ Memory is **ON** for you in this server.';
         }
         let kept = '';
         try {
