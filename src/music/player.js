@@ -119,14 +119,25 @@ async function openSearchedTrack(track) {
     try {
         return await sources.openStream(track.url);
     } catch (error) {
-        if (track.source !== 'youtube' || !sources.isHostBlocked(error.message)) throw error;
+        const youtubeBlocked = track.source === 'youtube' && sources.isHostBlocked(error.message);
+        const soundcloudDrm = track.source === 'soundcloud' && sources.isDrmProtected(error.message);
+        if (!youtubeBlocked && !soundcloudDrm) throw error;
         const alt = await sources.findAlternative(track);
-        if (!alt) throw new Error(`${error.message} I could not find it on SoundCloud either.`);
-        console.log(`[ZiGBoT MUSIC] YouTube refused "${track.title}"; using SoundCloud ${alt.url}`);
-        emit('trackError', track.guildId, `YouTube refused audio; played from SoundCloud instead (${error.message})`);
-        announce(track, `⚠️ YouTube would not stream **${track.title}** to the bot's server, so I'm playing it from SoundCloud: ${describeTrack(alt)}`);
-        Object.assign(track, alt, { fallbackFrom: 'youtube' });
-        return sources.openStream(track.url);
+        if (!alt) throw new Error(`${error.message} I could not find another playable SoundCloud version.`);
+        let stream;
+        try {
+            stream = await sources.openStream(alt.url);
+        } catch (alternativeError) {
+            throw new Error(`${error.message} The alternative also could not be played: ${alternativeError.message}`);
+        }
+        const previousSource = track.source;
+        console.log(`[ZiGBoT MUSIC] ${previousSource} track "${track.title}" was unavailable; using SoundCloud ${alt.url}`);
+        emit('trackError', track.guildId, `${previousSource} track unavailable; played from SoundCloud instead (${error.message})`);
+        announce(track, previousSource === 'youtube'
+            ? `⚠️ YouTube would not stream **${track.title}** to the bot's server, so I'm playing it from SoundCloud: ${describeTrack(alt)}`
+            : `⚠️ That SoundCloud version could not be streamed, so I'm playing another version from SoundCloud: ${describeTrack(alt)}`);
+        Object.assign(track, alt, { fallbackFrom: previousSource });
+        return stream;
     }
 }
 

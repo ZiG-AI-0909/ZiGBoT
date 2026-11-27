@@ -94,6 +94,7 @@ const isYouTubeUrl = (value) => sourceOfUrl(value) === 'youtube';
 // yt-dlp's own errors are long; keep the one thing that explains the problem.
 function friendlyError(stderr) {
     const line = String(stderr || '').split(/\r?\n/).find((l) => l.startsWith('ERROR:')) || '';
+    if (/drm protected|drm-protected/i.test(line)) return 'That SoundCloud track is DRM-protected and cannot be streamed.';
     if (/sign in to confirm|not a bot|http error 403|forbidden|requested format is not available|po.?token/i.test(line)) {
         return 'YouTube refused to send audio to this bot\'s server.';
     }
@@ -104,6 +105,10 @@ function friendlyError(stderr) {
     if (/members-only|join this channel/i.test(line)) return 'That video is for channel members only.';
     if (/not available in your country|geo/i.test(line)) return 'That track is not available in the bot\'s region.';
     return 'Could not load that track. Try another song or link.';
+}
+
+function isDrmProtected(message) {
+    return /DRM-protected|DRM protected/i.test(String(message || ''));
 }
 
 /** True when the failure is YouTube refusing this host (worth a SoundCloud fallback). */
@@ -344,6 +349,7 @@ module.exports = {
     sourceOfUrl,
     isYouTubeUrl,
     isHostBlocked,
+    isDrmProtected,
     friendlyError,
     toTrack,
     preferredSource,
