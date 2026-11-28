@@ -192,6 +192,10 @@ test('isGentleMember detects Unicode and standard she/her / girl roles', () => {
         user: { primaryGuild: { identityEnabled: true, identityGuildId: 'other-guild', tag: 'Heer' } },
         roles: { cache: new Map() }
     }, gentleRoles, 'guild-123'), false);
+    assert.equal(isGentleMember({
+        user: { primaryGuild: { identityEnabled: true, tag: 'Heer' } },
+        roles: { cache: new Map() }
+    }, gentleRoles, 'guild-123'), true);
     assert.equal(isGentleMember(createMemberWithRoles(['Girl', 'VIP']), gentleRoles), true);
     assert.equal(isGentleMember(createMemberWithRoles(['Queen']), gentleRoles), true);
     assert.equal(isGentleMember(createMemberWithRoles(['Gentle Mode']), gentleRoles), true);

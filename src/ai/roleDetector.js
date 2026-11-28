@@ -65,7 +65,9 @@ function isGentleMember(member, configuredGentleRoles = [], guildId = '', config
 
     const primaryGuild = member.user?.primaryGuild;
     const serverTag = primaryGuild?.tag;
-    const isCurrentGuildTag = !guildId || primaryGuild.identityGuildId === guildId;
+    // Discord may include a partially populated primaryGuild object. Only
+    // compare the identity guild when that field is present.
+    const isCurrentGuildTag = !guildId || !primaryGuild?.identityGuildId || primaryGuild.identityGuildId === guildId;
     if (primaryGuild?.identityEnabled && serverTag && isCurrentGuildTag) {
         const normalizedTag = normalizeRoleName(serverTag);
         if (configuredGentleRoles.some((roleName) => normalizeRoleName(roleName).includes(normalizedTag))) {
