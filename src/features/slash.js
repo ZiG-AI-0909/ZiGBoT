@@ -78,6 +78,7 @@ function engagementCommands() {
         new SlashCommandBuilder()
             .setName('eco')
             .setDescription('Virtual coins: daily reward, shop, inventory, trading and achievements')
+            .addSubcommand((s) => s.setName('panel').setDescription('Show the server economy dashboard and shop'))
             .addSubcommand((s) => s.setName('daily').setDescription('Claim your daily reward'))
             .addSubcommand((s) => s.setName('balance').setDescription('Show coins')
                 .addUserOption((o) => o.setName('member').setDescription('Whose balance (default: yours)')))

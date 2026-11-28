@@ -114,14 +114,36 @@ function createEngagement({ store, scheduler, resolveContext, auditLog, getClien
 
     // ----------------------------------------------------------------- /eco
     const findItem = (e, name) => e.shop_items.find((i) => i.name.trim().toLowerCase() === String(name || '').trim().toLowerCase()) || null;
+    const ecoReply = (interaction, content, extra = {}) => reply(interaction, content, { ...extra, ephemeral: false });
 
     async function eco(interaction, guild, e, settings) {
-        if (!e.economy_enabled) return reply(interaction, '❌ The economy is switched off in this server.');
+        if (!e.economy_enabled) return ecoReply(interaction, '❌ The economy is switched off in this server.');
         const sub = interaction.options.getSubcommand();
         const userId = interaction.user.id;
+        if (sub === 'panel') {
+            const items = e.shop_items.length
+                ? e.shop_items.map((i) => `${safeText(i.emoji, 16)} **${safeText(i.name, 40)}** · ${coinsText(e, i.price)}${i.role_id ? ` · <@&${i.role_id}>` : ''}`).join('\n')
+                : 'The shop is empty. Server admins can add rewards in Add-ons → Engagement.';
+            const embed = new EmbedBuilder()
+                .setColor(0xf0a02b)
+                .setTitle(`🪙 ${safeText(e.currency_name, 20)} Economy`)
+                .setDescription(`Earn virtual coins, buy server rewards, and trade with other members.\n\n**Shop**\n${items}\n\n**Commands**\n\`/eco daily\` — claim your daily coins\n\`/eco balance\` — check your balance\n\`/eco shop\` and \`/eco buy\` — browse and buy\n\`/eco inventory\` — view your items\n\`/eco trade\` — offer coins or items to another member`)
+                .setFooter({ text: 'Virtual coins have no cash value and cannot be purchased or cashed out.' });
+            const components = [{ type: 1, components: [
+                { type: 2, style: 3, label: 'Claim daily', custom_id: `${PREFIX}ep:daily` },
+                { type: 2, style: 1, label: 'Balance', custom_id: `${PREFIX}ep:balance` },
+                { type: 2, style: 1, label: 'Inventory', custom_id: `${PREFIX}ep:inventory` },
+                { type: 2, style: 2, label: 'Shop / Buy', custom_id: `${PREFIX}ep:shop` }
+            ] }];
+            if (e.shop_items.length) components.push({ type: 1, components: [{
+                type: 3, custom_id: `${PREFIX}ep:buy`, placeholder: 'Choose a shop item to buy', min_values: 1, max_values: 1,
+                options: e.shop_items.slice(0, 25).map((item) => ({ label: safeText(item.name, 100), value: item.name, description: `${item.price.toLocaleString('en-US')} ${safeText(e.currency_name, 20)}`, ...(item.emoji ? { emoji: { name: item.emoji } } : {}) }))
+            }] });
+            return ecoReply(interaction, { embeds: [embed], components });
+        }
         if (sub === 'balance') {
             const user = interaction.options.getUser('member') || interaction.user;
-            return reply(interaction, `💰 <@${user.id}> has ${coinsText(e, (await getMember(guild.id, user.id)).coins)}.`);
+            return ecoReply(interaction, `💰 <@${user.id}> has ${coinsText(e, (await getMember(guild.id, user.id)).coins)}.`);
         }
         if (sub === 'daily') {
             const t = now();
@@ -136,19 +158,19 @@ function createEngagement({ store, scheduler, resolveContext, auditLog, getClien
                 result = { coins: m.coins, streak: m.streak, earned };
                 return m;
             });
-            if (result.wait) return reply(interaction, `⏳ You already claimed today. Come back <t:${Math.floor(result.wait / 1000)}:R>.`);
-            return reply(interaction, [`✅ +${coinsText(e, e.daily_amount)}. You now have ${coinsText(e, result.coins)} · streak **${result.streak}** day${result.streak === 1 ? '' : 's'}.`, ...result.earned.map((a) => `${a.emoji} Unlocked **${a.name}**!`)].join('\n'));
+            if (result.wait) return ecoReply(interaction, `⏳ You already claimed today. Come back <t:${Math.floor(result.wait / 1000)}:R>.`);
+            return ecoReply(interaction, [`✅ +${coinsText(e, e.daily_amount)}. You now have ${coinsText(e, result.coins)} · streak **${result.streak}** day${result.streak === 1 ? '' : 's'}.`, ...result.earned.map((a) => `${a.emoji} Unlocked **${a.name}**!`)].join('\n'));
         }
         if (sub === 'shop') {
-            if (!e.shop_items.length) return reply(interaction, '🛒 The shop is empty. Admins add items in the dashboard (Add-ons → Engagement).');
-            return reply(interaction, `🛒 **Shop**\n${e.shop_items.map((i) => `${safeText(i.emoji, 16)} **${safeText(i.name, 40)}** · ${coinsText(e, i.price)}${i.role_id ? ` · gives <@&${i.role_id}>` : ''}`).join('\n')}`);
+            if (!e.shop_items.length) return ecoReply(interaction, '🛒 The shop is empty. Admins add items in the dashboard (Add-ons → Engagement).');
+            return ecoReply(interaction, `🛒 **Shop**\n${e.shop_items.map((i) => `${safeText(i.emoji, 16)} **${safeText(i.name, 40)}** · ${coinsText(e, i.price)}${i.role_id ? ` · gives <@&${i.role_id}>` : ''}`).join('\n')}`);
         }
         if (sub === 'buy') {
             const item = findItem(e, interaction.options.getString('item'));
-            if (!item) return reply(interaction, '❌ There is no item with that name in the shop.');
+            if (!item) return ecoReply(interaction, '❌ There is no item with that name in the shop.');
             const role = item.role_id ? guild.roles?.cache?.get?.(item.role_id) : null;
             const problem = item.role_id ? roleProblem(guild, role) : null;
-            if (problem) return reply(interaction, `❌ This item gives a role I cannot hand out: ${problem}`);
+            if (problem) return ecoReply(interaction, `❌ This item gives a role I cannot hand out: ${problem}`);
             let short = false;
             await changeMember(guild.id, userId, (m) => {
                 if (m.coins < item.price) { short = true; return undefined; }
@@ -156,21 +178,21 @@ function createEngagement({ store, scheduler, resolveContext, auditLog, getClien
                 m.inventory[item.name] = (m.inventory[item.name] || 0) + 1;
                 return m;
             });
-            if (short) return reply(interaction, `❌ ${safeText(item.name, 40)} costs ${coinsText(e, item.price)}. You do not have enough.`);
+            if (short) return ecoReply(interaction, `❌ ${safeText(item.name, 40)} costs ${coinsText(e, item.price)}. You do not have enough.`);
             if (role) await interaction.member.roles.add(role, 'Shop purchase').catch((error) => fail('shop role', error));
             await audit(interaction, settings, { action: 'shop_buy', target: item.name, details: { price: item.price } });
-            return reply(interaction, `✅ You bought ${safeText(item.emoji, 16)} **${safeText(item.name, 40)}**${role ? ` and got the ${role.name} role` : ''}.`);
+            return ecoReply(interaction, `✅ You bought ${safeText(item.emoji, 16)} **${safeText(item.name, 40)}**${role ? ` and got the ${role.name} role` : ''}.`);
         }
         if (sub === 'inventory') {
             const user = interaction.options.getUser('member') || interaction.user;
             const m = await getMember(guild.id, user.id);
             const items = Object.entries(m.inventory).filter(([, n]) => n > 0);
-            return reply(interaction, items.length ? `🎒 <@${user.id}>\n${items.map(([name, n]) => `• ${safeText(name, 40)} × ${n}`).join('\n')}` : `🎒 <@${user.id}> has no items yet.`);
+            return ecoReply(interaction, items.length ? `🎒 <@${user.id}>\n${items.map(([name, n]) => `• ${safeText(name, 40)} × ${n}`).join('\n')}` : `🎒 <@${user.id}> has no items yet.`);
         }
         if (sub === 'achievements') {
             if (!e.achievements_enabled) return reply(interaction, '❌ Achievements are switched off in this server.');
             const m = await getMember(guild.id, interaction.user.id);
-            return reply(interaction, `🏅 **Achievements** (${m.achievements.length}/${rules.ACHIEVEMENTS.length})\n${rules.ACHIEVEMENTS.map((a) => `${m.achievements.includes(a.id) ? a.emoji : '🔒'} ${a.name}`).join('\n')}`);
+            return ecoReply(interaction, `🏅 **Achievements** (${m.achievements.length}/${rules.ACHIEVEMENTS.length})\n${rules.ACHIEVEMENTS.map((a) => `${m.achievements.includes(a.id) ? a.emoji : '🔒'} ${a.name}`).join('\n')}`);
         }
         if (sub === 'trade') return proposeTrade(interaction, guild, e);
         return reply(interaction, '❌ Unknown option.');
@@ -250,15 +272,15 @@ function createEngagement({ store, scheduler, resolveContext, auditLog, getClien
 
     // ----------------------------------------------------------------- /games
     async function games(interaction, guild, e) {
-        if (!e.games_enabled) return reply(interaction, '❌ Games are switched off in this server.');
+        if (!e.games_enabled) return ecoReply(interaction, '❌ Games are switched off in this server.');
         const sub = interaction.options.getSubcommand();
-        if (sub === 'coinflip') return reply(interaction, `🪙 ${randomInt(2) === 0 ? 'Heads' : 'Tails'}!`);
+        if (sub === 'coinflip') return ecoReply(interaction, `🪙 ${randomInt(2) === 0 ? 'Heads' : 'Tails'}!`);
         if (sub === 'rps') {
             const choice = interaction.options.getString('choice');
-            if (!rules.RPS.includes(choice)) return reply(interaction, '❌ Pick rock, paper or scissors.');
+            if (!rules.RPS.includes(choice)) return ecoReply(interaction, '❌ Pick rock, paper or scissors.');
             const bot = rules.RPS[randomInt(3)];
             const result = rules.rpsResult(choice, bot);
-            return reply(interaction, `✊ You: **${choice}** · ZiGBoT: **${bot}** · ${result === 'win' ? 'You win! 🎉' : result === 'lose' ? 'I win! 😎' : 'Draw.'}`);
+            return ecoReply(interaction, `✊ <@${interaction.user.id}>: **${choice}** · ZiGBoT: **${bot}** · ${result === 'win' ? 'You win! 🎉' : result === 'lose' ? 'I win! 😎' : 'Draw.'}`);
         }
         if (sub === 'trivia') {
             const round = rules.triviaRound(randomInt);
@@ -270,7 +292,7 @@ function createEngagement({ store, scheduler, resolveContext, auditLog, getClien
             });
             trivia.set(id, { ...round, guildId: guild.id, endsAt: now() + TRIVIA_MS, answered: new Set(), winner: null, message, reward: e.economy_enabled ? e.trivia_reward : 0 });
             setTimer(() => closeTrivia(id), TRIVIA_MS + 500);
-            return reply(interaction, '✅ Trivia started.');
+            return ecoReply(interaction, '✅ Trivia started.');
         }
         return reply(interaction, '❌ Unknown option.');
     }
@@ -496,6 +518,14 @@ function createEngagement({ store, scheduler, resolveContext, auditLog, getClien
             if (kind === 'tv') return triviaButton(interaction, guild, e, a, b);
             if (kind === 'ga') return giveawayButton(interaction, guild);
             if (kind === 'to') return signupButton(interaction, guild, a);
+            if (kind === 'ep') {
+                const proxy = Object.assign(Object.create(interaction), {
+                    options: { getSubcommand: () => a === 'buy' ? 'buy' : a, getUser: () => null, getString: () => interaction.values?.[0] || null, getInteger: () => null },
+                    reply: (payload) => interaction.reply(payload),
+                    editReply: (payload) => interaction.editReply(payload)
+                });
+                if (['daily', 'balance', 'inventory', 'shop', 'buy'].includes(a)) return eco(proxy, guild, e, settings);
+            }
             return reply(interaction, '❌ Unknown button.');
         })
     };

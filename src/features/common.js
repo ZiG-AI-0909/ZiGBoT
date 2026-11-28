@@ -63,7 +63,7 @@ function requesterOutranks(guild, member, role) {
 async function reply(interaction, content, extra = {}) {
     const payload = { ...(typeof content === 'string' ? { content } : content), allowedMentions: NO_PINGS, ...extra };
     if (interaction.deferred || interaction.replied) return interaction.editReply(payload);
-    return interaction.reply({ ...payload, ephemeral: true });
+    return interaction.reply({ ...payload, ephemeral: extra.ephemeral ?? true });
 }
 
 /** Writes to the existing audit log (src/logging/auditLog.js). Never throws. */
